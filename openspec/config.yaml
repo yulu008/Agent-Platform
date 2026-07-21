@@ -1,0 +1,37 @@
+schema: spec-driven
+
+# 项目上下文（可选）
+# 此内容会在 AI 创建工件时显示。
+# 添加您的技术栈、编码规范、风格指南、领域知识等。
+# 示例：
+#   context: |
+#     Tech stack: JDK 21, Spring Boot
+#     编码规范：遵循阿里巴巴Java开发规范
+#     代码提交：使用Conventional Commits规范
+#     领域：Agent Platform 智能代理平台
+
+context: |
+    技术栈：JDK 21, Java, Spring Boot, Maven,Spring AI 2.X，Spring AI Agent Utils 
+    编码规范：遵循阿里巴巴Java开发手册
+    代码提交：使用Conventional Commits规范
+    领域：Agent Platform 智能代理平台
+
+# 每种工件规则（可选）
+# 添加特定工件的自定义规则。
+# 示例：
+#   rules:
+#     proposal:
+#       - 提案内容控制在500字以内
+#       - 必须包含"非目标"章节
+#     tasks:
+#       - 将任务拆分，每个任务不超过2小时
+
+rules:
+  proposal:
+    - 所有内容必须使用中文编写
+  design:
+    - 所有内容必须使用中文编写
+  tasks:
+    - 所有内容必须使用中文编写
+  specs:
+    - 所有内容必须使用中文编写
