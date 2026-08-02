@@ -8,12 +8,28 @@ spring:
     # 自动加载本地配置（含 API 密钥，已被 .gitignore 忽略）
     import: optional:classpath:application-local.yml
 
+  # H2 内嵌数据库配置（文件模式，持久化到本地）
+  datasource:
+    url: jdbc:h2:file:./data/agent-platform
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+
+  # JPA 配置
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+
   # Spring AI OpenAI 配置
   ai:
     openai:
       # API 密钥通过环境变量或 application-local.yml 注入，禁止硬编码
       api-key: ${OPENAI_API_KEY:}
-      base-url: https://coding.dashscope.aliyuncs.com/v1
+      base-url: https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
       chat:
         options:
           model: glm-5.2

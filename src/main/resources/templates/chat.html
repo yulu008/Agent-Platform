@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Agent Platform</title>
+    <link rel="stylesheet" th:href="@{/css/chat.css}"/>
+</head>
+<body>
+
+    <!-- 顶部标题栏 -->
+    <header class="chat-header">
+        <button class="header-btn drawer-toggle" id="drawerToggle" title="会话列表">☰</button>
+        <h1>
+            <span class="logo-dot"></span>
+           Agent Platform By Spring Ai 2.0
+        </h1>
+        <button class="header-btn clear-btn" id="clearSessionBtn" title="清空当前会话">🗑</button>
+    </header>
+
+    <!-- 左侧会话抽屉 -->
+    <aside class="session-drawer" id="sessionDrawer">
+        <div class="drawer-header">
+            <span class="drawer-title">☁️ 会话列表</span>
+            <button class="drawer-close" id="drawerClose">✕</button>
+        </div>
+        <button class="new-session-btn" id="newSessionBtn">+ 新对话</button>
+        <ul class="session-list" id="sessionList">
+            <!-- 会话列表由 JS 动态渲染 -->
+        </ul>
+    </aside>
+    <!-- 抽屉遮罩 -->
+    <div class="drawer-overlay" id="drawerOverlay"></div>
+
+    <!-- 消息区域 -->
+    <main class="chat-messages" id="messagesContainer">
+        <!-- 欢迎信息或历史消息将由 JS 动态插入 -->
+    </main>
+
+    <!-- "/" 命令面板 -->
+    <div class="command-palette hidden" id="commandPalette"></div>
+
+    <!-- 输入区域 -->
+    <footer class="chat-input-area">
+        <form class="chat-input-wrapper" id="chatForm">
+            <textarea
+                class="chat-input"
+                id="chatInput"
+                placeholder="输入消息，Enter 发送，Shift+Enter 换行..."
+                rows="1"
+                autocomplete="off"></textarea>
+            <button type="submit" class="send-btn" id="sendBtn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M22 2L11 13M22 2L15 22L11 13L2 9L22 2Z" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </button>
+        </form>
+    </footer>
+
+    <!-- Thymeleaf 注入 sessionId 到 JS 全局变量 -->
+    <script th:inline="javascript">
+        window.__SESSION_ID__ = /*[[${sessionId}]]*/ null;
+    </script>
+    <script th:src="@{/js/chat.js}"></script>
+</body>
+</html>

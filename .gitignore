@@ -4,7 +4,9 @@ src/main/resources/application-local.yml
 
 # 构建产物
 target/
-
+docs/
+agent/
+openspec/
 # IDE
 .idea/
 *.iml
@@ -17,3 +19,15 @@ target/
 # 日志
 *.log
 logs/
+
+# H2 数据库文件
+data/
+generated-chat.html
+screenshot-aia-red.png
+screenshot-chat.png
+screenshot-forest-header.png
+screenshot-ghibli.png
+screenshot-golden-field.png
+screenshot-leaves-header.png
+src/main/resources/agents/general-purpose.md
+agent/GENERAL_PURPOSE_SUBAGENT.md
