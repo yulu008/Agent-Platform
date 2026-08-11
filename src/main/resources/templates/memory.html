@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>记忆管理 - Agent Platform</title>
+    <link rel="stylesheet" th:href="@{/css/chat.css(v=${#dates.createNow().time})}"/>
+    <link rel="stylesheet" th:href="@{/css/memory.css(v=${#dates.createNow().time})}"/>
+</head>
+<body>
+
+    <!-- 顶部标题栏 -->
+    <header class="memory-header">
+        <a href="/" class="back-btn" title="返回对话">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M19 12H5M12 19l-7-7 7-7" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+        </a>
+        <h1>
+            <span class="logo-dot"></span>
+            记忆管理
+        </h1>
+    </header>
+
+    <!-- 主体区域 -->
+    <div class="memory-body">
+        <!-- 左侧记忆列表 -->
+        <aside class="memory-sidebar">
+            <div class="memory-sidebar-list" id="memorySidebarList">
+                <!-- 记忆列表由 JS 动态渲染 -->
+            </div>
+        </aside>
+
+        <!-- 右侧记忆详情 -->
+        <main class="memory-detail" id="memoryDetail">
+            <!-- 详情由 JS 动态渲染 -->
+        </main>
+    </div>
+
+    <script th:src="@{/js/memory.js(v=${#dates.createNow().time})}"></script>
+</body>
+</html>

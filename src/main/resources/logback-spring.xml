@@ -44,6 +44,60 @@
         <appender-ref ref="SUBAGENT_AUDIT"/>
     </logger>
 
+    <!-- 工具调用调试日志（独立文件，不回流主日志） -->
+    <appender name="TOOLCALL" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>logs/toolcall.log</file>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>logs/toolcall-%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+            <maxFileSize>50MB</maxFileSize>
+            <maxHistory>7</maxHistory>
+        </rollingPolicy>
+    </appender>
+
+    <logger name="toolcall" level="DEBUG" additivity="false">
+        <appender-ref ref="TOOLCALL"/>
+    </logger>
+
+    <!-- MethodToolCallback 自身会 log JSON 解析失败的全堆栈，
+         但 ResilientToolCallback 已兜底处理并记录精简警告，
+         此处降为 ERROR 避免日志噪音 -->
+    <logger name="org.springframework.ai.tool.method.MethodToolCallback" level="ERROR"/>
+
+    <!-- ChunkMerger 崩溃时 MessageAggregator 会以 ERROR 输出两次全堆栈，
+         ChatStreamController.onErrorResume 已做统一降级处理，此处降为 WARN 降噪 -->
+    <logger name="org.springframework.ai.chat.model.MessageAggregator" level="WARN"/>
+
+    <!-- 诊断模式：以 spring.profiles.active=debug-ai 启动时，
+         输出模型 SSE 原始分片数据，用于排查 ChunkMerger 崩溃等问题。
+         将原始分片写入独立文件 sse-raw.log，避免污染主日志。 -->
+    <appender name="SSE_RAW" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>logs/sse-raw.log</file>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>logs/sse-raw-%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+            <maxFileSize>50MB</maxFileSize>
+            <maxHistory>3</maxHistory>
+        </rollingPolicy>
+    </appender>
+
+    <springProfile name="debug-ai">
+        <!-- Spring AI OpenAI 模型层：记录每个 ChatResponse 分片的合并过程 -->
+        <logger name="org.springframework.ai.openai.OpenAiChatModel" level="DEBUG" additivity="false">
+            <appender-ref ref="SSE_RAW"/>
+        </logger>
+        <!-- OpenAI Java SDK 层：记录原始 SSE 事件流 -->
+        <logger name="com.openai" level="DEBUG" additivity="false">
+            <appender-ref ref="SSE_RAW"/>
+        </logger>
+    </springProfile>
+
     <root level="INFO">
         <appender-ref ref="CONSOLE"/>
         <appender-ref ref="FILE"/>

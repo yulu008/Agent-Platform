@@ -1,0 +1,326 @@
+/* ===== 记忆管理页面样式（复用吉卜力主题） ===== */
+
+body {
+    display: flex;
+    flex-direction: column;
+}
+
+/* ===== 记忆页面标题栏 ===== */
+.memory-header {
+    display: flex;
+    align-items: center;
+    padding: 18px 28px;
+    background:
+        radial-gradient(ellipse 60px 30px at 12% 60%, rgba(255, 255, 255, 0.5) 0%, transparent 70%),
+        radial-gradient(ellipse 80px 35px at 30% 40%, rgba(255, 255, 255, 0.35) 0%, transparent 70%),
+        radial-gradient(ellipse 50px 25px at 55% 70%, rgba(255, 255, 255, 0.4) 0%, transparent 70%),
+        radial-gradient(ellipse 70px 30px at 75% 35%, rgba(255, 255, 255, 0.3) 0%, transparent 70%),
+        radial-gradient(ellipse 55px 28px at 90% 65%, rgba(255, 255, 255, 0.45) 0%, transparent 70%),
+        linear-gradient(180deg, #4FC3F7 0%, #81D4FA 40%, #B3E5FC 100%);
+    flex-shrink: 0;
+    z-index: 10;
+    position: relative;
+    box-shadow: 0 4px 20px rgba(79, 195, 247, 0.3);
+    overflow: hidden;
+    gap: 16px;
+}
+
+.memory-header .back-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    color: #FFFFFF;
+    transition: var(--transition);
+    position: relative;
+    z-index: 2;
+    backdrop-filter: blur(4px);
+    flex-shrink: 0;
+}
+
+.memory-header .back-btn svg {
+    width: 20px;
+    height: 20px;
+}
+
+.memory-header .back-btn:hover {
+    background: rgba(255, 255, 255, 0.35);
+    transform: scale(1.08);
+}
+
+.memory-header h1 {
+    font-size: 20px;
+    font-weight: 800;
+    color: #FFFFFF;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    letter-spacing: 0.3px;
+    text-shadow: 0 2px 6px rgba(2, 119, 189, 0.4);
+    position: relative;
+    z-index: 2;
+}
+
+/* ===== 主体双栏布局 ===== */
+.memory-body {
+    flex: 1;
+    display: flex;
+    min-height: 0;
+    position: relative;
+    z-index: 1;
+}
+
+/* ===== 左侧列表栏 ===== */
+.memory-sidebar {
+    width: 280px;
+    flex-shrink: 0;
+    background: var(--warm-ivory);
+    border-right: 2px solid rgba(79, 195, 247, 0.2);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.memory-sidebar-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 12px;
+}
+
+.memory-sidebar-list::-webkit-scrollbar {
+    width: 4px;
+}
+
+.memory-sidebar-list::-webkit-scrollbar-thumb {
+    background: rgba(79, 195, 247, 0.3);
+    border-radius: 2px;
+}
+
+/* 列表项样式复用 chat.css 中的 .session-item 风格 */
+.mem-sidebar-group {
+    padding: 12px 8px 4px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.mem-sidebar-item {
+    padding: 12px 14px;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: var(--transition);
+    margin-bottom: 4px;
+    border: 1.5px solid transparent;
+}
+
+.mem-sidebar-item:hover {
+    background: rgba(179, 229, 252, 0.3);
+    border-color: rgba(79, 195, 247, 0.3);
+}
+
+.mem-sidebar-item.active {
+    background: rgba(79, 195, 247, 0.12);
+    border-color: #4FC3F7;
+    box-shadow: 0 2px 8px rgba(79, 195, 247, 0.15);
+}
+
+.mem-sidebar-item-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.mem-sidebar-item-desc {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.mem-sidebar-empty {
+    padding: 32px 16px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 14px;
+    font-style: italic;
+    line-height: 1.8;
+}
+
+/* ===== 右侧详情区域 ===== */
+.memory-detail {
+    flex: 1;
+    overflow-y: auto;
+    padding: 28px 32px;
+    background: linear-gradient(180deg, rgba(232, 245, 233, 0.3) 0%, var(--warm-cream) 100%);
+}
+
+.memory-detail::-webkit-scrollbar {
+    width: 6px;
+}
+
+.memory-detail::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.memory-detail::-webkit-scrollbar-thumb {
+    background: rgba(124, 179, 66, 0.25);
+    border-radius: 3px;
+}
+
+/* 空状态 */
+.mem-detail-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--text-muted);
+    text-align: center;
+    gap: 16px;
+}
+
+.mem-detail-empty .icon {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    background: linear-gradient(145deg, var(--sage) 0%, var(--meadow) 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 30px;
+    box-shadow: 0 6px 24px rgba(124, 179, 66, 0.25);
+    animation: breathe 3s ease-in-out infinite;
+}
+
+.mem-detail-empty h2 {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--earth-brown);
+}
+
+.mem-detail-empty p {
+    font-size: 14px;
+    color: var(--earth-light);
+    font-style: italic;
+    max-width: 320px;
+    line-height: 1.8;
+}
+
+/* 记忆详情卡片 */
+.mem-detail-card {
+    background: #FFFFFF;
+    border: 1.5px solid var(--border-color);
+    border-radius: 16px;
+    padding: 24px 28px;
+    box-shadow: var(--shadow-soft);
+    animation: bubbleAppear 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.mem-detail-meta {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+    padding-bottom: 16px;
+    border-bottom: 1.5px dashed var(--border-color);
+}
+
+.mem-detail-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    background: rgba(79, 195, 247, 0.12);
+    color: #0277BD;
+    border: 1px solid rgba(79, 195, 247, 0.2);
+}
+
+.mem-detail-badge.type-user { background: rgba(135, 206, 235, 0.15); color: #0277BD; }
+.mem-detail-badge.type-feedback { background: rgba(165, 214, 167, 0.2); color: #2E7D32; }
+.mem-detail-badge.type-project { background: rgba(249, 168, 37, 0.15); color: #E65100; }
+.mem-detail-badge.type-reference { background: rgba(179, 229, 252, 0.2); color: #01579B; }
+
+.mem-detail-name {
+    font-size: 20px;
+    font-weight: 800;
+    color: var(--earth-brown);
+    margin-bottom: 8px;
+}
+
+.mem-detail-desc {
+    font-size: 14px;
+    color: var(--text-muted);
+    margin-bottom: 20px;
+    font-style: italic;
+}
+
+.mem-detail-content {
+    font-size: 15px;
+    line-height: 1.8;
+    color: var(--text-primary);
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.mem-detail-actions {
+    margin-top: 24px;
+    padding-top: 20px;
+    border-top: 1.5px dashed var(--border-color);
+    display: flex;
+    justify-content: flex-end;
+}
+
+.mem-delete-btn {
+    padding: 10px 24px;
+    border: none;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--transition);
+    background: linear-gradient(135deg, #FF8A65 0%, #E64A19 100%);
+    color: #FFFFFF;
+    box-shadow: 0 3px 12px rgba(230, 74, 25, 0.25);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.mem-delete-btn svg {
+    width: 16px;
+    height: 16px;
+}
+
+.mem-delete-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 5px 16px rgba(230, 74, 25, 0.35);
+}
+
+/* ===== 响应式适配 ===== */
+@media (max-width: 768px) {
+    .memory-sidebar {
+        width: 220px;
+    }
+
+    .memory-detail {
+        padding: 18px 16px;
+    }
+
+    .mem-detail-card {
+        padding: 18px 20px;
+    }
+}

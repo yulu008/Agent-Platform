@@ -4,7 +4,7 @@
     <meta charset="UTF-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
     <title>Agent Platform</title>
-    <link rel="stylesheet" th:href="@{/css/chat.css}"/>
+    <link rel="stylesheet" th:href="@{/css/chat.css(v=${#dates.createNow().time})}"/>
 </head>
 <body>
 
@@ -15,7 +15,7 @@
             <span class="logo-dot"></span>
            Agent Platform By Spring Ai 2.0
         </h1>
-        <button class="header-btn clear-btn" id="clearSessionBtn" title="清空当前会话">🗑</button>
+        <button class="header-btn memory-toggle" id="memoryToggle" title="长期记忆">📝</button>
     </header>
 
     <!-- 左侧会话抽屉 -->
@@ -31,6 +31,20 @@
     </aside>
     <!-- 抽屉遮罩 -->
     <div class="drawer-overlay" id="drawerOverlay"></div>
+
+    <!-- 右侧记忆抽屉 -->
+    <aside class="memory-drawer" id="memoryDrawer">
+        <div class="drawer-header">
+            <span class="drawer-title">📝 长期记忆</span>
+            <button class="drawer-close" id="memoryDrawerClose">✕</button>
+        </div>
+        <div class="memory-list" id="memoryList">
+            <!-- 记忆列表由 JS 动态渲染 -->
+        </div>
+        <button class="memory-manage-btn" id="memoryManageBtn">完整管理 →</button>
+    </aside>
+    <!-- 记忆抽屉遮罩 -->
+    <div class="drawer-overlay memory-overlay" id="memoryOverlay"></div>
 
     <!-- 消息区域 -->
     <main class="chat-messages" id="messagesContainer">
@@ -49,6 +63,16 @@
                 placeholder="输入消息，Enter 发送，Shift+Enter 换行..."
                 rows="1"
                 autocomplete="off"></textarea>
+            <button type="button" class="clear-session-btn" id="clearSessionBtn" title="清空当前会话">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </button>
+            <button type="button" class="compact-btn" id="compactBtn" title="压缩上下文">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </button>
             <button type="submit" class="send-btn" id="sendBtn">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M22 2L11 13M22 2L15 22L11 13L2 9L22 2Z" stroke-linecap="round" stroke-linejoin="round"/>
@@ -61,6 +85,6 @@
     <script th:inline="javascript">
         window.__SESSION_ID__ = /*[[${sessionId}]]*/ null;
     </script>
-    <script th:src="@{/js/chat.js}"></script>
+    <script th:src="@{/js/chat.js(v=${#dates.createNow().time})}"></script>
 </body>
 </html>

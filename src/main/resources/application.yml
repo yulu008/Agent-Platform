@@ -8,6 +8,10 @@ spring:
     # 自动加载本地配置（含 API 密钥，已被 .gitignore 忽略）
     import: optional:classpath:application-local.yml
 
+  # 开发期关闭 Thymeleaf 模板缓存，修改 HTML 后刷新即生效，无需重启
+  thymeleaf:
+    cache: false
+
   # H2 内嵌数据库配置（文件模式，持久化到本地）
   datasource:
     url: jdbc:h2:file:./data/agent-platform
@@ -15,25 +19,27 @@ spring:
     username: sa
     password:
 
-  # JPA 配置
-  jpa:
-    hibernate:
-      ddl-auto: update
-    show-sql: false
-    properties:
-      hibernate:
-        format_sql: true
-
-  # Spring AI OpenAI 配置
+  # Spring AI 配置
   ai:
+    # Session JDBC 配置
+    session:
+      time-to-live: 90d
+      repository:
+        jdbc:
+          initialize-schema: always
     openai:
       # API 密钥通过环境变量或 application-local.yml 注入，禁止硬编码
       api-key: ${OPENAI_API_KEY:}
       base-url: https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
+      # 请求超时（默认60s，glm-5.2 流式响应可能较慢）
+      timeout: 180s
       chat:
         options:
           model: glm-5.2
           temperature: 0.2
+          # GLM-5.2 默认 max-tokens=4096，当模型单次生成多个 tool call 时
+          # 输出会在中途被截断导致 JSON 不完整。提升到32768  降低截断概率。
+          max-tokens: 32768
 
     # Agent Utils 配置
     agent-utils:

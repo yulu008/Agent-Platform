@@ -57,6 +57,7 @@ const drawerOverlay = document.getElementById('drawerOverlay');
 const sessionList = document.getElementById('sessionList');
 const newSessionBtn = document.getElementById('newSessionBtn');
 const clearSessionBtn = document.getElementById('clearSessionBtn');
+const compactBtn = document.getElementById('compactBtn');
 const commandPalette = document.getElementById('commandPalette');
 
 // ===== "/" 命令面板状态 =====
@@ -630,6 +631,158 @@ async function doClearSession() {
         showError('清空会话失败: ' + e.message);
     }
 }
+
+// ===== 手动压缩上下文 =====
+compactBtn.addEventListener('click', async () => {
+    // 流式中禁用
+    if (abortController) return;
+
+    compactBtn.classList.add('loading');
+    compactBtn.disabled = true;
+
+    try {
+        const response = await fetch(`/chat/sessions/${encodeURIComponent(currentSessionId)}/compact`, {
+            method: 'POST'
+        });
+        const result = await response.json();
+
+        if (result.archivedCount > 0) {
+            showCompactToast(`✅ 已压缩 ${result.archivedCount} 条消息\n${result.summaryPreview}`);
+            // 压缩成功后刷新消息区域
+            messagesContainer.innerHTML = '';
+            await loadHistory();
+            if (messagesContainer.children.length === 0) {
+                showWelcome();
+            }
+        } else {
+            showCompactToast(`ℹ️ ${result.summaryPreview}`);
+        }
+    } catch (e) {
+        showCompactToast(`❌ 压缩失败: ${e.message}`);
+    } finally {
+        compactBtn.classList.remove('loading');
+        compactBtn.disabled = false;
+    }
+});
+
+function showCompactToast(message) {
+    const toast = document.createElement('div');
+    toast.className = 'compact-toast';
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 5000);
+}
+
+// ===== 记忆抽屉交互 =====
+const memoryToggle = document.getElementById('memoryToggle');
+const memoryDrawer = document.getElementById('memoryDrawer');
+const memoryDrawerClose = document.getElementById('memoryDrawerClose');
+const memoryOverlay = document.getElementById('memoryOverlay');
+const memoryList = document.getElementById('memoryList');
+const memoryManageBtn = document.getElementById('memoryManageBtn');
+
+// 记忆类型图标映射
+const MEMORY_TYPE_ICONS = {
+    'user': '☁️',
+    'feedback': '🍃',
+    'project': '🌿',
+    'reference': '🔗'
+};
+
+function openMemoryDrawer() {
+    // 关闭左侧会话抽屉（互斥）
+    closeDrawer();
+    memoryDrawer.classList.add('open');
+    memoryOverlay.classList.add('visible');
+    loadMemoryList();
+}
+
+function closeMemoryDrawer() {
+    memoryDrawer.classList.remove('open');
+    memoryOverlay.classList.remove('visible');
+}
+
+async function loadMemoryList() {
+    try {
+        const res = await fetch('/api/memories');
+        if (!res.ok) return;
+        const memories = await res.json();
+        renderMemoryList(memories);
+    } catch (e) {
+        console.warn('记忆列表加载失败:', e);
+    }
+}
+
+function renderMemoryList(memories) {
+    if (!memories || memories.length === 0) {
+        memoryList.innerHTML = '<div class="memory-empty">还没有记忆，与 AI 对话后会自动记住你的偏好</div>';
+        return;
+    }
+
+    // 按 type 分组
+    const groups = {};
+    memories.forEach(m => {
+        const type = m.type || 'other';
+        if (!groups[type]) groups[type] = [];
+        groups[type].push(m);
+    });
+
+    let html = '';
+    for (const [type, items] of Object.entries(groups)) {
+        const icon = MEMORY_TYPE_ICONS[type] || '📄';
+        html += `<div class="memory-group-title">${icon} ${type}</div>`;
+        items.forEach(m => {
+            const name = escapeHtml(m.name || m.fileName || '');
+            const desc = escapeHtml(m.description || '');
+            const fileName = escapeHtml(m.fileName || '');
+            html += `<div class="memory-item" data-file="${fileName}">
+                <div class="memory-item-name">${name}</div>
+                <div class="memory-item-desc">${desc}</div>
+                <div class="memory-preview"></div>
+            </div>`;
+        });
+    }
+    memoryList.innerHTML = html;
+
+    // 点击展开/收起内联预览
+    memoryList.querySelectorAll('.memory-item').forEach(el => {
+        el.addEventListener('click', async () => {
+            const preview = el.querySelector('.memory-preview');
+            if (preview.classList.contains('visible')) {
+                preview.classList.remove('visible');
+                return;
+            }
+            // 加载详情
+            const file = el.dataset.file;
+            try {
+                const res = await fetch(`/api/memories/detail?file=${encodeURIComponent(file)}`);
+                if (res.ok) {
+                    const detail = await res.json();
+                    const content = (detail.content || '').substring(0, 200);
+                    preview.textContent = content;
+                    preview.classList.add('visible');
+                }
+            } catch (e) {
+                console.warn('记忆详情加载失败:', e);
+            }
+        });
+    });
+}
+
+memoryToggle.addEventListener('click', () => {
+    if (memoryDrawer.classList.contains('open')) {
+        closeMemoryDrawer();
+    } else {
+        openMemoryDrawer();
+    }
+});
+
+memoryDrawerClose.addEventListener('click', closeMemoryDrawer);
+memoryOverlay.addEventListener('click', closeMemoryDrawer);
+
+memoryManageBtn.addEventListener('click', () => {
+    window.location.href = '/memories-page';
+});
 
 // ===== 工具函数 =====
 function escapeHtml(text) {

@@ -5,7 +5,7 @@ src/main/resources/application-local.yml
 # 构建产物
 target/
 docs/
-agent/
+/agent/
 openspec/
 # IDE
 .idea/
@@ -30,4 +30,5 @@ screenshot-ghibli.png
 screenshot-golden-field.png
 screenshot-leaves-header.png
 src/main/resources/agents/general-purpose.md
-agent/GENERAL_PURPOSE_SUBAGENT.md
+/agent/GENERAL_PURPOSE_SUBAGENT.md
+screenshot-baidu-homepage.png
