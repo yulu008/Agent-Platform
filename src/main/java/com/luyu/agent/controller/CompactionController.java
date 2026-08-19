@@ -1,5 +1,6 @@
 package com.luyu.agent.controller;
 
+import com.luyu.agent.config.ChatClientRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
@@ -34,10 +35,10 @@ public class CompactionController {
     private final SessionService sessionService;
     private final RecursiveSummarizationCompactionStrategy compactionStrategy;
 
-    public CompactionController(SessionService sessionService, ChatClient.Builder chatClientBuilder) {
+    public CompactionController(SessionService sessionService, ChatClientRegistry chatClientRegistry) {
         this.sessionService = sessionService;
-        // 使用 LLM 驱动的递归摘要策略，保留最近 10 个事件
-        ChatClient compactionClient = chatClientBuilder.build();
+        // 压缩摘要固定用云端 GLM 的纯净 client（forRole("compaction")），不受请求级 model 影响
+        ChatClient compactionClient = chatClientRegistry.forRole("compaction");
         this.compactionStrategy = RecursiveSummarizationCompactionStrategy.builder(compactionClient)
                 .maxEventsToKeep(10)
                 .build();

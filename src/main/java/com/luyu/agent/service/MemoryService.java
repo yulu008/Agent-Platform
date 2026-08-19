@@ -1,4 +1,4 @@
-package com.luyu.agent.chat.service;
+package com.luyu.agent.service;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

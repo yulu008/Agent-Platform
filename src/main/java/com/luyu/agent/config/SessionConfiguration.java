@@ -21,22 +21,27 @@ import org.springframework.context.annotation.Configuration;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+
+import com.luyu.agent.config.AgentModelsProperties.ModelProps;
 
 /**
  * Session API 配置
- * 
+ *
  * 基于 spring-ai-session 社区库，配置 SessionMemoryAdvisor 替代原有的
  * MessageChatMemoryAdvisor + H2ChatMemory 组合。
- * 
+ *
  * 自动配置提供：
  * - JdbcSessionRepository（H2 数据库，schema 自动初始化）
  * - DefaultSessionService（会话生命周期管理）
- * 
+ *
  * 本配置类提供：
  * - AutoMemoryToolsAdvisor（长期记忆：LLM 自主读写记忆文件）
  * - SessionMemoryAdvisor（短期记忆：上下文加载、消息追加、自动压缩）
- * - ChatClient（带 Advisor + SkillsTool + TaskTool + 记忆工具 + 容错工具调用）
+ * - ChatClientRegistry（多模型 ChatClient 注册表：对话 client 挂完整 advisor 链，辅助 client 纯净版）
  */
 @Configuration
 public class SessionConfiguration {
@@ -63,7 +68,7 @@ public class SessionConfiguration {
 
     /**
      * 构建 SessionMemoryAdvisor
-     * 
+     *
      * 压缩策略：当累积 20 个轮次时触发，保留最近 10 个事件（滑动窗口）
      * 轮次 = 一条 UserMessage + 后续所有响应（assistant/tool）
      */
@@ -80,22 +85,48 @@ public class SessionConfiguration {
     }
 
     /**
-     * 构建带 SessionMemoryAdvisor + SkillsTool + TaskTool + 容错工具调用的 ChatClient
-     * 
-     * 不使用 defaultToolCallbacks()（其内部 resolver 不容错），
-     * 而是手动构建 ToolCallingAdvisor + 容错 resolver，
-     * 通过 defaultOptions 传递工具定义给模型。
-     * 
+     * 子 Agent 专用裸 Builder（固定 subagent 角色模型，供 SubagentConfiguration @Lazy 注入）。
+     * <p>
+     * 独立 bean 避免与 ChatClientRegistry 装配形成循环：SubagentConfiguration 装配时
+     * 仅持有 @Lazy 代理，运行时子 agent 实际执行才解析为真实 Builder。
+     */
+    @Bean
+    public ChatClient.Builder subagentBuilder(Map<String, ChatModel> chatModels,
+                                               AgentModelsProperties properties) {
+        for (Map.Entry<String, ModelProps> entry : properties.getModels().entrySet()) {
+            List<String> roles = entry.getValue().getRoles();
+            if (roles != null && roles.contains("subagent")) {
+                ChatModel model = chatModels.get(entry.getKey());
+                if (model == null) {
+                    throw new IllegalStateException(
+                            "subagent 角色模型 " + entry.getKey() + " 未装配 ChatModel");
+                }
+                return ChatClient.builder(model);
+            }
+        }
+        throw new IllegalStateException("未配置 roles 含 subagent 的模型");
+    }
+
+    /**
+     * 多模型 ChatClientRegistry（决策 5：三索引与裸 Builder 复用）。
+     * <p>
+     * 容错工具链建一次共享，所有对话 client 复用同一套 advisor（advisor 无状态，通过 context 传 sessionId）。
+     * 对话 client（byName）：每个模型用 fresh builder 挂完整 advisor 链 + 容错工具；
+     * 辅助 client（byRole）：裸 build 纯净版（title/compaction）；
+     * 辅助 builder（byRoleBuilder）：subagent 复用 subagentBuilder bean，其余裸 builder。
+     *
      * 容错层级：
      * 1. ResilientToolCallbackResolver - 拦截空/未知工具名
      * 2. ResilientToolCallback - 拦截 JSON 解析失败
      */
     @Bean
-    public ChatClient chatClient(ChatModel chatModel,
-                                 AutoMemoryToolsAdvisor autoMemoryToolsAdvisor,
-                                 SessionMemoryAdvisor sessionMemoryAdvisor,
-                                 List<ToolCallback> tools,
-                                 SubagentConfiguration subagentConfig) {
+    public ChatClientRegistry chatClientRegistry(Map<String, ChatModel> chatModels,
+                                                  AgentModelsProperties properties,
+                                                  AutoMemoryToolsAdvisor autoMemoryToolsAdvisor,
+                                                  SessionMemoryAdvisor sessionMemoryAdvisor,
+                                                  List<ToolCallback> tools,
+                                                  SubagentConfiguration subagentConfig,
+                                                  ChatClient.Builder subagentBuilder) {
         // 收集所有工具回调
         List<ToolCallback> allTools = new ArrayList<>(tools);
         ToolCallback taskTool = subagentConfig.createTaskToolCallback();
@@ -118,30 +149,64 @@ public class SessionConfiguration {
         StaticToolCallbackResolver staticResolver = new StaticToolCallbackResolver(resilientTools);
         ResilientToolCallbackResolver resilientResolver = new ResilientToolCallbackResolver(staticResolver);
 
-        // 构建带容错 resolver 的 ToolCallingManager
+        // 构建带容错 resolver 的 ToolCallingManager（共享，所有对话 client 复用）
         DefaultToolCallingManager toolCallingManager = DefaultToolCallingManager.builder()
                 .toolCallbackResolver(resilientResolver)
                 .build();
 
-        // 构建 ToolCallingAdvisor
+        // 构建共享 ToolCallingAdvisor
         ToolCallingAdvisor toolCallingAdvisor = ToolCallingAdvisor.builder()
                 .toolCallingManager(toolCallingManager)
                 .build();
 
-        // 通过 defaultOptions 传递工具定义给模型（让模型知道有哪些工具可用）
-        // Advisor 顺序：AutoMemoryToolsAdvisor → SessionMemoryAdvisor → ToolCallingAdvisor → MalformedToolCallSanitizer
-        ChatClient.Builder builder = ChatClient.builder(chatModel)
-                .defaultAdvisors(autoMemoryToolsAdvisor, sessionMemoryAdvisor,
-                        toolCallingAdvisor, new MalformedToolCallSanitizer())
-                .defaultOptions(ToolCallingChatOptions.builder()
-                        .toolCallbacks(resilientTools));
+        // 遍历模型构建对话 client（byName）+ 辅助 client（byRole）+ 辅助 builder（byRoleBuilder）
+        Map<String, ChatClient> byName = new LinkedHashMap<>();
+        Map<String, ChatClient> byRole = new HashMap<>();
+        Map<String, ChatClient.Builder> byRoleBuilder = new HashMap<>();
+        String defaultName = null;
 
-        if (!resilientTools.isEmpty()) {
-            log.info("ChatClient 挂载 {} 个工具回调（SkillsTool + TaskTool + MemoryTools，已包装双层容错）", resilientTools.size());
-        } else {
-            log.warn("ChatClient 未挂载任何工具回调（skills/agents 目录均为空）");
+        for (Map.Entry<String, ChatModel> entry : chatModels.entrySet()) {
+            String name = entry.getKey();
+            ChatModel model = entry.getValue();
+            ModelProps props = properties.getModels().get(name);
+            List<String> roles = props.getRoles() != null ? props.getRoles() : List.of();
+
+            // 对话 client：挂完整 advisor 链（每个用 fresh builder 避免 advisor 污染）
+            // Advisor 顺序：AutoMemoryToolsAdvisor → SessionMemoryAdvisor → ToolCallingAdvisor → MalformedToolCallSanitizer
+            if (roles.contains("chat")) {
+                ChatClient chatClient = ChatClient.builder(model)
+                        .defaultAdvisors(autoMemoryToolsAdvisor, sessionMemoryAdvisor,
+                                toolCallingAdvisor, new MalformedToolCallSanitizer())
+                        .defaultOptions(ToolCallingChatOptions.builder()
+                                .toolCallbacks(resilientTools))
+                        .build();
+                byName.put(name, chatClient);
+                if (props.isDefaultModel()) {
+                    defaultName = name;
+                }
+            }
+
+            // 辅助 client + 裸 builder（固定到首个含该 role 的模型，即 glm）
+            for (String role : roles) {
+                if (!"chat".equals(role)) {
+                    byRole.putIfAbsent(role, ChatClient.builder(model).build());
+                    // subagent 复用 subagentBuilder bean（与 SubagentConfiguration @Lazy 注入一致）
+                    if ("subagent".equals(role)) {
+                        byRoleBuilder.putIfAbsent(role, subagentBuilder);
+                    } else {
+                        byRoleBuilder.putIfAbsent(role, ChatClient.builder(model));
+                    }
+                }
+            }
         }
 
-        return builder.build();
+        if (!resilientTools.isEmpty()) {
+            log.info("ChatClientRegistry 装配完成: 对话模型={} 辅助角色={} 工具数={}",
+                    byName.keySet(), byRole.keySet(), resilientTools.size());
+        } else {
+            log.warn("ChatClientRegistry 未挂载任何工具回调（skills/agents 目录均为空）");
+        }
+
+        return new ChatClientRegistry(byName, byRole, byRoleBuilder, defaultName);
     }
 }

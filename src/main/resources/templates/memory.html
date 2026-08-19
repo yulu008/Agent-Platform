@@ -37,6 +37,9 @@
         </main>
     </div>
 
+    <!-- Markdown 渲染库（本地 vendor，离线可用） -->
+    <script th:src="@{/vendor/marked.min.js(v=${#dates.createNow().time})}"></script>
+    <script th:src="@{/vendor/purify.min.js(v=${#dates.createNow().time})}"></script>
     <script th:src="@{/js/memory.js(v=${#dates.createNow().time})}"></script>
 </body>
 </html>

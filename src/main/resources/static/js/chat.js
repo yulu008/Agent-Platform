@@ -50,6 +50,7 @@ const messagesContainer = document.getElementById('messagesContainer');
 const chatInput = document.getElementById('chatInput');
 const sendBtn = document.getElementById('sendBtn');
 const chatForm = document.getElementById('chatForm');
+const modelSelector = document.getElementById('modelSelector');
 const drawerToggle = document.getElementById('drawerToggle');
 const drawerClose = document.getElementById('drawerClose');
 const sessionDrawer = document.getElementById('sessionDrawer');
@@ -202,7 +203,11 @@ function appendMessage(role, content) {
 
     const bubbleEl = document.createElement('div');
     bubbleEl.className = 'message-bubble';
-    bubbleEl.textContent = content;
+    if (role === 'assistant') {
+        bubbleEl.innerHTML = renderMarkdown(content);
+    } else {
+        bubbleEl.textContent = content;
+    }
 
     messageEl.appendChild(bubbleEl);
     messagesContainer.appendChild(messageEl);
@@ -246,6 +251,26 @@ function showError(message) {
     setTimeout(() => toast.remove(), 5000);
 }
 
+// ===== 模型选择器 =====
+async function loadModels() {
+    if (!modelSelector) return;
+    try {
+        const res = await fetch('/chat/models');
+        if (!res.ok) return;
+        const models = await res.json();
+        // 保留默认占位项（value="" 表示用后端 default 模型）
+        modelSelector.innerHTML = '<option value="">默认（云端）</option>';
+        models.forEach(name => {
+            const opt = document.createElement('option');
+            opt.value = name;
+            opt.textContent = name;
+            modelSelector.appendChild(opt);
+        });
+    } catch (e) {
+        console.warn('模型列表加载失败:', e);
+    }
+}
+
 // ===== 发送消息 - SSE 流式 =====
 async function sendMessage(message) {
     if (!message.trim()) return;
@@ -261,9 +286,12 @@ async function sendMessage(message) {
 
     // 创建 AI 消息气泡（稍后填充内容）
     let aiBubbleEl = null;
+    let fullResponse = '';
 
     try {
-        const response = await fetch('/chat/stream', {
+        const selectedModel = modelSelector ? modelSelector.value : '';
+        const url = `/chat/stream${selectedModel ? '?model=' + encodeURIComponent(selectedModel) : ''}`;
+        const response = await fetch(url, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -287,7 +315,6 @@ async function sendMessage(message) {
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
-        let fullResponse = '';
 
         while (true) {
             const { done, value } = await reader.read();
@@ -311,24 +338,24 @@ async function sendMessage(message) {
                         const token = parsed.content || parsed.delta || '';
                         if (token) {
                             fullResponse += token;
-                            // 更新 AI 气泡内容
-                            aiBubbleEl.querySelector('.message-bubble').textContent = fullResponse;
-                            scrollToBottom();
+                            // 更新 AI 气泡内容（rAF 批处理 Markdown 渲染）
+                            scheduleRafRender(aiBubbleEl.querySelector('.message-bubble'), fullResponse);
                         }
                     } catch (e) {
                         // 非 JSON 格式的 data，直接作为文本处理
                         if (data && data !== '[DONE]') {
                             fullResponse += data;
-                            aiBubbleEl.querySelector('.message-bubble').textContent = fullResponse;
-                            scrollToBottom();
+                            scheduleRafRender(aiBubbleEl.querySelector('.message-bubble'), fullResponse);
                         }
                     }
                 }
             }
         }
 
-        // 如果流式未产生任何内容，显示提示
-        if (!fullResponse) {
+        // 流式结束后做一次最终完整渲染，确保未闭合的 Markdown 结构正确渲染
+        if (fullResponse) {
+            aiBubbleEl.querySelector('.message-bubble').innerHTML = renderMarkdown(fullResponse);
+        } else {
             aiBubbleEl.querySelector('.message-bubble').textContent = '(空回复)';
         }
 
@@ -338,7 +365,9 @@ async function sendMessage(message) {
             removeTypingIndicator();
             if (aiBubbleEl) {
                 const bubble = aiBubbleEl.querySelector('.message-bubble');
-                if (!bubble.textContent.trim()) {
+                if (fullResponse) {
+                    bubble.innerHTML = renderMarkdown(fullResponse);
+                } else if (!bubble.textContent.trim()) {
                     bubble.textContent = '(已中止)';
                 }
             }
@@ -348,7 +377,7 @@ async function sendMessage(message) {
             if (!aiBubbleEl) {
                 appendMessage('assistant', `连接失败: ${error.message}`);
             } else {
-                aiBubbleEl.querySelector('.message-bubble').textContent = `连接失败: ${error.message}`;
+                aiBubbleEl.querySelector('.message-bubble').innerHTML = renderMarkdown(`连接失败: ${error.message}`);
             }
             showError(`请求失败: ${error.message}`);
         }
@@ -759,7 +788,7 @@ function renderMemoryList(memories) {
                 if (res.ok) {
                     const detail = await res.json();
                     const content = (detail.content || '').substring(0, 200);
-                    preview.textContent = content;
+                    preview.innerHTML = renderMarkdown(content);
                     preview.classList.add('visible');
                 }
             } catch (e) {
@@ -785,6 +814,36 @@ memoryManageBtn.addEventListener('click', () => {
 });
 
 // ===== 工具函数 =====
+
+// Markdown 渲染（marked.parse + DOMPurify 双层防御）
+marked.setOptions({ gfm: true, breaks: true });
+
+function renderMarkdown(text) {
+    if (!text) return '';
+    const rawHtml = marked.parse(text);
+    return DOMPurify.sanitize(rawHtml);
+}
+
+// rAF 批处理渲染调度（同一帧内多个 token 合并为一次渲染）
+let _rafScheduled = false;
+let _rafPendingText = '';
+let _rafPendingBubble = null;
+
+function scheduleRafRender(bubbleEl, text) {
+    _rafPendingBubble = bubbleEl;
+    _rafPendingText = text;
+    if (!_rafScheduled) {
+        _rafScheduled = true;
+        requestAnimationFrame(() => {
+            _rafScheduled = false;
+            if (_rafPendingBubble) {
+                _rafPendingBubble.innerHTML = renderMarkdown(_rafPendingText);
+                scrollToBottom();
+            }
+        });
+    }
+}
+
 function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
@@ -803,6 +862,8 @@ function formatTime(isoStr) {
 
 // ===== 页面初始化 =====
 document.addEventListener('DOMContentLoaded', async () => {
+    // 加载模型列表（非阻塞，失败不影响主流程）
+    loadModels();
     // 先加载历史消息
     await loadHistory();
 

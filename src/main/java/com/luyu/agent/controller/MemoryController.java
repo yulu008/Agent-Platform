@@ -1,6 +1,6 @@
 package com.luyu.agent.controller;
 
-import com.luyu.agent.chat.service.MemoryService;
+import com.luyu.agent.service.MemoryService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;

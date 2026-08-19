@@ -1,5 +1,6 @@
-package com.luyu.agent.chat.service;
+package com.luyu.agent.service;
 
+import com.luyu.agent.config.ChatClientRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
@@ -29,10 +30,10 @@ public class SessionTitleGenerator {
     private final ChatClient titleClient;
     private final SessionRepository sessionRepository;
 
-    public SessionTitleGenerator(ChatClient.Builder chatClientBuilder,
+    public SessionTitleGenerator(ChatClientRegistry chatClientRegistry,
                                  SessionRepository sessionRepository) {
-        // 标题生成使用无 advisor 的纯净 ChatClient，避免上下文干扰
-        this.titleClient = chatClientBuilder.build();
+        // 标题生成固定用云端 GLM 的纯净 client（forRole("title")），不受请求级 model 影响
+        this.titleClient = chatClientRegistry.forRole("title");
         this.sessionRepository = sessionRepository;
     }
 
@@ -47,6 +48,18 @@ public class SessionTitleGenerator {
     @Async
     public void generateTitleAsync(String sessionId, String userMsg, String assistantMsg) {
         try {
+            // 幂等保护：标题已生成过则不再重复请求模型（符合设计 D2：仅默认标题时触发）
+            Session existing = sessionRepository.findById(sessionId);
+            if (existing != null) {
+                String currentTitle = existing.metadata() != null
+                        ? (String) existing.metadata().getOrDefault("title", "新对话")
+                        : "新对话";
+                if (!"新对话".equals(currentTitle)) {
+                    log.debug("标题已存在，跳过生成: sessionId={}, title={}", sessionId, currentTitle);
+                    return;
+                }
+            }
+
             String prompt = String.format("用户: %s\n助手: %s", userMsg, assistantMsg);
             String title = titleClient.prompt()
                     .system(TITLE_SYSTEM_PROMPT)

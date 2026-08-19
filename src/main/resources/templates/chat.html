@@ -56,6 +56,12 @@
 
     <!-- 输入区域 -->
     <footer class="chat-input-area">
+        <div class="model-bar">
+            <label class="model-label" for="modelSelector">🤖 模型</label>
+            <select class="model-selector" id="modelSelector" title="选择对话模型">
+                <option value="">默认（云端）</option>
+            </select>
+        </div>
         <form class="chat-input-wrapper" id="chatForm">
             <textarea
                 class="chat-input"
@@ -85,6 +91,9 @@
     <script th:inline="javascript">
         window.__SESSION_ID__ = /*[[${sessionId}]]*/ null;
     </script>
+    <!-- Markdown 渲染库（本地 vendor，离线可用） -->
+    <script th:src="@{/vendor/marked.min.js(v=${#dates.createNow().time})}"></script>
+    <script th:src="@{/vendor/purify.min.js(v=${#dates.createNow().time})}"></script>
     <script th:src="@{/js/chat.js(v=${#dates.createNow().time})}"></script>
 </body>
 </html>

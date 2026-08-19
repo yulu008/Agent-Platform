@@ -25,6 +25,15 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+// Markdown 渲染（marked.parse + DOMPurify 双层防御）
+marked.setOptions({ gfm: true, breaks: true });
+
+function renderMarkdown(text) {
+    if (!text) return '';
+    const rawHtml = marked.parse(text);
+    return DOMPurify.sanitize(rawHtml);
+}
+
 // ===== 记忆列表加载 =====
 async function loadMemoryList() {
     try {
@@ -104,7 +113,7 @@ function renderDetail(detail) {
     const icon = MEMORY_TYPE_ICONS[type] || '📄';
     const name = escapeHtml(detail.name || detail.fileName || '');
     const desc = escapeHtml(detail.description || '');
-    const content = escapeHtml(detail.content || '');
+    const content = renderMarkdown(detail.content || '');
     const fileName = escapeHtml(detail.fileName || '');
 
     detailContainer.innerHTML = `

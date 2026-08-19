@@ -27,19 +27,7 @@ spring:
       repository:
         jdbc:
           initialize-schema: always
-    openai:
-      # API 密钥通过环境变量或 application-local.yml 注入，禁止硬编码
-      api-key: ${OPENAI_API_KEY:}
-      base-url: https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
-      # 请求超时（默认60s，glm-5.2 流式响应可能较慢）
-      timeout: 180s
-      chat:
-        options:
-          model: glm-5.2
-          temperature: 0.2
-          # GLM-5.2 默认 max-tokens=4096，当模型单次生成多个 tool call 时
-          # 输出会在中途被截断导致 JSON 不完整。提升到32768  降低截断概率。
-          max-tokens: 32768
+
 
     # Agent Utils 配置
     agent-utils:
@@ -53,3 +41,36 @@ spring:
         max-parallelism: 4
         # 单次子Agent执行存活时长，默认 120s
         lifespan: 120s
+
+# 多模型配置（完全接管模型装配，排除 Spring AI OpenAI 自动配置）
+# 每个模型独立 base-url/api-key/model/max-tokens/timeout，由 ModelConfiguration 装配
+agent:
+  models:
+    glm-5-2:
+      base-url: https://open.bigmodel.cn/api/paas/v4
+      # 密钥通过环境变量或 application-local.yml 注入，禁止硬编码
+      api-key: ${OPENAI_API_KEY:}
+      model: glm-5.2
+      # GLM-5.2 默认 max-tokens=4096，多 tool call 时输出中途截断致 JSON 不完整，提升到 32768 降低截断概率
+      max-tokens: 32768
+      timeout: 180s
+      temperature: 0.2
+      roles: [chat, compaction, title, subagent]
+      default-model: true
+    glm-5-1:
+      base-url: https://open.bigmodel.cn/api/paas/v4
+      api-key: ${OPENAI_API_KEY:}
+      model: glm-5.1
+      max-tokens: 32768
+      timeout: 180s
+      temperature: 0.2
+      roles: [chat]
+      default-model: false
+    local:
+      base-url: http://127.0.0.1:9081/v1
+      api-key: sk-local
+      model: qwen3.6-35b
+      # 本地 qwen ctx=4096，留 1024 给 prompt+历史，避免撞 ctx 墙
+      max-tokens: 3072
+      timeout: 300s
+      roles: [chat]

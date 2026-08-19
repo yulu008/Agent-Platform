@@ -1,11 +1,13 @@
 package com.luyu.agent.controller;
 
-import com.luyu.agent.chat.service.SessionTitleGenerator;
+import com.luyu.agent.config.ChatClientRegistry;
+import com.luyu.agent.service.SessionTitleGenerator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
+import org.springframework.ai.chat.messages.ToolResponseMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.session.SessionEvent;
 import org.springframework.ai.session.SessionService;
@@ -37,14 +39,14 @@ public class ChatStreamController {
 
     private static final Logger log = LoggerFactory.getLogger(ChatStreamController.class);
 
-    private final ChatClient chatClient;
+    private final ChatClientRegistry chatClientRegistry;
     private final SessionService sessionService;
     private final SessionTitleGenerator sessionTitleGenerator;
 
-    public ChatStreamController(ChatClient chatClient,
+    public ChatStreamController(ChatClientRegistry chatClientRegistry,
                                 SessionService sessionService,
                                 SessionTitleGenerator sessionTitleGenerator) {
-        this.chatClient = chatClient;
+        this.chatClientRegistry = chatClientRegistry;
         this.sessionService = sessionService;
         this.sessionTitleGenerator = sessionTitleGenerator;
     }
@@ -62,9 +64,29 @@ public class ChatStreamController {
      * - 达到轮次阈值时自动压缩
      */
     @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public Flux<ServerSentEvent<Object>> streamChat(@RequestBody Map<String, String> request) {
+    public Flux<ServerSentEvent<Object>> streamChat(@RequestBody Map<String, String> request,
+                                                      @RequestParam(value = "model", required = false) String model) {
         String message = request.get("message");
         String sessionId = request.get("sessionId");
+
+        // 请求级模型路由：缺省取 default，未知模型返回 400 提示
+        final ChatClient chatClient;
+        try {
+            chatClient = chatClientRegistry.forChat(model);
+        } catch (IllegalArgumentException e) {
+            return Flux.just(ServerSentEvent.<Object>builder()
+                    .data(Map.of("error", e.getMessage()))
+                    .build());
+        }
+
+        // tool call 历史守卫：非 default 模型（如本地 qwen）不兼容 GLM 的 tool call 历史
+        boolean isNonDefaultModel = model != null && !model.isBlank()
+                && !model.equals(chatClientRegistry.getDefaultName());
+        if (isNonDefaultModel && hasToolCallHistory(sessionId)) {
+            return Flux.just(ServerSentEvent.<Object>builder()
+                    .data(Map.of("error", "当前会话已有工具调用历史，本地模型不兼容，请使用云端模型或新建会话"))
+                    .build());
+        }
 
         // 用于拼接完整回复文本（中止时持久化部分回复）
         StringBuilder fullResponse = new StringBuilder();
@@ -156,6 +178,14 @@ public class ChatStreamController {
     }
 
     /**
+     * 可用模型列表端点（供前端模型选择器动态加载）
+     */
+    @GetMapping("/chat/models")
+    public List<String> listModels() {
+        return chatClientRegistry.listChatModels();
+    }
+
+    /**
      * 判断是否为流式分片合并异常（Spring AI ChunkMerger 内部 bug）
      */
     private boolean isStreamAggregationError(Throwable error) {
@@ -234,7 +264,37 @@ public class ChatStreamController {
     // ===== 私有辅助方法 =====
 
     /**
-     * 首轮对话完成后（事件数 == 2：1条user + 1条assistant），异步触发 AI 摘要标题生成
+     * tool call 历史守卫：会话历史是否已含 tool call 事件。
+     * <p>
+     * 本地模型（qwen）不兼容 GLM 的 tool call 格式，一旦会话产生 tool call 事件，
+     * 拒绝路由到本地模型（调整点 2：跨模型历史兼容性约束）。
+     */
+    private boolean hasToolCallHistory(String sessionId) {
+        try {
+            List<SessionEvent> events = sessionService.getEvents(sessionId);
+            return events.stream().anyMatch(e -> {
+                if (e.isSynthetic()) {
+                    return false;
+                }
+                Message msg = e.getMessage();
+                if (msg instanceof AssistantMessage am) {
+                    return am.getToolCalls() != null && !am.getToolCalls().isEmpty();
+                }
+                return msg instanceof ToolResponseMessage;
+            });
+        } catch (Exception e) {
+            log.warn("读取会话历史失败，跳过 tool call 守卫: sessionId={}", sessionId, e);
+            return false;
+        }
+    }
+
+    /**
+     * 首轮对话完成后异步触发 AI 摘要标题生成。
+     * <p>
+     * 判断"首轮"以用户消息数为依据（== 1），而非事件总数。
+     * 原因：一轮对话若触发工具调用，Session 事件流会包含
+     * tool call / tool response / 多条 assistant 等多个事件，
+     * 事件总数远超 2，用 size == 2 判断会导致标题永不生成。
      */
     private void triggerTitleGenerationIfFirstRound(String sessionId) {
         try {
@@ -243,20 +303,31 @@ public class ChatStreamController {
                     .filter(e -> !e.isSynthetic())
                     .toList();
 
-            if (realEvents.size() == 2) {
-                String userMsg = realEvents.stream()
-                        .filter(e -> e.getMessage() instanceof UserMessage)
-                        .map(e -> e.getMessage().getText())
-                        .findFirst().orElse("");
-                String assistantMsg = realEvents.stream()
-                        .filter(e -> e.getMessage() instanceof AssistantMessage)
-                        .map(e -> e.getMessage().getText())
-                        .findFirst().orElse("");
-
-                if (!userMsg.isEmpty()) {
-                    sessionTitleGenerator.generateTitleAsync(sessionId, userMsg, assistantMsg);
-                }
+            long userMsgCount = realEvents.stream()
+                    .filter(e -> e.getMessage() instanceof UserMessage)
+                    .count();
+            if (userMsgCount != 1) {
+                return;
             }
+
+            String userMsg = realEvents.stream()
+                    .filter(e -> e.getMessage() instanceof UserMessage)
+                    .map(e -> e.getMessage().getText())
+                    .findFirst().orElse("");
+            if (userMsg.isEmpty()) {
+                return;
+            }
+
+            // 取最后一条非空文本的 assistant 回复作为摘要素材
+            // （工具调用场景下首个 AssistantMessage 可能是 tool call，文本为空）
+            String assistantMsg = realEvents.stream()
+                    .filter(e -> e.getMessage() instanceof AssistantMessage)
+                    .map(e -> e.getMessage().getText())
+                    .filter(t -> t != null && !t.isBlank())
+                    .reduce((first, second) -> second)
+                    .orElse("");
+
+            sessionTitleGenerator.generateTitleAsync(sessionId, userMsg, assistantMsg);
         } catch (Exception e) {
             log.warn("触发标题生成失败: sessionId={}", sessionId, e);
         }

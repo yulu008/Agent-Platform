@@ -1,23 +1,27 @@
 # 本地配置示例
 # 使用方法：
 #   1. 复制本文件为 application-local.yml
-#   2. 填入真实的 OpenAI API Key
+#   2. 填入真实的 API Key（覆盖 application.yml 中 agent.models.glm.api-key 占位符）
 #   3. 启动时激活 local profile: mvn spring-boot:run -Dspring-boot.run.profiles=local
 # 注意：application-local.yml 已被 .gitignore 忽略，不会提交到仓库
 
-spring:
-  ai:
-    openai:
+# 多模型配置本地覆盖（模型装配已完全接管，见 application.yml 的 agent.models）
+agent:
+  models:
+    glm:
       api-key: sk-your-real-api-key-here
-      # 如需切换兼容 OpenAI 接口的其他服务，取消注释并修改：
+      # 如需切换兼容 OpenAI 接口的其他云端服务，覆盖对应字段：
       # base-url: https://api.deepseek.com
-      # chat:
-      #   options:
-      #     model: deepseek-chat
-    # Agent Utils 本地覆盖示例（可选）
-    # agent-utils:
-    #   # 外部子Agent定义目录，便于运行时调整不需重新打包
-    #   agents-root: file:./external-agents
-    #   subagent:
-    #     max-parallelism: 8
-    #     lifespan: 60s
+      # model: deepseek-chat
+    # 本地模型示例（取消注释启用，需先部署本地推理服务如 llama.cpp / Ollama）
+    # local:
+    #   api-key: sk-local
+
+# Agent Utils 本地覆盖示例（可选）
+# spring:
+#   ai:
+#     agent-utils:
+#       agents-root: file:./external-agents
+#       subagent:
+#         max-parallelism: 8
+#         lifespan: 60s
