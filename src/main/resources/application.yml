@@ -74,3 +74,12 @@ agent:
       max-tokens: 3072
       timeout: 300s
       roles: [chat]
+
+# Actuator 端点：暴露 metrics 供可观测性验证
+# /actuator/metrics/gen_ai_client_token_usage_total 查看 token 用量
+# /actuator/metrics/gen_ai_client_operation_seconds 查看 LLM 调用耗时
+management:
+  endpoints:
+    web:
+      exposure:
+        include: metrics,health,info

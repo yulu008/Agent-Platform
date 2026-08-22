@@ -83,6 +83,13 @@
             <artifactId>h2</artifactId>
             <scope>runtime</scope>
         </dependency>
+
+        <!-- Spring Boot Actuator：提供 ObservationRegistry / MeterRegistry + 指标端点 -->
+        <!-- 激活 Spring AI 内置的 Micrometer 观测埋点，使 gen_ai_client_token_usage_total 等指标可见 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
     </dependencies>
 
     <!-- Spring milestone 仓库：agent-utils 0.7.0 发布在此 -->

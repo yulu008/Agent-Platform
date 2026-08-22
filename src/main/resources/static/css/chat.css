@@ -331,6 +331,105 @@ body::after {
     }
 }
 
+/* ===== 工具调用可视化卡片 ===== */
+.tool-cards-container {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 8px;
+    max-width: 100%;
+}
+
+.tool-card {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 12px;
+    border: 1.5px solid var(--border-color);
+    background: rgba(165, 214, 167, 0.15);
+    font-size: 13px;
+    color: var(--text-secondary);
+    transition: all 0.3s ease;
+    align-self: flex-start;
+    max-width: 320px;
+}
+
+.tool-card .tool-icon {
+    font-size: 14px;
+    flex-shrink: 0;
+}
+
+.tool-card .tool-name {
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.tool-card .tool-status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.tool-card .tool-status-text {
+    font-size: 12px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    margin-left: auto;
+}
+
+/* pending 状态：呼吸灯动画 */
+.tool-card.tool-pending {
+    border-color: var(--sage-deep);
+}
+
+.tool-card.tool-pending .tool-status-dot {
+    background: var(--sage-deep);
+    animation: breathe 2s ease-in-out infinite;
+}
+
+/* done 状态：移除动画，显示完成标记 */
+.tool-card.tool-done {
+    background: rgba(165, 214, 167, 0.08);
+    border-color: var(--border-color);
+}
+
+.tool-card.tool-done .tool-status-dot {
+    background: var(--meadow);
+    animation: none;
+}
+
+.tool-card.tool-done .tool-status-text::before {
+    content: '\u2705 ';
+}
+
+/* error 状态：红色边框 */
+.tool-card.tool-error {
+    border-color: #e57373;
+    background: rgba(229, 115, 115, 0.08);
+}
+
+.tool-card.tool-error .tool-status-dot {
+    background: #e57373;
+    animation: none;
+}
+
+.tool-card.tool-error .tool-status-text::before {
+    content: '\u274C ';
+}
+
+/* 响应式：移动端缩小 */
+@media (max-width: 768px) {
+    .tool-card {
+        font-size: 12px;
+        padding: 5px 10px;
+        max-width: 260px;
+    }
+}
+
 /* ===== 输入区域 — 草地边缘感 ===== */
 .chat-input-area {
     padding: 16px 24px 22px;

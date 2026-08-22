@@ -22,6 +22,7 @@ import java.util.NoSuchElementException;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Sinks;
 
 import java.util.List;
 import java.util.Map;
@@ -38,6 +39,9 @@ import java.util.Map;
 public class ChatStreamController {
 
     private static final Logger log = LoggerFactory.getLogger(ChatStreamController.class);
+
+    /** Reactor context 中存放工具事件 Sink 的 key（与 ResilientToolCallback 一致） */
+    private static final String TOOL_EVENT_SINK_KEY = "toolEventSink";
 
     private final ChatClientRegistry chatClientRegistry;
     private final SessionService sessionService;
@@ -91,8 +95,13 @@ public class ChatStreamController {
         // 用于拼接完整回复文本（中止时持久化部分回复）
         StringBuilder fullResponse = new StringBuilder();
 
-        // 流式调用模型，通过 advisor context 传入 sessionId
-        return chatClient.prompt()
+        // 工具事件 Sink：通过 Reactor context 传递给 ResilientToolCallback，
+        // 在工具调用前后向 SSE 流注入 tool_start / tool_end 事件
+        Sinks.Many<Map<String, String>> toolEventSink = Sinks.many().unicast().onBackpressureBuffer();
+
+        // 文本 token 流：通过 advisor context 传入 sessionId，
+        // .contextWrite 将 Sink 注入 Reactor context 供 ToolCallingAdvisor 读取
+        Flux<ServerSentEvent<Object>> contentFlux = chatClient.prompt()
                 .user(message)
                 .advisors(a -> a.param(SessionMemoryAdvisor.SESSION_ID_CONTEXT_KEY, sessionId))
                 .stream()
@@ -144,6 +153,15 @@ public class ChatStreamController {
                                     .build()
                     );
                 })
+                .doFinally(signal -> toolEventSink.tryEmitComplete())
+                .contextWrite(ctx -> ctx.put(TOOL_EVENT_SINK_KEY, toolEventSink));
+
+        // 工具事件流：将 Sink 中的 Map 事件转为 SSE
+        Flux<ServerSentEvent<Object>> toolEventFlux = toolEventSink.asFlux()
+                .map(event -> ServerSentEvent.<Object>builder().data(event).build());
+
+        // 合并文本 token 流与工具事件流，末尾推送 [DONE]
+        return Flux.merge(contentFlux, toolEventFlux)
                 .concatWith(Flux.just(
                         ServerSentEvent.<Object>builder()
                                 .data("[DONE]")

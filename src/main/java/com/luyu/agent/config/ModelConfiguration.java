@@ -61,6 +61,9 @@ public class ModelConfiguration {
                     .baseUrl(props.getBaseUrl())
                     .apiKey(props.getApiKey());
             optionsBuilder.model(props.getModel());
+            // 启用流式 usage 回传：GLM API 在最后一个 chunk 携带 token 用量，
+            // 配合 actuator 的 ObservationRegistry，使 gen_ai_client_token_usage_total 指标可见
+            optionsBuilder.streamUsage(true);
             if (props.getMaxTokens() != null) {
                 optionsBuilder.maxTokens(props.getMaxTokens());
             }
@@ -77,8 +80,9 @@ public class ModelConfiguration {
                     .observationRegistry(obsReg)
                     .build();
             models.put(name, chatModel);
-            log.info("装配 ChatModel: name={} model={} base-url={} max-tokens={} timeout={}",
-                    name, props.getModel(), props.getBaseUrl(), props.getMaxTokens(), props.getTimeout());
+            log.info("装配 ChatModel: name={} model={} base-url={} max-tokens={} timeout={} streamUsage=true obsReg={}",
+                    name, props.getModel(), props.getBaseUrl(), props.getMaxTokens(), props.getTimeout(),
+                    obsReg != ObservationRegistry.NOOP ? "ACTIVE" : "NOOP");
         }
         return models;
     }

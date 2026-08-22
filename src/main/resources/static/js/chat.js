@@ -271,6 +271,75 @@ async function loadModels() {
     }
 }
 
+// ===== 工具调用可视化卡片 =====
+
+// 当前轮次待完成的工具卡片：[{name, el}]
+let pendingToolCards = [];
+
+/**
+ * 根据工具名前缀映射图标和提示文案
+ */
+function getToolIcon(toolName) {
+    if (!toolName) return { icon: '\u2699\uFE0F', label: '\u5DE5\u5177\u8C03\u7528\u4E2D...' };
+    if (toolName.startsWith('Memory')) return { icon: '\uD83D\uDCDD', label: '\u6B63\u5728\u64CD\u4F5C\u8BB0\u5FC6...' };
+    if (toolName === 'Skill') return { icon: '\uD83D\uDD27', label: '\u6B63\u5728\u6267\u884C\u6280\u80FD...' };
+    if (toolName === 'Task') return { icon: '\uD83E\uDD16', label: '\u5B50Agent\u6267\u884C\u4E2D...' };
+    return { icon: '\u2699\uFE0F', label: '\u5DE5\u5177\u8C03\u7528\u4E2D...' };
+}
+
+/**
+ * 在工具卡片容器中追加一张 pending 状态的卡片
+ */
+function appendToolCard(container, toolName, icon) {
+    const card = document.createElement('div');
+    card.className = 'tool-card tool-pending';
+    card.innerHTML = `
+        <span class="tool-icon">${icon || '\u2699\uFE0F'}</span>
+        <span class="tool-name">${escapeHtml(toolName)}</span>
+        <span class="tool-status-dot"></span>
+        <span class="tool-status-text">\u6267\u884C\u4E2D...</span>
+    `;
+    container.appendChild(card);
+    pendingToolCards.push({ name: toolName, el: card });
+    scrollToBottom();
+    return card;
+}
+
+/**
+ * 将指定工具名的最近一张 pending 卡片切换为完成/失败状态
+ */
+function completeToolCard(toolName, status) {
+    for (let i = pendingToolCards.length - 1; i >= 0; i--) {
+        if (pendingToolCards[i].name === toolName) {
+            const card = pendingToolCards[i].el;
+            card.classList.remove('tool-pending');
+            const statusText = card.querySelector('.tool-status-text');
+            if (status && status.startsWith('error')) {
+                card.classList.add('tool-error');
+                statusText.textContent = '\u5931\u8D25';
+            } else {
+                card.classList.add('tool-done');
+                statusText.textContent = '\u5B8C\u6210';
+            }
+            pendingToolCards.splice(i, 1);
+            break;
+        }
+    }
+}
+
+/**
+ * 将所有 pending 卡片标记为完成（用于中止/结束场景）
+ */
+function completeAllPendingToolCards() {
+    pendingToolCards.forEach(({ el }) => {
+        el.classList.remove('tool-pending');
+        el.classList.add('tool-done');
+        const statusText = el.querySelector('.tool-status-text');
+        if (statusText) statusText.textContent = '\u5B8C\u6210';
+    });
+    pendingToolCards = [];
+}
+
 // ===== 发送消息 - SSE 流式 =====
 async function sendMessage(message) {
     if (!message.trim()) return;
@@ -311,6 +380,12 @@ async function sendMessage(message) {
         removeTypingIndicator();
         aiBubbleEl = appendMessage('assistant', '');
 
+        // 工具卡片容器（与 message-bubble 同级，不受 Markdown 重渲染影响）
+        const toolCardsContainer = document.createElement('div');
+        toolCardsContainer.className = 'tool-cards-container';
+        aiBubbleEl.appendChild(toolCardsContainer);
+        pendingToolCards = [];
+
         // 使用 ReadableStream 读取 SSE
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
@@ -333,6 +408,15 @@ async function sendMessage(message) {
                         const parsed = JSON.parse(data);
                         if (parsed.error) {
                             showError(parsed.error);
+                            continue;
+                        }
+                        // 工具调用事件
+                        if (parsed.tool) {
+                            if (parsed.tool === 'start') {
+                                appendToolCard(toolCardsContainer, parsed.name, parsed.icon);
+                            } else if (parsed.tool === 'end') {
+                                completeToolCard(parsed.name, parsed.status);
+                            }
                             continue;
                         }
                         const token = parsed.content || parsed.delta || '';
@@ -363,6 +447,7 @@ async function sendMessage(message) {
         if (error.name === 'AbortError') {
             // 用户主动中止，保留已有内容，不弹错误
             removeTypingIndicator();
+            completeAllPendingToolCards();
             if (aiBubbleEl) {
                 const bubble = aiBubbleEl.querySelector('.message-bubble');
                 if (fullResponse) {
@@ -382,6 +467,7 @@ async function sendMessage(message) {
             showError(`请求失败: ${error.message}`);
         }
     } finally {
+        completeAllPendingToolCards();
         exitStreamingState();
         chatInput.focus();
     }

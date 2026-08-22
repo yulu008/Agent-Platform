@@ -8,9 +8,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springaicommunity.agent.common.task.subagent.SubagentReference;
 import org.springaicommunity.agent.common.task.subagent.SubagentType;
+import org.springaicommunity.agent.tools.SmartWebFetchTool;
 import org.springaicommunity.agent.tools.task.TaskTool;
+import org.springaicommunity.agent.tools.task.claude.ClaudeSubagentExecutor;
 import org.springaicommunity.agent.tools.task.claude.ClaudeSubagentType;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.support.ToolCallbacks;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
@@ -23,12 +26,15 @@ import org.springframework.core.io.support.ResourcePatternResolver;
 
 import java.io.File;
 import java.io.IOException;
+import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Stream;
 
 /**
@@ -160,6 +166,8 @@ public class SubagentConfiguration {
     /**
      * 构建带 skills 的 ClaudeSubagentType（模式B）
      * 子Agent在隔离上下文加载并执行技能，复用 skillsRoot 资源
+     * 内置 SmartWebFetchTool 被替换为自定义版本（关闭域名安全检查），
+     * 避免每次 webFetch 调用都向不可达的 claude.ai/api/web/domain_info 发起 HTTP 请求。
      */
     private SubagentType buildClaudeSubagentType() {
         // chatClientBuilder 是 @Lazy 代理，直接传递而非 clone() 可避免在 bean 创建期间触发 ChatClient.Builder 的实例化
@@ -174,7 +182,80 @@ public class SubagentConfiguration {
         } else {
             log.warn("skills 根目录不存在: {}，子Agent不带技能", properties.skillsRoot());
         }
-        return builder.build();
+        return replaceWebFetchTool(builder.build());
+    }
+
+    /**
+     * 替换 ClaudeSubagentExecutor 中的内置 SmartWebFetchTool，
+     * 关闭域名安全检查（domainSafetyCheck=false），避免每次 webFetch 调用
+     * 都向 https://claude.ai/api/web/domain_info 发起不可达的 HTTP 请求。
+     *
+     * 实现方式：反射读取 ClaudeSubagentExecutor 的私有 tools/chatClientBuilderMap/skillsDirectories 字段，
+     * 用 SmartWebFetchTool.builder(chatClient).domainSafetyCheck(false).build() 替换默认实例，
+     * 重建执行器。反射失败时降级为原始 SubagentType，不影响系统运行。
+     */
+    @SuppressWarnings("unchecked")
+    private SubagentType replaceWebFetchTool(SubagentType defaultType) {
+        try {
+            var defaultExecutor = defaultType.executor();
+            if (!(defaultExecutor instanceof ClaudeSubagentExecutor claudeExecutor)) {
+                log.warn("执行器非 ClaudeSubagentExecutor，跳过 webFetch 替换: {}",
+                        defaultExecutor.getClass().getName());
+                return defaultType;
+            }
+
+            // 1. 反射读取三个私有字段
+            Field toolsField = ClaudeSubagentExecutor.class.getDeclaredField("tools");
+            toolsField.setAccessible(true);
+            List<ToolCallback> defaultTools = (List<ToolCallback>) toolsField.get(claudeExecutor);
+
+            Field builderMapField = ClaudeSubagentExecutor.class.getDeclaredField("chatClientBuilderMap");
+            builderMapField.setAccessible(true);
+            Map<String, ChatClient.Builder> builderMap =
+                    (Map<String, ChatClient.Builder>) builderMapField.get(claudeExecutor);
+
+            Field skillsDirsField = ClaudeSubagentExecutor.class.getDeclaredField("skillsDirectories");
+            skillsDirsField.setAccessible(true);
+            List<String> skillsDirs = (List<String>) skillsDirsField.get(claudeExecutor);
+
+            // 2. 创建自定义 SmartWebFetchTool（关闭域名安全检查）
+            ChatClient webFetchClient = chatClientBuilder.build();
+            SmartWebFetchTool customWebFetch = SmartWebFetchTool.builder(webFetchClient)
+                    .domainSafetyCheck(false)
+                    .build();
+            ToolCallback[] customCallbacks = ToolCallbacks.from(customWebFetch);
+            String webFetchName = customCallbacks[0].getToolDefinition().name();
+
+            // 3. 替换工具列表：移除同名默认工具，加入自定义版本
+            List<ToolCallback> modifiedTools = new ArrayList<>();
+            boolean replaced = false;
+            for (ToolCallback tc : defaultTools) {
+                if (tc.getToolDefinition().name().equals(webFetchName)) {
+                    log.info("替换内置 webFetch 工具: name={} → 自定义(无域名安全检查)", webFetchName);
+                    replaced = true;
+                } else {
+                    modifiedTools.add(tc);
+                }
+            }
+            if (!replaced) {
+                log.warn("未找到名为 {} 的内置工具，可用工具: {}", webFetchName,
+                        defaultTools.stream()
+                                .map(tc -> tc.getToolDefinition().name())
+                                .toList());
+            }
+            modifiedTools.addAll(Arrays.asList(customCallbacks));
+
+            // 4. 重建执行器
+            ClaudeSubagentExecutor customExecutor = new ClaudeSubagentExecutor(
+                    builderMap, modifiedTools, skillsDirs);
+            log.info("SmartWebFetchTool 替换完成: 工具数 {}→{}，域名安全检查已关闭",
+                    defaultTools.size(), modifiedTools.size());
+
+            return new SubagentType(defaultType.resolver(), customExecutor);
+        } catch (Exception e) {
+            log.warn("SmartWebFetchTool 自定义替换失败，降级为默认行为: {}", e.getMessage());
+            return defaultType;
+        }
     }
 
     /**

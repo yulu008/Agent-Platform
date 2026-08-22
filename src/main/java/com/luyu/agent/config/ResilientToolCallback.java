@@ -3,10 +3,15 @@ package com.luyu.agent.config;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.model.ToolContext;
+import org.springframework.ai.model.tool.internal.ToolCallReactiveContextHolder;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.definition.ToolDefinition;
 import org.springframework.ai.tool.metadata.ToolMetadata;
 import org.springframework.lang.Nullable;
+import reactor.util.context.ContextView;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  * 容错 ToolCallback 包装器
@@ -24,6 +29,9 @@ public class ResilientToolCallback implements ToolCallback {
 
     /** 工具调用调试日志（独立文件 toolcall.log） */
     private static final Logger toolCallLog = LoggerFactory.getLogger("toolcall");
+
+    /** Reactor context 中存放工具事件 Sink 的 key */
+    private static final String TOOL_EVENT_SINK_KEY = "toolEventSink";
 
     private final ToolCallback delegate;
 
@@ -43,24 +51,32 @@ public class ResilientToolCallback implements ToolCallback {
 
     @Override
     public String call(String toolInput) {
-        toolCallLog.debug("工具[{}] 调用: input={}", getToolDefinition().name(), truncate(toolInput, 500));
+        String toolName = getToolDefinition().name();
+        toolCallLog.debug("工具[{}] 调用: input={}", toolName, truncate(toolInput, 500));
+        emitToolEvent("start", toolName, null);
         try {
             String result = delegate.call(toolInput);
-            toolCallLog.debug("工具[{}] 返回: result={}", getToolDefinition().name(), truncate(result, 500));
+            toolCallLog.debug("工具[{}] 返回: result={}", toolName, truncate(result, 500));
+            emitToolEvent("end", toolName, "ok");
             return result;
         } catch (Exception e) {
+            emitToolEvent("end", toolName, "error:" + e.getMessage());
             return handleToolException(e, toolInput);
         }
     }
 
     @Override
     public String call(String toolInput, @Nullable ToolContext toolContext) {
-        toolCallLog.debug("工具[{}] 调用: input={}", getToolDefinition().name(), truncate(toolInput, 500));
+        String toolName = getToolDefinition().name();
+        toolCallLog.debug("工具[{}] 调用: input={}", toolName, truncate(toolInput, 500));
+        emitToolEvent("start", toolName, null);
         try {
             String result = delegate.call(toolInput, toolContext);
-            toolCallLog.debug("工具[{}] 返回: result={}", getToolDefinition().name(), truncate(result, 500));
+            toolCallLog.debug("工具[{}] 返回: result={}", toolName, truncate(result, 500));
+            emitToolEvent("end", toolName, "ok");
             return result;
         } catch (Exception e) {
+            emitToolEvent("end", toolName, "error:" + e.getMessage());
             return handleToolException(e, toolInput);
         }
     }
@@ -109,5 +125,56 @@ public class ResilientToolCallback implements ToolCallback {
     private String truncate(String s, int maxLen) {
         if (s == null) return "null";
         return s.length() > maxLen ? s.substring(0, maxLen) + "..." : s;
+    }
+
+    /**
+     * 向 SSE 流注入工具调用事件。
+     * <p>
+     * 通过 ToolCallReactiveContextHolder（ThreadLocal 桥接）读取 Reactor context 中的
+     * Sinks.Many，在工具执行前后向 SSE 流注入事件。非流式路径中 Context 为空，
+     * getOrDefault 返回 null，事件发射被跳过。
+     * <p>
+     * 所有操作包裹 try-catch 静默处理，确保事件发射失败不影响工具执行。
+     */
+    @SuppressWarnings("unchecked")
+    private void emitToolEvent(String phase, String toolName, String status) {
+        try {
+            ContextView ctx = ToolCallReactiveContextHolder.getContext();
+            Object sinkObj = ctx.getOrDefault(TOOL_EVENT_SINK_KEY, null);
+            if (sinkObj == null) {
+                return;
+            }
+            reactor.core.publisher.Sinks.Many<Map<String, String>> sink =
+                    (reactor.core.publisher.Sinks.Many<Map<String, String>>) sinkObj;
+            Map<String, String> event = new LinkedHashMap<>();
+            event.put("tool", phase);
+            event.put("name", toolName);
+            event.put("icon", getToolIcon(toolName));
+            if (status != null) {
+                event.put("status", status);
+            }
+            sink.tryEmitNext(event);
+        } catch (Exception ignored) {
+            // 事件发射是辅助功能，绝不能影响工具执行
+        }
+    }
+
+    /**
+     * 根据工具名前缀映射图标
+     */
+    private String getToolIcon(String toolName) {
+        if (toolName == null) {
+            return "\u2699\uFE0F"; // ⚙️
+        }
+        if (toolName.startsWith("Memory")) {
+            return "\uD83D\uDCDD"; // 📝
+        }
+        if (toolName.equals("Skill")) {
+            return "\uD83D\uDD27"; // 🔧
+        }
+        if (toolName.equals("Task")) {
+            return "\uD83E\uDD16"; // 🤖
+        }
+        return "\u2699\uFE0F"; // ⚙️
     }
 }
