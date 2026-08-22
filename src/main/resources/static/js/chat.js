@@ -291,10 +291,13 @@ function getToolIcon(toolName) {
  * 在工具卡片容器中追加一张 pending 状态的卡片
  */
 function appendToolCard(container, toolName, icon) {
+    // 后端未提供 icon 时，根据工具名前缀映射
+    const fallback = getToolIcon(toolName);
+    const displayIcon = icon || fallback.icon;
     const card = document.createElement('div');
     card.className = 'tool-card tool-pending';
     card.innerHTML = `
-        <span class="tool-icon">${icon || '\u2699\uFE0F'}</span>
+        <span class="tool-icon">${displayIcon}</span>
         <span class="tool-name">${escapeHtml(toolName)}</span>
         <span class="tool-status-dot"></span>
         <span class="tool-status-text">\u6267\u884C\u4E2D...</span>
