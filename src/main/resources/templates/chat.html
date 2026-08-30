@@ -13,7 +13,7 @@
         <button class="header-btn drawer-toggle" id="drawerToggle" title="会话列表">☰</button>
         <h1>
             <span class="logo-dot"></span>
-           Agent Platform By Spring Ai 2.0
+           Agent Platform
         </h1>
         <button class="header-btn memory-toggle" id="memoryToggle" title="长期记忆">📝</button>
     </header>
@@ -56,6 +56,13 @@
 
     <!-- 输入区域 -->
     <footer class="chat-input-area">
+        <!-- 上下文进度条 -->
+        <div class="context-bar" id="contextBar">
+            <div class="context-bar-inner">
+                <div class="context-bar-fill" id="contextBarFill"></div>
+            </div>
+            <span class="context-bar-text" id="contextBarText"></span>
+        </div>
         <div class="model-bar">
             <label class="model-label" for="modelSelector">🤖 模型</label>
             <select class="model-selector" id="modelSelector" title="选择对话模型">
@@ -63,6 +70,11 @@
             </select>
         </div>
         <form class="chat-input-wrapper" id="chatForm">
+            <span class="skill-icon" id="skillIcon">🔧</span>
+            <div class="image-preview" id="imagePreview">
+                <img src="" alt="" id="imagePreviewImg">
+                <button type="button" class="remove-image-btn" id="removeImageBtn">×</button>
+            </div>
             <textarea
                 class="chat-input"
                 id="chatInput"

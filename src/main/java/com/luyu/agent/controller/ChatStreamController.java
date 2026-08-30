@@ -1,23 +1,30 @@
 package com.luyu.agent.controller;
 
 import com.luyu.agent.config.ChatClientRegistry;
+import com.luyu.agent.service.ContextInfo;
+import com.luyu.agent.service.ContextInfoService;
+import com.luyu.agent.service.ImageUploadService;
 import com.luyu.agent.service.SessionTitleGenerator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.content.Media;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.ToolResponseMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.session.SessionEvent;
 import org.springframework.ai.session.SessionService;
 import org.springframework.ai.session.advisor.SessionMemoryAdvisor;
+import org.springframework.core.io.FileSystemResource;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
+import org.springframework.util.MimeTypeUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 
+import java.io.IOException;
 import java.util.NoSuchElementException;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -25,7 +32,10 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Sinks;
 
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 聊天流式端点 + 历史查询端点
@@ -46,13 +56,22 @@ public class ChatStreamController {
     private final ChatClientRegistry chatClientRegistry;
     private final SessionService sessionService;
     private final SessionTitleGenerator sessionTitleGenerator;
+    private final ContextInfoService contextInfoService;
+    private final ImageUploadService imageUploadService;
+
+    /** 已触发过标题生成的 sessionId 集合，避免重复触发 */
+    private final Set<String> titleTriggeredSessions = ConcurrentHashMap.newKeySet();
 
     public ChatStreamController(ChatClientRegistry chatClientRegistry,
                                 SessionService sessionService,
-                                SessionTitleGenerator sessionTitleGenerator) {
+                                SessionTitleGenerator sessionTitleGenerator,
+                                ContextInfoService contextInfoService,
+                                ImageUploadService imageUploadService) {
         this.chatClientRegistry = chatClientRegistry;
         this.sessionService = sessionService;
         this.sessionTitleGenerator = sessionTitleGenerator;
+        this.contextInfoService = contextInfoService;
+        this.imageUploadService = imageUploadService;
     }
 
     /**
@@ -72,6 +91,7 @@ public class ChatStreamController {
                                                       @RequestParam(value = "model", required = false) String model) {
         String message = request.get("message");
         String sessionId = request.get("sessionId");
+        String imageBase64 = request.get("imageBase64");
 
         // 请求级模型路由：缺省取 default，未知模型返回 400 提示
         final ChatClient chatClient;
@@ -99,62 +119,132 @@ public class ChatStreamController {
         // 在工具调用前后向 SSE 流注入 tool_start / tool_end 事件
         Sinks.Many<Map<String, String>> toolEventSink = Sinks.many().unicast().onBackpressureBuffer();
 
+        // 获取当前消息索引（用于历史回显时匹配图片）
+        int messageIndex = sessionService.getEvents(sessionId).size();
+
+        // 如果有图片，保存到本地并构造多模态 UserMessage
+        String imagePath = null;
+        if (imageBase64 != null && !imageBase64.isBlank()) {
+            try {
+                imagePath = imageUploadService.saveBase64Image(imageBase64, sessionId, messageIndex);
+            } catch (Exception e) {
+                log.warn("图片保存失败，继续纯文本对话: sessionId={}, error={}", sessionId, e.getMessage());
+            }
+        }
+
+        final String savedImagePath = imagePath;
+
         // 文本 token 流：通过 advisor context 传入 sessionId，
         // .contextWrite 将 Sink 注入 Reactor context 供 ToolCallingAdvisor 读取
-        Flux<ServerSentEvent<Object>> contentFlux = chatClient.prompt()
-                .user(message)
-                .advisors(a -> a.param(SessionMemoryAdvisor.SESSION_ID_CONTEXT_KEY, sessionId))
-                .stream()
-                .content()
-                .map(token -> {
-                    fullResponse.append(token);
-                    return ServerSentEvent.<Object>builder()
-                            .data(Map.of("content", token))
-                            .build();
-                })
-                .doOnCancel(() -> {
-                    // 客户端主动中止：持久化已拼接的部分回复
-                    if (fullResponse.length() > 0) {
-                        sessionService.appendMessage(sessionId,
-                                new AssistantMessage(fullResponse.toString()));
-                        log.info("流式中止，已保存部分回复: sessionId={}, length={}",
-                                sessionId, fullResponse.length());
-                    }
-                    triggerTitleGenerationIfFirstRound(sessionId);
-                })
-                .doOnComplete(() -> {
-                    // 首轮对话完成后触发 AI 摘要标题生成
-                    triggerTitleGenerationIfFirstRound(sessionId);
-                })
-                .onErrorResume(error -> {
-                    // 流式分片合并异常（ChunkMerger）时，已发出的内容仍有价值
-                    boolean isChunkMergerError = isStreamAggregationError(error);
-                    if (fullResponse.length() > 0) {
-                        // 已有流式内容：保存部分回复，不向前端报错
-                        sessionService.appendMessage(sessionId,
-                                new AssistantMessage(fullResponse.toString()));
-                        log.warn("流式异常但已保存部分回复: sessionId={}, length={}, 原因: {}",
-                                sessionId, fullResponse.length(),
-                                isChunkMergerError ? "ChunkMerger分片合并失败" : error.getClass().getSimpleName());
+        Flux<ServerSentEvent<Object>> contentFlux;
+        if (savedImagePath != null) {
+            // 多模态消息：文本 + 图片
+            final org.springframework.util.MimeType mimeType = imageUploadService.resolveMimeType(savedImagePath);
+            final java.io.File imageFile = new java.io.File(savedImagePath);
+            UserMessage userMessage = UserMessage.builder()
+                    .text(message)
+                    .media(new Media(mimeType, new FileSystemResource(imageFile)))
+                    .build();
+            contentFlux = chatClient.prompt()
+                    .messages(userMessage)
+                    .advisors(a -> a.param(SessionMemoryAdvisor.SESSION_ID_CONTEXT_KEY, sessionId))
+                    .stream()
+                    .content()
+                    .map(token -> {
+                        fullResponse.append(token);
+                        return ServerSentEvent.<Object>builder()
+                                .data(Map.of("content", token))
+                                .build();
+                    })
+                    .doOnCancel(() -> {
+                        if (fullResponse.length() > 0) {
+                            sessionService.appendMessage(sessionId,
+                                    new AssistantMessage(fullResponse.toString()));
+                            log.info("流式中止，已保存部分回复: sessionId={}, length={}",
+                                    sessionId, fullResponse.length());
+                        }
                         triggerTitleGenerationIfFirstRound(sessionId);
-                        return Flux.empty();
-                    }
-                    // 无内容输出：向前端发送友好错误提示
-                    String userMsg = extractFriendlyError(error);
-                    if (isChunkMergerError) {
-                        log.warn("模型分片合并失败（无内容输出）: sessionId={}, 原因: {}", sessionId, userMsg);
-                    } else {
-                        log.error("SSE 流式响应异常: sessionId={}, 原因: {}", sessionId, userMsg, error);
-                    }
-                    triggerTitleGenerationIfFirstRound(sessionId);
-                    return Flux.just(
-                            ServerSentEvent.<Object>builder()
-                                    .data(Map.of("error", userMsg))
-                                    .build()
-                    );
-                })
-                .doFinally(signal -> toolEventSink.tryEmitComplete())
-                .contextWrite(ctx -> ctx.put(TOOL_EVENT_SINK_KEY, toolEventSink));
+                    })
+                    .doOnComplete(() -> {
+                        triggerTitleGenerationIfFirstRound(sessionId);
+                    })
+                    .onErrorResume(error -> {
+                        boolean isChunkMergerError = isStreamAggregationError(error);
+                        if (fullResponse.length() > 0) {
+                            sessionService.appendMessage(sessionId,
+                                    new AssistantMessage(fullResponse.toString()));
+                            log.warn("流式异常但已保存部分回复: sessionId={}, length={}, 原因: {}",
+                                    sessionId, fullResponse.length(),
+                                    isChunkMergerError ? "ChunkMerger分片合并失败" : error.getClass().getSimpleName());
+                            triggerTitleGenerationIfFirstRound(sessionId);
+                            return Flux.empty();
+                        }
+                        String userMsg = extractFriendlyError(error);
+                        if (isChunkMergerError) {
+                            log.warn("模型分片合并失败（无内容输出）: sessionId={}, 原因: {}", sessionId, userMsg);
+                        } else {
+                            log.error("SSE 流式响应异常: sessionId={}, 原因: {}", sessionId, userMsg, error);
+                        }
+                        triggerTitleGenerationIfFirstRound(sessionId);
+                        return Flux.just(
+                                ServerSentEvent.<Object>builder()
+                                        .data(Map.of("error", userMsg))
+                                        .build()
+                        );
+                    })
+                    .doFinally(signal -> toolEventSink.tryEmitComplete())
+                    .contextWrite(ctx -> ctx.put(TOOL_EVENT_SINK_KEY, toolEventSink));
+        } else {
+            contentFlux = chatClient.prompt()
+                    .user(message)
+                    .advisors(a -> a.param(SessionMemoryAdvisor.SESSION_ID_CONTEXT_KEY, sessionId))
+                    .stream()
+                    .content()
+                    .map(token -> {
+                        fullResponse.append(token);
+                        return ServerSentEvent.<Object>builder()
+                                .data(Map.of("content", token))
+                                .build();
+                    })
+                    .doOnCancel(() -> {
+                        if (fullResponse.length() > 0) {
+                            sessionService.appendMessage(sessionId,
+                                    new AssistantMessage(fullResponse.toString()));
+                            log.info("流式中止，已保存部分回复: sessionId={}, length={}",
+                                    sessionId, fullResponse.length());
+                        }
+                        triggerTitleGenerationIfFirstRound(sessionId);
+                    })
+                    .doOnComplete(() -> {
+                        triggerTitleGenerationIfFirstRound(sessionId);
+                    })
+                    .onErrorResume(error -> {
+                        boolean isChunkMergerError = isStreamAggregationError(error);
+                        if (fullResponse.length() > 0) {
+                            sessionService.appendMessage(sessionId,
+                                    new AssistantMessage(fullResponse.toString()));
+                            log.warn("流式异常但已保存部分回复: sessionId={}, length={}, 原因: {}",
+                                    sessionId, fullResponse.length(),
+                                    isChunkMergerError ? "ChunkMerger分片合并失败" : error.getClass().getSimpleName());
+                            triggerTitleGenerationIfFirstRound(sessionId);
+                            return Flux.empty();
+                        }
+                        String userMsg = extractFriendlyError(error);
+                        if (isChunkMergerError) {
+                            log.warn("模型分片合并失败（无内容输出）: sessionId={}, 原因: {}", sessionId, userMsg);
+                        } else {
+                            log.error("SSE 流式响应异常: sessionId={}, 原因: {}", sessionId, userMsg, error);
+                        }
+                        triggerTitleGenerationIfFirstRound(sessionId);
+                        return Flux.just(
+                                ServerSentEvent.<Object>builder()
+                                        .data(Map.of("error", userMsg))
+                                        .build()
+                        );
+                    })
+                    .doFinally(signal -> toolEventSink.tryEmitComplete())
+                    .contextWrite(ctx -> ctx.put(TOOL_EVENT_SINK_KEY, toolEventSink));
+        }
 
         // 工具事件流：将 Sink 中的 Map 事件转为 SSE
         Flux<ServerSentEvent<Object>> toolEventFlux = toolEventSink.asFlux()
@@ -173,26 +263,85 @@ public class ChatStreamController {
      * 历史消息查询端点
      *
      * 请求: GET /chat/history?sessionId=xxx
-     * 响应: [{"role":"user","content":"..."},...]
+     * 响应: [{"role":"user","content":"...","synthetic":false},...]
      *
-     * 从 SessionService 获取事件列表，转换为前端期望的格式
+     * 合成事件（压缩摘要）以 synthetic=true 标记返回，不再过滤
      */
     @GetMapping("/chat/history")
-    public List<Map<String, String>> getHistory(@RequestParam String sessionId) {
+    public List<Map<String, Object>> getHistory(@RequestParam String sessionId) {
         if (sessionId == null || sessionId.trim().isEmpty()) {
             throw new IllegalArgumentException("sessionId 不能为空");
         }
 
         List<SessionEvent> events = sessionService.getEvents(sessionId);
-        return events.stream()
-                .filter(event -> !event.isSynthetic())
-                .map(event -> {
+        return java.util.stream.IntStream.range(0, events.size())
+                .mapToObj(i -> {
+                    SessionEvent event = events.get(i);
                     Message msg = event.getMessage();
-                    String role = (msg instanceof UserMessage) ? "user" : "assistant";
+                    Map<String, Object> entry = new LinkedHashMap<>();
                     String content = msg.getText();
-                    return Map.of("role", role, "content", content != null ? content : "");
+                    entry.put("content", content != null ? content : "");
+
+                    if (event.isSynthetic()) {
+                        entry.put("role", "synthetic");
+                        entry.put("synthetic", true);
+                    } else if (msg instanceof UserMessage) {
+                        entry.put("role", "user");
+                        // 尝试加载该消息对应的图片
+                        String imageBase64 = imageUploadService.readImageAsBase64(sessionId, i);
+                        if (imageBase64 != null) {
+                            entry.put("imageBase64", imageBase64);
+                        }
+                    } else if (msg instanceof AssistantMessage am && am.hasToolCalls()) {
+                        // 工具调用事件：标记 type=tool_call，携带工具名+图标+描述
+                        entry.put("role", "assistant");
+                        entry.put("type", "tool_call");
+                        entry.put("tools", am.getToolCalls().stream()
+                                .map(tc -> {
+                                    Map<String, String> tool = new LinkedHashMap<>();
+                                    String name = tc.name() != null ? tc.name() : "";
+                                    tool.put("name", name);
+                                    tool.put("id", tc.id() != null ? tc.id() : "");
+                                    tool.put("icon", resolveToolIcon(name));
+                                    String desc = extractToolDescription(tc);
+                                    if (desc != null && !desc.isBlank()) {
+                                        tool.put("description", desc);
+                                    }
+                                    return tool;
+                                })
+                                .toList());
+                    } else if (msg instanceof ToolResponseMessage trm) {
+                        // 工具响应事件：标记 type=tool_response，前端跳过
+                        entry.put("role", "assistant");
+                        entry.put("type", "tool_response");
+                        entry.put("tools", trm.getResponses().stream()
+                                .map(r -> {
+                                    Map<String, String> tool = new LinkedHashMap<>();
+                                    tool.put("name", r.name() != null ? r.name() : "");
+                                    tool.put("id", r.id() != null ? r.id() : "");
+                                    return tool;
+                                })
+                                .toList());
+                    } else {
+                        entry.put("role", "assistant");
+                    }
+                    return entry;
                 })
                 .toList();
+    }
+
+    /**
+     * 上下文计量信息端点
+     *
+     * 请求: GET /chat/context-info?sessionId=xxx
+     * 响应: {totalTokens, maxTokens, usagePercent, messageTokens, toolTokens, compactionCount}
+     */
+    @GetMapping("/chat/context-info")
+    public ContextInfo getContextInfo(@RequestParam String sessionId) {
+        if (sessionId == null || sessionId.trim().isEmpty()) {
+            throw new IllegalArgumentException("sessionId 不能为空");
+        }
+        return contextInfoService.getContextInfo(sessionId);
     }
 
     /**
@@ -316,6 +465,11 @@ public class ChatStreamController {
      */
     private void triggerTitleGenerationIfFirstRound(String sessionId) {
         try {
+            // 去重：同一 session 只触发一次
+            if (!titleTriggeredSessions.add(sessionId)) {
+                return;
+            }
+
             List<SessionEvent> events = sessionService.getEvents(sessionId);
             List<SessionEvent> realEvents = events.stream()
                     .filter(e -> !e.isSynthetic())
@@ -348,6 +502,41 @@ public class ChatStreamController {
             sessionTitleGenerator.generateTitleAsync(sessionId, userMsg, assistantMsg);
         } catch (Exception e) {
             log.warn("触发标题生成失败: sessionId={}", sessionId, e);
+            titleTriggeredSessions.remove(sessionId);
         }
+    }
+
+    // ===== 工具卡片历史恢复辅助方法 =====
+
+    /**
+     * 根据工具名映射图标（与 ResilientToolCallback.getToolIcon 保持一致）
+     */
+    private String resolveToolIcon(String toolName) {
+        if (toolName == null) return "\u2699\uFE0F";
+        if (toolName.startsWith("Memory")) return "\uD83D\uDCDD";
+        if (toolName.equals("Skill")) return "\uD83D\uDD27";
+        if (toolName.equals("Task")) return "\uD83E\uDD16";
+        return "\u2699\uFE0F";
+    }
+
+    /**
+     * 从工具调用参数中提取简短描述（与 ResilientToolCallback.extractDescription 逻辑一致）
+     * <p>
+     * 依次尝试 JSON 字段: description, task, query, name, skill
+     */
+    private String extractToolDescription(AssistantMessage.ToolCall tc) {
+        String args = tc.arguments();
+        if (args == null || args.length() < 3) return null;
+        String[] fields = {"description", "task", "query", "name", "skill"};
+        for (String field : fields) {
+            String pattern = "\"" + field + "\"\\s*:\\s*\"([^\"]+)\"";
+            java.util.regex.Pattern r = java.util.regex.Pattern.compile(pattern, java.util.regex.Pattern.CASE_INSENSITIVE);
+            java.util.regex.Matcher m = r.matcher(args);
+            if (m.find()) {
+                String desc = m.group(1);
+                return desc.length() > 80 ? desc.substring(0, 80) + "..." : desc;
+            }
+        }
+        return null;
     }
 }

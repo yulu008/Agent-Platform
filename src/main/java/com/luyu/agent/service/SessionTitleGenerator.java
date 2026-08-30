@@ -79,7 +79,8 @@ public class SessionTitleGenerator {
             } else {
                 fallbackTitle(sessionId, userMsg);
             }
-        } catch (Exception e) {
+        } catch (Throwable e) {
+            // 捕获所有异常（包括 @Async 线程池拒绝等），避免静默失败
             log.warn("AI 摘要标题生成失败，使用 fallback: sessionId={}, error={}", sessionId, e.getMessage());
             fallbackTitle(sessionId, userMsg);
         }

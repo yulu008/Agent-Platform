@@ -51,6 +51,12 @@ const chatInput = document.getElementById('chatInput');
 const sendBtn = document.getElementById('sendBtn');
 const chatForm = document.getElementById('chatForm');
 const modelSelector = document.getElementById('modelSelector');
+const imagePreview = document.getElementById('imagePreview');
+const imagePreviewImg = document.getElementById('imagePreviewImg');
+const removeImageBtn = document.getElementById('removeImageBtn');
+
+// 当前待发送的图片（Base64 DataURL）
+let currentImageBase64 = null;
 const drawerToggle = document.getElementById('drawerToggle');
 const drawerClose = document.getElementById('drawerClose');
 const sessionDrawer = document.getElementById('sessionDrawer');
@@ -156,6 +162,26 @@ function selectPaletteItem(item) {
     closePalette();
     chatInput.focus();
     autoResize();
+    checkSkillMatch();
+}
+
+/**
+ * 检测输入框中的 skill 名并切换激活态样式
+ */
+function checkSkillMatch() {
+    const val = chatInput.value;
+    if (!val.startsWith('/')) {
+        chatForm.classList.remove('skill-active');
+        return;
+    }
+    const skillName = val.slice(1).split(' ')[0];
+    if (!skillName) {
+        chatForm.classList.remove('skill-active');
+        return;
+    }
+    const data = capabilitiesCache || { skills: [] };
+    const matched = (data.skills || []).some(s => s.name.toLowerCase() === skillName.toLowerCase());
+    chatForm.classList.toggle('skill-active', matched);
 }
 
 function paletteKeyDown(e) {
@@ -190,13 +216,34 @@ document.addEventListener('click', (e) => {
 });
 
 // ===== 追加消息气泡（Task 6.5 核心）=====
-function appendMessage(role, content) {
+function appendMessage(role, content, options = {}) {
     // 如果存在欢迎信息，移除它
     const welcome = messagesContainer.querySelector('.welcome-message');
     if (welcome) welcome.remove();
 
     // 如果存在 typing indicator，移除它
     removeTypingIndicator();
+
+    // 压缩摘要：渲染为分隔线
+    if (role === 'synthetic' || options.synthetic) {
+        const divider = document.createElement('div');
+        divider.className = 'compaction-divider';
+        const tokenCount = options.tokens || estimateTokensFrontend(content);
+        divider.innerHTML = `
+            <span class="compaction-divider-line"></span>
+            <span class="compaction-divider-label" title="点击展开摘要">
+                📝 上下文已压缩（~${tokenCount} tokens）
+            </span>
+            <span class="compaction-divider-line"></span>
+            <div class="compaction-summary hidden">${renderMarkdown(content)}</div>
+        `;
+        divider.querySelector('.compaction-divider-label').addEventListener('click', () => {
+            divider.querySelector('.compaction-summary').classList.toggle('hidden');
+        });
+        messagesContainer.appendChild(divider);
+        scrollToBottom();
+        return divider;
+    }
 
     const messageEl = document.createElement('div');
     messageEl.className = `message ${role}`;
@@ -206,10 +253,33 @@ function appendMessage(role, content) {
     if (role === 'assistant') {
         bubbleEl.innerHTML = renderMarkdown(content);
     } else {
-        bubbleEl.textContent = content;
+        // 技能调用指令：以 / 开头，技能名加特殊样式，描述保持默认
+        const trimmed = content.trim();
+        if (trimmed.startsWith('/')) {
+            const match = trimmed.match(/^\/(\S+)(?:\s+([\s\S]*))?$/);
+            if (match) {
+                const skillName = match[1];
+                const desc = match[2] || '';
+                bubbleEl.innerHTML = `<span class="skill-name">/${escapeHtml(skillName)}</span>${desc ? ' ' + escapeHtml(desc) : ''}`;
+            } else {
+                bubbleEl.textContent = content;
+            }
+        } else {
+            bubbleEl.textContent = content;
+        }
+    }
+
+    // 如果有图片，追加到气泡中
+    if (options.imageBase64) {
+        const img = document.createElement('img');
+        img.src = options.imageBase64;
+        img.className = 'message-image';
+        img.alt = '图片';
+        bubbleEl.appendChild(img);
     }
 
     messageEl.appendChild(bubbleEl);
+
     messagesContainer.appendChild(messageEl);
     scrollToBottom();
     return messageEl;
@@ -235,6 +305,43 @@ function showTypingIndicator() {
 function removeTypingIndicator() {
     const existing = document.getElementById('typingIndicator');
     if (existing) existing.remove();
+}
+
+// ===== 思考脉冲指示器 =====
+let thinkingTimer = null;
+let thinkingPulseEl = null;
+
+function scheduleThinkingPulse() {
+    clearTimeout(thinkingTimer);
+    thinkingTimer = setTimeout(() => {
+        if (!thinkingPulseEl) {
+            ensureAiMessage();
+            thinkingPulseEl = document.createElement('div');
+            thinkingPulseEl.className = 'thinking-pulse';
+            thinkingPulseEl.innerHTML = `<span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="thinking-label">思考中</span>`;
+            toolCardsContainer.appendChild(thinkingPulseEl);
+            scrollToBottom();
+        }
+    }, 1500);
+}
+
+function removeThinkingPulse() {
+    clearTimeout(thinkingTimer);
+    thinkingTimer = null;
+    if (thinkingPulseEl) {
+        thinkingPulseEl.remove();
+        thinkingPulseEl = null;
+    }
+}
+
+function ensureAiMessage() {
+    if (!aiBubbleEl) {
+        aiBubbleEl = appendMessage('assistant', '');
+        toolCardsContainer = document.createElement('div');
+        toolCardsContainer.className = 'tool-cards-container';
+        aiBubbleEl.appendChild(toolCardsContainer);
+    }
+    return aiBubbleEl;
 }
 
 // ===== 自动滚动 =====
@@ -275,6 +382,8 @@ async function loadModels() {
 
 // 当前轮次待完成的工具卡片：[{name, el}]
 let pendingToolCards = [];
+let toolCardsContainer = null;
+let aiBubbleEl = null;
 
 /**
  * 根据工具名前缀映射图标和提示文案
@@ -290,15 +399,17 @@ function getToolIcon(toolName) {
 /**
  * 在工具卡片容器中追加一张 pending 状态的卡片
  */
-function appendToolCard(container, toolName, icon) {
+function appendToolCard(container, toolName, icon, description) {
     // 后端未提供 icon 时，根据工具名前缀映射
     const fallback = getToolIcon(toolName);
     const displayIcon = icon || fallback.icon;
     const card = document.createElement('div');
     card.className = 'tool-card tool-pending';
+    const descHtml = description ? `<span class="tool-description">${escapeHtml(description)}</span>` : '';
     card.innerHTML = `
         <span class="tool-icon">${displayIcon}</span>
         <span class="tool-name">${escapeHtml(toolName)}</span>
+        ${descHtml}
         <span class="tool-status-dot"></span>
         <span class="tool-status-text">\u6267\u884C\u4E2D...</span>
     `;
@@ -343,12 +454,60 @@ function completeAllPendingToolCards() {
     pendingToolCards = [];
 }
 
+/**
+ * 处理单条 SSE 数据行，解析 JSON 并更新 UI。
+ * 返回更新后的 fullResponse。
+ */
+function processSseLine(line, currentFullResponse) {
+    if (!line.startsWith('data:')) return currentFullResponse;
+
+    const data = line.slice(5).trim();
+    if (data === '[DONE]') return currentFullResponse;
+
+    try {
+        const parsed = JSON.parse(data);
+        if (parsed.error) {
+            showError(parsed.error);
+            return currentFullResponse;
+        }
+        // 工具调用事件
+        if (parsed.tool) {
+            if (parsed.tool === 'start') {
+                removeThinkingPulse();
+                ensureAiMessage();
+                appendToolCard(toolCardsContainer, parsed.name, parsed.icon, parsed.description);
+            } else if (parsed.tool === 'end') {
+                completeToolCard(parsed.name, parsed.status);
+                scheduleThinkingPulse();
+            }
+            return currentFullResponse;
+        }
+        const token = parsed.content || parsed.delta || '';
+        if (token) {
+            removeThinkingPulse();
+            ensureAiMessage();
+            currentFullResponse += token;
+            // 更新 AI 气泡内容（rAF 批处理 Markdown 渲染）
+            scheduleRafRender(aiBubbleEl.querySelector('.message-bubble'), currentFullResponse);
+        }
+    } catch (e) {
+        // 非 JSON 格式的 data，直接作为文本处理
+        if (data && data !== '[DONE]') {
+            removeThinkingPulse();
+            ensureAiMessage();
+            currentFullResponse += data;
+            scheduleRafRender(aiBubbleEl.querySelector('.message-bubble'), currentFullResponse);
+        }
+    }
+    return currentFullResponse;
+}
+
 // ===== 发送消息 - SSE 流式 =====
 async function sendMessage(message) {
     if (!message.trim()) return;
 
-    // 显示用户消息
-    appendMessage('user', message);
+    // 显示用户消息（带上图片预览）
+    appendMessage('user', message, { imageBase64: currentImageBase64 });
 
     // 进入流式状态（按钮变为停止）
     enterStreamingState();
@@ -357,7 +516,7 @@ async function sendMessage(message) {
     showTypingIndicator();
 
     // 创建 AI 消息气泡（稍后填充内容）
-    let aiBubbleEl = null;
+    aiBubbleEl = null;
     let fullResponse = '';
 
     try {
@@ -370,7 +529,8 @@ async function sendMessage(message) {
             },
             body: JSON.stringify({
                 message: message,
-                sessionId: currentSessionId
+                sessionId: currentSessionId,
+                imageBase64: currentImageBase64
             }),
             signal: abortController.signal
         });
@@ -379,15 +539,9 @@ async function sendMessage(message) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
 
-        // 移除加载动画，创建空的 AI 气泡
+        // 移除加载动画（AI 气泡延迟到首个内容到达时创建，避免空气泡）
         removeTypingIndicator();
-        aiBubbleEl = appendMessage('assistant', '');
-
-        // 工具卡片容器（与 message-bubble 同级，不受 Markdown 重渲染影响）
-        const toolCardsContainer = document.createElement('div');
-        toolCardsContainer.className = 'tool-cards-container';
-        aiBubbleEl.appendChild(toolCardsContainer);
-        pendingToolCards = [];
+        scheduleThinkingPulse();
 
         // 使用 ReadableStream 读取 SSE
         const reader = response.body.getReader();
@@ -396,54 +550,33 @@ async function sendMessage(message) {
 
         while (true) {
             const { done, value } = await reader.read();
-            if (done) break;
+            if (done) {
+                // 处理 buffer 中剩余的数据（可能没有以 \n 结尾）
+                if (buffer) {
+                    fullResponse = processSseLine(buffer, fullResponse);
+                }
+                break;
+            }
 
             buffer += decoder.decode(value, { stream: true });
             const lines = buffer.split('\n');
             buffer = lines.pop(); // 保留不完整的行
 
             for (const line of lines) {
-                if (line.startsWith('data:')) {
-                    const data = line.slice(5).trim();
-                    if (data === '[DONE]') continue;
-
-                    try {
-                        const parsed = JSON.parse(data);
-                        if (parsed.error) {
-                            showError(parsed.error);
-                            continue;
-                        }
-                        // 工具调用事件
-                        if (parsed.tool) {
-                            if (parsed.tool === 'start') {
-                                appendToolCard(toolCardsContainer, parsed.name, parsed.icon);
-                            } else if (parsed.tool === 'end') {
-                                completeToolCard(parsed.name, parsed.status);
-                            }
-                            continue;
-                        }
-                        const token = parsed.content || parsed.delta || '';
-                        if (token) {
-                            fullResponse += token;
-                            // 更新 AI 气泡内容（rAF 批处理 Markdown 渲染）
-                            scheduleRafRender(aiBubbleEl.querySelector('.message-bubble'), fullResponse);
-                        }
-                    } catch (e) {
-                        // 非 JSON 格式的 data，直接作为文本处理
-                        if (data && data !== '[DONE]') {
-                            fullResponse += data;
-                            scheduleRafRender(aiBubbleEl.querySelector('.message-bubble'), fullResponse);
-                        }
-                    }
-                }
+                fullResponse = processSseLine(line, fullResponse);
             }
         }
 
         // 流式结束后做一次最终完整渲染，确保未闭合的 Markdown 结构正确渲染
+        removeThinkingPulse();
         if (fullResponse) {
+            ensureAiMessage();
             aiBubbleEl.querySelector('.message-bubble').innerHTML = renderMarkdown(fullResponse);
+        } else if (aiBubbleEl) {
+            // 仅有工具调用无文本内容时，标记为执行完成
+            aiBubbleEl.querySelector('.message-bubble').innerHTML = renderMarkdown('(执行完成)');
         } else {
-            aiBubbleEl.querySelector('.message-bubble').textContent = '(空回复)';
+            appendMessage('assistant', '(空回复)');
         }
 
     } catch (error) {
@@ -470,9 +603,14 @@ async function sendMessage(message) {
             showError(`请求失败: ${error.message}`);
         }
     } finally {
+        removeThinkingPulse();
         completeAllPendingToolCards();
         exitStreamingState();
         chatInput.focus();
+        // 消息交互后刷新上下文信息
+        refreshContextInfo();
+        // 发送完成后清除图片预览
+        hideImagePreview();
     }
 }
 
@@ -488,9 +626,45 @@ async function loadHistory() {
         const messages = await response.json();
         if (messages && messages.length > 0) {
             messages.forEach(msg => {
-                appendMessage(msg.role, msg.content);
+                // 工具调用事件：渲染为工具卡片（完成态，与流式卡片样式一致）
+                if (msg.type === 'tool_call' && msg.tools) {
+                    const bubble = appendMessage('assistant', '');
+                    const container = document.createElement('div');
+                    container.className = 'tool-cards-container';
+                    msg.tools.forEach(tool => {
+                        // 优先用后端返回的图标，回退到前端映射
+                        const fallback = getToolIcon(tool.name);
+                        const icon = tool.icon || fallback.icon;
+                        const descHtml = tool.description
+                            ? `<span class="tool-description">${escapeHtml(tool.description)}</span>`
+                            : '';
+                        const card = document.createElement('div');
+                        card.className = 'tool-card tool-done';
+                        card.innerHTML = `
+                            <span class="tool-icon">${icon}</span>
+                            <span class="tool-name">${escapeHtml(tool.name || '')}</span>
+                            ${descHtml}
+                            <span class="tool-status-dot"></span>
+                            <span class="tool-status-text">\u5B8C\u6210</span>
+                        `;
+                        container.appendChild(card);
+                    });
+                    bubble.appendChild(container);
+                    return;
+                }
+                // 工具响应事件：内部数据，跳过渲染
+                if (msg.type === 'tool_response') {
+                    return;
+                }
+                // 普通消息（user / assistant / synthetic）
+                appendMessage(msg.role, msg.content, {
+                    synthetic: msg.synthetic === true,
+                    imageBase64: msg.imageBase64
+                });
             });
         }
+        // 历史加载后刷新上下文信息
+        refreshContextInfo();
     } catch (error) {
         console.warn('历史消息加载异常:', error);
     }
@@ -504,6 +678,7 @@ chatForm.addEventListener('submit', (e) => {
         sendMessage(message);
         chatInput.value = '';
         autoResize();
+        checkSkillMatch();
     }
 });
 
@@ -519,6 +694,7 @@ chatInput.addEventListener('keydown', (e) => {
             sendMessage(message);
             chatInput.value = '';
             autoResize();
+            checkSkillMatch();
         }
     }
 });
@@ -531,6 +707,8 @@ function autoResize() {
 
 chatInput.addEventListener('input', () => {
     autoResize();
+    // 实时检测 skill 名并切换激活态
+    checkSkillMatch();
     // "/" 命令面板触发检测
     const val = chatInput.value;
     if (val.startsWith('/') && !val.includes(' ') && !abortController) {
@@ -544,6 +722,70 @@ chatInput.addEventListener('input', () => {
         closePalette();
     }
 });
+
+// ===== 图片粘贴与预览 =====
+
+/**
+ * 处理粘贴事件，提取图片文件
+ */
+function handlePaste(e) {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    for (const item of items) {
+        if (item.type.startsWith('image/')) {
+            const file = item.getAsFile();
+            if (file) {
+                e.preventDefault();
+                handleImageFile(file);
+                break;
+            }
+        }
+    }
+}
+
+/**
+ * 处理图片文件：大小检查、读取预览
+ */
+function handleImageFile(file) {
+    const MAX_SIZE = 2 * 1024 * 1024; // 2MB
+    if (file.size > MAX_SIZE) {
+        showError('图片大小不能超过 2MB');
+        return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+        currentImageBase64 = ev.target.result;
+        showImagePreview(currentImageBase64);
+    };
+    reader.onerror = () => {
+        showError('图片读取失败');
+    };
+    reader.readAsDataURL(file);
+}
+
+/**
+ * 显示图片预览
+ */
+function showImagePreview(base64) {
+    if (!imagePreviewImg || !imagePreview) return;
+    imagePreviewImg.src = base64;
+    imagePreview.classList.add('visible');
+}
+
+/**
+ * 隐藏图片预览
+ */
+function hideImagePreview() {
+    if (!imagePreviewImg || !imagePreview) return;
+    imagePreviewImg.src = '';
+    imagePreview.classList.remove('visible');
+    currentImageBase64 = null;
+}
+
+chatInput.addEventListener('paste', handlePaste);
+removeImageBtn?.addEventListener('click', hideImagePreview);
 
 // ===== 抽屉交互 =====
 function openDrawer() {
@@ -903,6 +1145,91 @@ memoryManageBtn.addEventListener('click', () => {
 });
 
 // ===== 工具函数 =====
+
+// 前端 token 估算（与后端 TokenEstimator 保持一致）
+function estimateTokensFrontend(text) {
+    if (!text) return 0;
+    let tokens = 0;
+    let inEnglishWord = false;
+    let englishWordChars = 0;
+
+    for (let i = 0; i < text.length; i++) {
+        const c = text.charCodeAt(i);
+        // CJK 统一汉字基本区 (4E00-9FFF) + 扩展 A (3400-4DBF)
+        if ((c >= 0x4E00 && c <= 0x9FFF) || (c >= 0x3400 && c <= 0x4DBF)) {
+            if (inEnglishWord) {
+                tokens += Math.max(1, englishWordChars * 0.75);
+                inEnglishWord = false;
+                englishWordChars = 0;
+            }
+            tokens += 1.5;
+        } else if ((c >= 65 && c <= 90) || (c >= 97 && c <= 122)) {
+            // ASCII 字母
+            inEnglishWord = true;
+            englishWordChars++;
+        } else if (c === 32 || c === 9 || c === 10 || c === 13) {
+            // 空白
+            if (inEnglishWord) {
+                tokens += Math.max(1, englishWordChars * 0.75);
+                inEnglishWord = false;
+                englishWordChars = 0;
+            }
+        } else {
+            if (inEnglishWord) {
+                tokens += Math.max(1, englishWordChars * 0.75);
+                inEnglishWord = false;
+                englishWordChars = 0;
+            }
+            tokens += 1;
+        }
+    }
+    if (inEnglishWord) {
+        tokens += Math.max(1, englishWordChars * 0.75);
+    }
+    return Math.ceil(tokens);
+}
+
+// ===== 上下文进度条 =====
+const contextBar = document.getElementById('contextBar');
+const contextBarFill = document.getElementById('contextBarFill');
+const contextBarText = document.getElementById('contextBarText');
+
+async function refreshContextInfo() {
+    try {
+        const res = await fetch(`/chat/context-info?sessionId=${encodeURIComponent(currentSessionId)}`);
+        if (!res.ok) return;
+        const info = await res.json();
+
+        const percent = info.usagePercent || 0;
+        const used = info.totalTokens || 0;
+        const max = info.maxTokens || 128000;
+        const compactions = info.compactionCount || 0;
+
+        // 格式化数字（k 单位）
+        const formatK = (n) => n >= 1000 ? (n / 1000).toFixed(1) + 'k' : n;
+
+        // 更新进度条
+        contextBarFill.style.width = Math.min(percent, 100) + '%';
+
+        // 颜色级别
+        contextBarFill.className = 'context-bar-fill';
+        if (percent > 85) {
+            contextBarFill.classList.add('danger');
+        } else if (percent > 60) {
+            contextBarFill.classList.add('warning');
+        }
+
+        // 文本
+        let text = `${formatK(used)} / ${formatK(max)}（${percent.toFixed(1)}%）`;
+        if (compactions > 0) {
+            text += ` · 已压缩 ${compactions} 次`;
+        }
+        contextBarText.textContent = text;
+        contextBar.classList.remove('hidden');
+    } catch (e) {
+        // 静默失败，不影响主流程
+    }
+}
 
 // Markdown 渲染（marked.parse + DOMPurify 双层防御）
 marked.setOptions({ gfm: true, breaks: true });

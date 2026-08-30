@@ -3,6 +3,7 @@ package com.luyu.agent.config;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.util.Assert;
@@ -24,6 +25,9 @@ public class ChatClientRegistry {
     private final Map<String, ChatClient> byRole;
     private final Map<String, ChatClient.Builder> byRoleBuilder;
     private final String defaultName;
+
+    /** 工具定义的估算 token 开销（启动时一次性计算并缓存） */
+    private final AtomicInteger cachedToolTokens = new AtomicInteger(0);
 
     public ChatClientRegistry(Map<String, ChatClient> byName,
                                Map<String, ChatClient> byRole,
@@ -83,5 +87,19 @@ public class ChatClientRegistry {
 
     public String getDefaultName() {
         return defaultName;
+    }
+
+    /**
+     * 设置工具定义的 token 开销缓存（启动时由 SessionConfiguration 调用）
+     */
+    public void setCachedToolTokens(int tokens) {
+        cachedToolTokens.set(tokens);
+    }
+
+    /**
+     * 获取工具定义的估算 token 开销
+     */
+    public int getCachedToolTokens() {
+        return cachedToolTokens.get();
     }
 }

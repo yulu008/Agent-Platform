@@ -62,6 +62,8 @@ public class RateLimitingSubagentExecutor implements SubagentExecutor {
         String subagentType = call.subagent_type();
         String taskId = UUID.randomUUID().toString();
         String parentId = resolveParentId();
+        String description = call.description();
+        String prompt = call.prompt();
 
         // 1. 并行度限流：tryAcquire 带超时，避免无限阻塞主Agent线程
         boolean acquired;
@@ -77,7 +79,7 @@ public class RateLimitingSubagentExecutor implements SubagentExecutor {
         }
 
         // 2. 审计开始 + 执行 + 存活时长限流
-        auditLogger.logStart(subagentType, taskId, parentId);
+        auditLogger.logStart(subagentType, taskId, parentId, description, prompt);
         long start = System.currentTimeMillis();
         try {
             Future<String> future = worker.submit(() -> delegate.execute(call, definition));
@@ -94,7 +96,7 @@ public class RateLimitingSubagentExecutor implements SubagentExecutor {
                         + " lifespan=" + lifespan.toSeconds() + "s";
             } catch (ExecutionException e) {
                 long duration = System.currentTimeMillis() - start;
-                auditLogger.logError(subagentType, taskId, parentId, duration, e.getCause());
+                auditLogger.logError(subagentType, taskId, parentId, duration, description, prompt, e.getCause());
                 return "[subagent-governance] 子Agent执行异常 subagentType=" + subagentType
                         + " error=" + (e.getCause() != null ? e.getCause().getMessage() : "unknown");
             } catch (InterruptedException e) {
