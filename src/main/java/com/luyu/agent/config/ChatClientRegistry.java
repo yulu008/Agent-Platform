@@ -3,6 +3,7 @@ package com.luyu.agent.config;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.util.Assert;
@@ -13,7 +14,7 @@ import org.springframework.util.Assert;
  * 维护三个索引：
  * <ul>
  *   <li>{@code byName} —— 对话 client（挂完整 advisor 链），按模型名查询，供请求级路由</li>
- *   <li>{@code byRole} —— 辅助纯净 client（无 advisor），按角色查询（title/compaction）</li>
+ *   <li>{@code byRole} —— 辅助纯净 client（无 advisor），按角色查询（title/compaction/workshop）</li>
  *   <li>{@code byRoleBuilder} —— 辅助裸 ChatClient.Builder（无 advisor），按角色查询（subagent 需 Builder 而非 client）</li>
  * </ul>
  * 一个 role 多模型时取 default 标记的，否则取装配时首个注册的。
@@ -24,6 +25,9 @@ public class ChatClientRegistry {
     private final Map<String, ChatClient> byRole;
     private final Map<String, ChatClient.Builder> byRoleBuilder;
     private final String defaultName;
+
+    /** 工具定义的估算 token 开销（启动时一次性计算并缓存） */
+    private final AtomicInteger cachedToolTokens = new AtomicInteger(0);
 
     public ChatClientRegistry(Map<String, ChatClient> byName,
                                Map<String, ChatClient> byRole,
@@ -53,7 +57,7 @@ public class ChatClientRegistry {
     }
 
     /**
-     * 辅助任务按角色取纯净 client（title/compaction）。
+     * 辅助任务按角色取纯净 client（title/compaction/workshop）。
      */
     public ChatClient forRole(String role) {
         ChatClient client = byRole.get(role);
@@ -83,5 +87,19 @@ public class ChatClientRegistry {
 
     public String getDefaultName() {
         return defaultName;
+    }
+
+    /**
+     * 设置工具定义的 token 开销缓存（启动时由 SessionConfiguration 调用）
+     */
+    public void setCachedToolTokens(int tokens) {
+        cachedToolTokens.set(tokens);
+    }
+
+    /**
+     * 获取工具定义的估算 token 开销
+     */
+    public int getCachedToolTokens() {
+        return cachedToolTokens.get();
     }
 }

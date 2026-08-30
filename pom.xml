@@ -109,6 +109,12 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <jvmArguments>
+                        "-Djavax.net.ssl.trustStore=${project.basedir}/local-truststore.jks"
+                        -Djavax.net.ssl.trustStorePassword=changeit
+                    </jvmArguments>
+                </configuration>
             </plugin>
         </plugins>
     </build>

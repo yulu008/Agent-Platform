@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>沙盒角色扮演 RPG</title>
+    <link rel="stylesheet" th:href="@{/css/rpg.css(v=${#dates.createNow().time})}"/>
+</head>
+<body>
+
+<!-- ========== 顶部标题栏 ========== -->
+<header class="rpg-header">
+    <h1><span class="logo-dot"></span>沙盒 RPG</h1>
+    <div class="header-info" id="headerInfo" hidden>
+        <span id="worldName"></span> | <span id="charName"></span>
+    </div>
+    <div class="header-actions">
+        <button class="header-btn" id="modeToggle" title="切换模式">工坊模式</button>
+        <button class="header-btn" id="saveBtn" title="存档" hidden>💾</button>
+        <button class="header-btn" id="loadBtn" title="读档" hidden>📂</button>
+        <a href="/" class="header-btn" title="返回主页">←</a>
+    </div>
+</header>
+
+<!-- ========== 工坊模式 ========== -->
+<main class="workshop-mode" id="workshopMode">
+    <div class="workshop-tabs">
+        <button class="tab-btn active" data-tab="world">世界观</button>
+        <button class="tab-btn" data-tab="character">角色卡</button>
+        <button class="tab-btn" data-tab="location">地点</button>
+        <button class="tab-btn" data-tab="trigger">触发器</button>
+        <button class="tab-btn" data-tab="relationship">关系</button>
+    </div>
+
+    <!-- 世界观编辑器 -->
+    <section class="tab-content active" id="tab-world">
+        <div class="editor-section">
+            <h2>世界观设定</h2>
+            <div class="form-row">
+                <label>名称</label>
+                <input type="text" id="worldNameInput" placeholder="如：钟表城"/>
+            </div>
+            <div class="form-row">
+                <label>时代</label>
+                <input type="text" id="worldEraInput" placeholder="如：蒸汽朋克时代"/>
+            </div>
+            <div class="form-row">
+                <label>描述</label>
+                <textarea id="worldDescInput" rows="4" placeholder="世界描述..."></textarea>
+            </div>
+            <div class="form-row">
+                <label>规则</label>
+                <textarea id="worldRulesInput" rows="3" placeholder='["魔法退化","蒸汽动力"]'></textarea>
+            </div>
+            <div class="form-row">
+                <label>氛围</label>
+                <input type="text" id="worldAtmosphereInput" placeholder="如：灰暗、机械感"/>
+            </div>
+            <div class="form-actions">
+                <button class="btn-secondary" id="generateWorldBtn">✨ LLM 生成</button>
+                <button class="btn-primary" id="saveWorldBtn">保存世界观</button>
+            </div>
+            <div class="llm-input" id="worldLlmInput" hidden>
+                <input type="text" id="worldKeywords" placeholder="输入关键词，如：蒸汽朋克 失落的魔法 钟表城"/>
+                <button class="btn-primary" id="confirmGenerateWorldBtn">生成</button>
+            </div>
+        </div>
+    </section>
+
+    <!-- 角色卡编辑器 -->
+    <section class="tab-content" id="tab-character">
+        <div class="editor-section">
+            <h2>角色卡</h2>
+            <div class="form-row">
+                <label>角色类型</label>
+                <select id="charType">
+                    <option value="player">玩家角色</option>
+                    <option value="npc">NPC</option>
+                </select>
+            </div>
+            <div class="form-row">
+                <label>名称</label>
+                <input type="text" id="charNameInput" placeholder="角色名称"/>
+            </div>
+            <div class="form-row">
+                <label>身份</label>
+                <input type="text" id="charIdentityInput" placeholder="如：流浪剑客"/>
+            </div>
+            <div class="form-row">
+                <label>性格</label>
+                <textarea id="charPersonalityInput" rows="2" placeholder="性格描述..."></textarea>
+            </div>
+            <div class="form-row">
+                <label>背景</label>
+                <textarea id="charBackgroundInput" rows="3" placeholder="背景故事..."></textarea>
+            </div>
+            <div class="form-row">
+                <label>动机</label>
+                <input type="text" id="charMotivationInput" placeholder="如：贪财、好奇"/>
+            </div>
+            <div class="form-row">
+                <label>说话风格</label>
+                <input type="text" id="charSpeechStyleInput" placeholder="如：粗犷"/>
+            </div>
+            <div class="form-actions">
+                <button class="btn-secondary" id="generateCharBtn">✨ LLM 生成</button>
+                <button class="btn-primary" id="saveCharBtn">保存角色卡</button>
+            </div>
+            <div class="llm-input" id="charLlmInput" hidden>
+                <input type="text" id="charDesc" placeholder="简述角色，如：盗贼，贪财，出身贫苦"/>
+                <button class="btn-primary" id="confirmGenerateCharBtn">生成</button>
+            </div>
+        </div>
+        <div class="saved-list" id="charList">
+            <h3>已保存角色</h3>
+            <div class="list-items" id="charListItems"></div>
+        </div>
+    </section>
+
+    <!-- 地点编辑器 -->
+    <section class="tab-content" id="tab-location">
+        <div class="editor-section">
+            <h2>地点</h2>
+            <div class="form-row">
+                <label>名称</label>
+                <input type="text" id="locNameInput" placeholder="如：客栈"/>
+            </div>
+            <div class="form-row">
+                <label>描述</label>
+                <textarea id="locDescInput" rows="3" placeholder="地点描述..."></textarea>
+            </div>
+            <div class="form-actions">
+                <button class="btn-primary" id="saveLocBtn">保存地点</button>
+            </div>
+        </div>
+    </section>
+
+    <!-- 触发器编辑器 -->
+    <section class="tab-content" id="tab-trigger">
+        <div class="editor-section">
+            <h2>触发器</h2>
+            <div class="form-row">
+                <label>类型</label>
+                <select id="triggerType">
+                    <option value="event">事件触发</option>
+                    <option value="motivation">动机触发</option>
+                </select>
+            </div>
+            <div class="form-row">
+                <label>关联 NPC ID</label>
+                <input type="text" id="triggerNpcId" placeholder="NPC 角色 ID"/>
+            </div>
+            <div class="form-row">
+                <label>硬条件 (JSON)</label>
+                <textarea id="triggerHardConditions" rows="3" placeholder='[{"field":"player.location","op":"==","value":"路上"}]'></textarea>
+            </div>
+            <div class="form-row">
+                <label>软条件</label>
+                <input type="text" id="triggerSoftCondition" placeholder="如：玩家最近行为表现出财富"/>
+            </div>
+            <div class="form-row">
+                <label>行动</label>
+                <input type="text" id="triggerAction" placeholder="如：rob"/>
+            </div>
+            <div class="form-row">
+                <label>冷却轮次</label>
+                <input type="number" id="triggerCooldown" value="3" min="0"/>
+            </div>
+            <div class="form-row">
+                <label>触发概率</label>
+                <input type="number" id="triggerProbability" value="0.6" step="0.1" min="0" max="1"/>
+            </div>
+            <div class="form-actions">
+                <button class="btn-primary" id="saveTriggerBtn">保存触发器</button>
+            </div>
+        </div>
+    </section>
+
+    <!-- 关系编辑器 -->
+    <section class="tab-content" id="tab-relationship">
+        <div class="editor-section">
+            <h2>关系</h2>
+            <div class="form-row">
+                <label>角色 A ID</label>
+                <input type="text" id="relCharA" placeholder="角色 A"/>
+            </div>
+            <div class="form-row">
+                <label>角色 B ID</label>
+                <input type="text" id="relCharB" placeholder="角色 B"/>
+            </div>
+            <div class="form-row">
+                <label>态度 (-100~100)</label>
+                <input type="number" id="relAttitude" value="0" min="-100" max="100"/>
+            </div>
+            <div class="form-row">
+                <label>信任 (0~100)</label>
+                <input type="number" id="relTrust" value="50" min="0" max="100"/>
+            </div>
+            <div class="form-actions">
+                <button class="btn-primary" id="saveRelBtn">保存关系</button>
+            </div>
+        </div>
+    </section>
+
+    <!-- 开始冒险按钮 -->
+    <div class="start-adventure">
+        <button class="btn-start" id="startAdventureBtn">⚔️ 开始冒险</button>
+        <div class="start-options" id="startOptions" hidden>
+            <select id="selectWorld"><option value="">选择世界观...</option></select>
+            <select id="selectPlayer"><option value="">选择玩家角色...</option></select>
+            <button class="btn-primary" id="confirmStartBtn">确认开始</button>
+        </div>
+    </div>
+</main>
+
+<!-- ========== 游戏模式 ========== -->
+<main class="game-mode" id="gameMode" hidden>
+    <!-- 叙述区域 -->
+    <div class="narration-area" id="narrationArea">
+        <div class="narration-content" id="narrationContent"></div>
+    </div>
+
+    <!-- 状态面板 -->
+    <aside class="status-panel" id="statusPanel">
+        <div class="status-header">状态</div>
+        <div class="status-item"><label>位置</label><span id="statusLocation">-</span></div>
+        <div class="status-item"><label>轮次</label><span id="statusTurn">0</span></div>
+        <div class="status-item"><label>NPC</label><span id="statusNpcs">-</span></div>
+    </aside>
+
+    <!-- 输入区域 -->
+    <div class="input-area" id="inputArea" hidden>
+        <form id="gameForm" class="game-input-form">
+            <input type="text" id="gameInput" placeholder="输入你的行动..." autocomplete="off"/>
+            <button type="submit" class="btn-send" id="gameSendBtn">发送</button>
+            <button type="button" class="btn-stop" id="gameStopBtn" hidden>中止</button>
+        </form>
+    </div>
+</main>
+
+<!-- ========== 读档列表 ========== -->
+<div class="load-overlay" id="loadOverlay" hidden>
+    <div class="load-dialog">
+        <h3>选择存档</h3>
+        <div id="saveList" class="save-list"></div>
+        <button class="btn-secondary" id="closeLoadBtn">关闭</button>
+    </div>
+</div>
+
+<script th:src="@{/js/rpg.js(v=${#dates.createNow().time})}"></script>
+</body>
+</html>

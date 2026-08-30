@@ -12,6 +12,8 @@ import org.springaicommunity.agent.tools.SmartWebFetchTool;
 import org.springaicommunity.agent.tools.task.TaskTool;
 import org.springaicommunity.agent.tools.task.claude.ClaudeSubagentExecutor;
 import org.springaicommunity.agent.tools.task.claude.ClaudeSubagentType;
+
+import com.luyu.agent.governance.ModelAwareSubagentExecutor;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.support.ToolCallbacks;
 import org.springframework.ai.tool.ToolCallback;
@@ -189,10 +191,12 @@ public class SubagentConfiguration {
      * 替换 ClaudeSubagentExecutor 中的内置 SmartWebFetchTool，
      * 关闭域名安全检查（domainSafetyCheck=false），避免每次 webFetch 调用
      * 都向 https://claude.ai/api/web/domain_info 发起不可达的 HTTP 请求。
+     * 同时用 ModelAwareSubagentExecutor 替换原始执行器，修复内置子Agent
+     * （Bash/Plan）的 model: default 导致非 Claude API 返回 403 的问题。
      *
      * 实现方式：反射读取 ClaudeSubagentExecutor 的私有 tools/chatClientBuilderMap/skillsDirectories 字段，
      * 用 SmartWebFetchTool.builder(chatClient).domainSafetyCheck(false).build() 替换默认实例，
-     * 重建执行器。反射失败时降级为原始 SubagentType，不影响系统运行。
+     * 重建执行器（ModelAwareSubagentExecutor）。反射失败时降级为原始 SubagentType，不影响系统运行。
      */
     @SuppressWarnings("unchecked")
     private SubagentType replaceWebFetchTool(SubagentType defaultType) {
@@ -245,10 +249,10 @@ public class SubagentConfiguration {
             }
             modifiedTools.addAll(Arrays.asList(customCallbacks));
 
-            // 4. 重建执行器
-            ClaudeSubagentExecutor customExecutor = new ClaudeSubagentExecutor(
+            // 4. 重建执行器（ModelAwareSubagentExecutor 修复 model=default 导致的 403）
+            ModelAwareSubagentExecutor customExecutor = new ModelAwareSubagentExecutor(
                     builderMap, modifiedTools, skillsDirs);
-            log.info("SmartWebFetchTool 替换完成: 工具数 {}→{}，域名安全检查已关闭",
+            log.info("执行器重建完成: 工具数 {}→{}，域名安全检查已关闭，model=default 覆盖已修复",
                     defaultTools.size(), modifiedTools.size());
 
             return new SubagentType(defaultType.resolver(), customExecutor);

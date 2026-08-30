@@ -20,8 +20,6 @@ import java.util.Map;
  * 返回友好错误提示给模型（让模型有机会重试或降级回答），
  * 而非让异常传播导致整个 SSE 流中断。
  * 
- * 典型场景：glm-5.2 等非 OpenAI 原生模型在生成 tool call 参数时
- * 可能输出不完整的 JSON（缺少闭合括号），触发 Jackson 解析失败。
  */
 public class ResilientToolCallback implements ToolCallback {
 
@@ -53,14 +51,15 @@ public class ResilientToolCallback implements ToolCallback {
     public String call(String toolInput) {
         String toolName = getToolDefinition().name();
         toolCallLog.debug("工具[{}] 调用: input={}", toolName, truncate(toolInput, 500));
-        emitToolEvent("start", toolName, null);
+        String description = extractDescription(toolName, toolInput);
+        emitToolEvent("start", toolName, null, description);
         try {
             String result = delegate.call(toolInput);
             toolCallLog.debug("工具[{}] 返回: result={}", toolName, truncate(result, 500));
-            emitToolEvent("end", toolName, "ok");
+            emitToolEvent("end", toolName, "ok", description);
             return result;
         } catch (Exception e) {
-            emitToolEvent("end", toolName, "error:" + e.getMessage());
+            emitToolEvent("end", toolName, "error:" + e.getMessage(), description);
             return handleToolException(e, toolInput);
         }
     }
@@ -69,14 +68,15 @@ public class ResilientToolCallback implements ToolCallback {
     public String call(String toolInput, @Nullable ToolContext toolContext) {
         String toolName = getToolDefinition().name();
         toolCallLog.debug("工具[{}] 调用: input={}", toolName, truncate(toolInput, 500));
-        emitToolEvent("start", toolName, null);
+        String description = extractDescription(toolName, toolInput);
+        emitToolEvent("start", toolName, null, description);
         try {
             String result = delegate.call(toolInput, toolContext);
             toolCallLog.debug("工具[{}] 返回: result={}", toolName, truncate(result, 500));
-            emitToolEvent("end", toolName, "ok");
+            emitToolEvent("end", toolName, "ok", description);
             return result;
         } catch (Exception e) {
-            emitToolEvent("end", toolName, "error:" + e.getMessage());
+            emitToolEvent("end", toolName, "error:" + e.getMessage(), description);
             return handleToolException(e, toolInput);
         }
     }
@@ -137,7 +137,7 @@ public class ResilientToolCallback implements ToolCallback {
      * 所有操作包裹 try-catch 静默处理，确保事件发射失败不影响工具执行。
      */
     @SuppressWarnings("unchecked")
-    private void emitToolEvent(String phase, String toolName, String status) {
+    private void emitToolEvent(String phase, String toolName, String status, String description) {
         try {
             ContextView ctx = ToolCallReactiveContextHolder.getContext();
             Object sinkObj = ctx.getOrDefault(TOOL_EVENT_SINK_KEY, null);
@@ -150,6 +150,9 @@ public class ResilientToolCallback implements ToolCallback {
             event.put("tool", phase);
             event.put("name", toolName);
             event.put("icon", getToolIcon(toolName));
+            if (description != null && !description.isBlank()) {
+                event.put("description", description);
+            }
             if (status != null) {
                 event.put("status", status);
             }
@@ -157,6 +160,41 @@ public class ResilientToolCallback implements ToolCallback {
         } catch (Exception ignored) {
             // 事件发射是辅助功能，绝不能影响工具执行
         }
+    }
+
+    /**
+     * 从工具输入中提取简短的描述信息
+     */
+    private String extractDescription(String toolName, String toolInput) {
+        if (toolInput == null || toolInput.isBlank()) {
+            return "";
+        }
+        String input = toolInput.trim();
+        // 尝试提取 JSON 中的关键字段作为描述
+        String desc = tryExtractJsonField(input, "description", "task", "query", "name", "skill");
+        if (desc != null && !desc.isBlank()) {
+            return truncate(desc, 80);
+        }
+        // 非 JSON 或无法提取时，取输入前80字符
+        return truncate(input, 80);
+    }
+
+    /**
+     * 尝试从 JSON 字符串中提取指定字段的值
+     */
+    private String tryExtractJsonField(String json, String... fields) {
+        if (json == null || json.length() < 3) {
+            return null;
+        }
+        for (String field : fields) {
+            String pattern = "\"" + field + "\"\\s*:\\s*\"([^\"]+)\"";
+            java.util.regex.Pattern r = java.util.regex.Pattern.compile(pattern, java.util.regex.Pattern.CASE_INSENSITIVE);
+            java.util.regex.Matcher m = r.matcher(json);
+            if (m.find()) {
+                return m.group(1);
+            }
+        }
+        return null;
     }
 
     /**

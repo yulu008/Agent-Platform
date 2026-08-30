@@ -19,10 +19,11 @@ public class SubagentAuditLogger {
     /**
      * 记录子Agent执行开始
      */
-    public void logStart(String subagentType, String taskId, String parentId) {
-        putMdc(subagentType, taskId, parentId, null);
+    public void logStart(String subagentType, String taskId, String parentId, String description, String prompt) {
+        putMdc(subagentType, taskId, parentId, null, description);
         try {
-            log.info("子Agent执行开始 subagentType={} taskId={}", subagentType, taskId);
+            log.info("子Agent执行开始 subagentType={} taskId={} description={} prompt={}",
+                    subagentType, taskId, description, truncate(prompt, 500));
         } finally {
             MDC.clear();
         }
@@ -32,7 +33,7 @@ public class SubagentAuditLogger {
      * 记录子Agent执行完成（成功或正常结束）
      */
     public void logEnd(String subagentType, String taskId, String parentId, long durationMs, String result) {
-        putMdc(subagentType, taskId, parentId, durationMs);
+        putMdc(subagentType, taskId, parentId, durationMs, null);
         try {
             log.info("子Agent执行完成 subagentType={} taskId={} durationMs={} result={}",
                     subagentType, taskId, durationMs, result);
@@ -45,7 +46,7 @@ public class SubagentAuditLogger {
      * 记录子Agent执行超时
      */
     public void logTimeout(String subagentType, String taskId, String parentId, long durationMs) {
-        putMdc(subagentType, taskId, parentId, durationMs);
+        putMdc(subagentType, taskId, parentId, durationMs, null);
         try {
             log.warn("子Agent执行超时 subagentType={} taskId={} durationMs={}",
                     subagentType, taskId, durationMs);
@@ -58,7 +59,7 @@ public class SubagentAuditLogger {
      * 记录子Agent委派被拒（并行度超限，尚未分配 taskId）
      */
     public void logRejected(String subagentType, String parentId) {
-        putMdc(subagentType, null, parentId, null);
+        putMdc(subagentType, null, parentId, null, null);
         try {
             log.warn("子Agent委派被拒(并行度超限) subagentType={}", subagentType);
         } finally {
@@ -69,17 +70,17 @@ public class SubagentAuditLogger {
     /**
      * 记录子Agent执行异常
      */
-    public void logError(String subagentType, String taskId, String parentId, long durationMs, Throwable ex) {
-        putMdc(subagentType, taskId, parentId, durationMs);
+    public void logError(String subagentType, String taskId, String parentId, long durationMs, String description, String prompt, Throwable ex) {
+        putMdc(subagentType, taskId, parentId, durationMs, description);
         try {
-            log.error("子Agent执行异常 subagentType={} taskId={} durationMs={}",
-                    subagentType, taskId, durationMs, ex);
+            log.error("子Agent执行异常 subagentType={} taskId={} durationMs={} description={} prompt={}",
+                    subagentType, taskId, durationMs, description, truncate(prompt, 500), ex);
         } finally {
             MDC.clear();
         }
     }
 
-    private void putMdc(String subagentType, String taskId, String parentId, Long durationMs) {
+    private void putMdc(String subagentType, String taskId, String parentId, Long durationMs, String description) {
         if (subagentType != null) {
             MDC.put("subagentType", subagentType);
         }
@@ -92,5 +93,13 @@ public class SubagentAuditLogger {
         if (durationMs != null) {
             MDC.put("duration", String.valueOf(durationMs));
         }
+        if (description != null) {
+            MDC.put("description", description);
+        }
+    }
+
+    private String truncate(String s, int maxLen) {
+        if (s == null) return null;
+        return s.length() <= maxLen ? s : s.substring(0, maxLen) + "...(truncated)";
     }
 }

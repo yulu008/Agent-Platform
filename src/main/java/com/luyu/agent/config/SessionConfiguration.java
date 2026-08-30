@@ -12,7 +12,6 @@ import org.springframework.ai.model.tool.ToolCallingChatOptions;
 import org.springframework.ai.session.SessionService;
 import org.springframework.ai.session.advisor.SessionMemoryAdvisor;
 import org.springframework.ai.session.compaction.SlidingWindowCompactionStrategy;
-import org.springframework.ai.session.compaction.TurnCountTrigger;
 import org.springframework.ai.support.ToolCallbacks;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.resolution.StaticToolCallbackResolver;
@@ -27,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 
 import com.luyu.agent.config.AgentModelsProperties.ModelProps;
+import com.luyu.agent.service.TokenEstimator;
 
 /**
  * Session API 配置
@@ -69,14 +69,14 @@ public class SessionConfiguration {
     /**
      * 构建 SessionMemoryAdvisor
      *
-     * 压缩策略：当累积 20 个轮次时触发，保留最近 10 个事件（滑动窗口）
-     * 轮次 = 一条 UserMessage + 后续所有响应（assistant/tool）
+     * 压缩策略：当上下文 token 总量达到 128k × 70% = 89,600 时自动触发压缩，
+     * 保留最近 10 个事件（滑动窗口）
      */
     @Bean
     public SessionMemoryAdvisor sessionMemoryAdvisor(SessionService sessionService) {
         return SessionMemoryAdvisor.builder(sessionService)
                 .defaultUserId("default-user")
-                .compactionTrigger(new TurnCountTrigger(20))
+                .compactionTrigger(new TokenThresholdCompactionTrigger())
                 .compactionStrategy(
                         SlidingWindowCompactionStrategy.builder()
                                 .maxEvents(10)
@@ -207,6 +207,18 @@ public class SessionConfiguration {
             log.warn("ChatClientRegistry 未挂载任何工具回调（skills/agents 目录均为空）");
         }
 
-        return new ChatClientRegistry(byName, byRole, byRoleBuilder, defaultName);
+        // 一次性计算工具定义 token 开销（名称 + 描述 + inputSchema）
+        ChatClientRegistry registry = new ChatClientRegistry(byName, byRole, byRoleBuilder, defaultName);
+        int toolTokens = resilientTools.stream()
+                .mapToInt(tc -> {
+                    var def = tc.getToolDefinition();
+                    String schema = def.name() + " " + def.description() + " " + def.inputSchema();
+                    return TokenEstimator.estimateTokens(schema);
+                })
+                .sum();
+        registry.setCachedToolTokens(toolTokens);
+        log.info("工具定义 token 开销估算: {} tokens ({} 个工具)", toolTokens, resilientTools.size());
+
+        return registry;
     }
 }

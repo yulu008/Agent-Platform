@@ -55,7 +55,7 @@ agent:
       max-tokens: 32768
       timeout: 180s
       temperature: 0.2
-      roles: [chat, compaction, title, subagent]
+      roles: [chat, compaction, title, subagent, workshop]
       default-model: true
     glm-5-1:
       base-url: https://open.bigmodel.cn/api/paas/v4
@@ -74,6 +74,20 @@ agent:
       max-tokens: 3072
       timeout: 300s
       roles: [chat]
+
+# 天气功能配置（WeatherService 读取）
+weather:
+  # wttr.in format=j1 查询地址，~lat,lon 指定坐标
+  url: https://wttr.in/~31.253,121.397?format=j1
+  # 前端展示用地址标签
+  location-label: 上海市普陀区清涧路
+
+# RPG 沙盒角色扮演配置
+rpg:
+  jdbc:
+    # 应用启动时自动创建 RPG 专用表（参考 spring.ai.session.jdbc 机制）
+    initialize-schema: always
+    schema-locations: classpath:rpg/schema-h2.sql
 
 # Actuator 端点：暴露 metrics 供可观测性验证
 # /actuator/metrics/gen_ai_client_token_usage_total 查看 token 用量

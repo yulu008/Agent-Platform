@@ -18,7 +18,7 @@ public record AgentUtilsProperties(String skillsRoot, String agentsRoot, Subagen
         public Subagent(Integer maxParallelism, Duration lifespan) {
             this.maxParallelism = (maxParallelism == null || maxParallelism <= 0) ? 4 : maxParallelism;
             this.lifespan = (lifespan == null || lifespan.isZero() || lifespan.isNegative())
-                    ? Duration.ofSeconds(120) : lifespan;
+                    ? Duration.ofMinutes(20) : lifespan;
         }
     }
 
