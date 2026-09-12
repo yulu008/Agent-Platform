@@ -3,20 +3,28 @@ package com.luyu.agent.rpg.controller;
 import com.luyu.agent.config.ChatClientRegistry;
 import com.luyu.agent.rpg.engine.GameLoopService;
 import com.luyu.agent.rpg.engine.OpeningNarrationService;
+import com.luyu.agent.rpg.engine.RpgHistoryCleaner;
 import com.luyu.agent.rpg.engine.StateDeltaSanitizer;
 import com.luyu.agent.rpg.model.GameState;
 import com.luyu.agent.rpg.service.WorkshopService;
-import com.luyu.agent.config.SessionConfiguration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.messages.Message;
+import org.springframework.ai.chat.messages.ToolResponseMessage;
+import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.session.SessionEvent;
+import org.springframework.ai.session.SessionService;
 import org.springframework.ai.session.advisor.SessionMemoryAdvisor;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -40,17 +48,23 @@ public class RpgGameController {
     private final OpeningNarrationService openingNarrationService;
     private final StateDeltaSanitizer stateDeltaSanitizer;
     private final WorkshopService workshopService;
+    private final SessionService sessionService;
+    private final RpgHistoryCleaner rpgHistoryCleaner;
 
     public RpgGameController(ChatClientRegistry chatClientRegistry,
                              GameLoopService gameLoopService,
                              OpeningNarrationService openingNarrationService,
                              StateDeltaSanitizer stateDeltaSanitizer,
-                             WorkshopService workshopService) {
+                             WorkshopService workshopService,
+                             SessionService sessionService,
+                             RpgHistoryCleaner rpgHistoryCleaner) {
         this.chatClientRegistry = chatClientRegistry;
         this.gameLoopService = gameLoopService;
         this.openingNarrationService = openingNarrationService;
         this.stateDeltaSanitizer = stateDeltaSanitizer;
         this.workshopService = workshopService;
+        this.sessionService = sessionService;
+        this.rpgHistoryCleaner = rpgHistoryCleaner;
     }
 
     /**
@@ -110,8 +124,8 @@ public class RpgGameController {
                     .build());
         }
 
-        // 获取 GM ChatClient
-        ChatClient chatClient = chatClientRegistry.forChat(chatClientRegistry.getDefaultName());
+        // 获取 GM 专属 ChatClient（rpgSessionMemoryAdvisor，maxEvents=30，与主聊天隔离）
+        ChatClient chatClient = chatClientRegistry.forRpg();
 
         // 拼接完整回复（用于 post-processing）
         StringBuilder fullResponse = new StringBuilder();
@@ -229,6 +243,80 @@ public class RpgGameController {
     @GetMapping("/game/state")
     public GameState getGameState(@RequestParam String gameStateId) {
         return workshopService.getGameState(gameStateId);
+    }
+
+    /**
+     * 会话历史查询（对话式回放数据源）。
+     * <p>
+     * 请求: GET /rpg/game/history?sessionId=xxx<br>
+     * 响应: [{"role":"user|assistant","content":"...","synthetic":true?},...]
+     * <p>
+     * 复用 {@link SessionService#getEvents}，在读取返回时做 read-time 清洗（不改写存储）：
+     * <ul>
+     *   <li>user：从包裹 prompt 抽取玩家行动（{@link RpgHistoryCleaner}）；合成用户提示不返回</li>
+     *   <li>assistant：移除 state_delta 块，仅保留叙述正文</li>
+     *   <li>tool_call / tool_response：整条过滤（隐藏 GM 的 get_ 工具调用，D10）</li>
+     *   <li>synthetic：合成助手摘要作为一条 assistant 返回（synthetic=true）</li>
+     * </ul>
+     * 空 sessionId 或空会话返回空数组，不报错。
+     */
+    @GetMapping("/game/history")
+    public List<Map<String, Object>> getHistory(@RequestParam String sessionId) {
+        if (sessionId == null || sessionId.trim().isEmpty()) {
+            return List.of();
+        }
+        List<SessionEvent> events = sessionService.getEvents(sessionId);
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (SessionEvent event : events) {
+            Message msg = event.getMessage();
+            if (msg == null) {
+                continue;
+            }
+            // 隐藏工具事件（D10）：GM 的 get_ 工具调用不回放
+            if (msg instanceof ToolResponseMessage) {
+                continue;
+            }
+            if (msg instanceof AssistantMessage am && am.hasToolCalls()) {
+                continue;
+            }
+
+            boolean synthetic = event.isSynthetic();
+            String content = msg.getText();
+
+            if (msg instanceof UserMessage) {
+                // 合成用户提示（压缩产物）不返回
+                if (synthetic) {
+                    continue;
+                }
+                String cleaned = rpgHistoryCleaner.cleanUserMessage(content);
+                if (cleaned == null || cleaned.isEmpty()) {
+                    continue;
+                }
+                result.add(historyEntry("user", cleaned, false));
+            } else if (msg instanceof AssistantMessage) {
+                // 叙述正文（合成摘要原样保留）
+                String cleaned = synthetic
+                        ? (content != null ? content.trim() : "")
+                        : rpgHistoryCleaner.cleanAssistantMessage(content);
+                if (cleaned == null || cleaned.isEmpty()) {
+                    continue;
+                }
+                result.add(historyEntry("assistant", cleaned, synthetic));
+            }
+            // 其余类型（如 SystemMessage）不回放
+        }
+        return result;
+    }
+
+    /** 构建历史消息条目。 */
+    private Map<String, Object> historyEntry(String role, String content, boolean synthetic) {
+        Map<String, Object> entry = new LinkedHashMap<>();
+        entry.put("role", role);
+        entry.put("content", content);
+        if (synthetic) {
+            entry.put("synthetic", true);
+        }
+        return entry;
     }
 
     // ==================== 辅助方法 ====================

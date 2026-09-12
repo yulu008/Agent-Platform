@@ -15,6 +15,7 @@ import org.springframework.ai.session.compaction.SlidingWindowCompactionStrategy
 import org.springframework.ai.support.ToolCallbacks;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.resolution.StaticToolCallbackResolver;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -85,6 +86,25 @@ public class SessionConfiguration {
     }
 
     /**
+     * 构建 RPG 专属 SessionMemoryAdvisor（maxEvents=30）。
+     * <p>
+     * RPG 单轮事件较大（包裹 prompt + 长叙述 + state_delta），且需要更长的可回看窗口，
+     * 故与主聊天（maxEvents=10）隔离：仅由 RPG 专属 ChatClient 使用，
+     * 不影响主聊天每请求携带的上下文体积/成本。其余配置（触发器、userId）与主聊天一致。
+     */
+    @Bean
+    public SessionMemoryAdvisor rpgSessionMemoryAdvisor(SessionService sessionService) {
+        return SessionMemoryAdvisor.builder(sessionService)
+                .defaultUserId("default-user")
+                .compactionTrigger(new TokenThresholdCompactionTrigger())
+                .compactionStrategy(
+                        SlidingWindowCompactionStrategy.builder()
+                                .maxEvents(30)
+                                .build())
+                .build();
+    }
+
+    /**
      * 子 Agent 专用裸 Builder（固定 subagent 角色模型，供 SubagentConfiguration @Lazy 注入）。
      * <p>
      * 独立 bean 避免与 ChatClientRegistry 装配形成循环：SubagentConfiguration 装配时
@@ -123,7 +143,8 @@ public class SessionConfiguration {
     public ChatClientRegistry chatClientRegistry(Map<String, ChatModel> chatModels,
                                                   AgentModelsProperties properties,
                                                   AutoMemoryToolsAdvisor autoMemoryToolsAdvisor,
-                                                  SessionMemoryAdvisor sessionMemoryAdvisor,
+                                                  @Qualifier("sessionMemoryAdvisor") SessionMemoryAdvisor sessionMemoryAdvisor,
+                                                  @Qualifier("rpgSessionMemoryAdvisor") SessionMemoryAdvisor rpgSessionMemoryAdvisor,
                                                   List<ToolCallback> tools,
                                                   SubagentConfiguration subagentConfig,
                                                   ChatClient.Builder subagentBuilder) {
@@ -207,8 +228,22 @@ public class SessionConfiguration {
             log.warn("ChatClientRegistry 未挂载任何工具回调（skills/agents 目录均为空）");
         }
 
+        // RPG 专属对话 client：基于默认对话模型，advisor 链用 rpgSessionMemoryAdvisor（maxEvents=30）
+        // 替代 sessionMemoryAdvisor，其余（AutoMemoryTools、容错工具链）与主对话 client 一致。
+        // ⚠️ 必须是独立 client，其 advisor 链中只含 rpgSessionMemoryAdvisor，不与默认 sessionMemoryAdvisor
+        //    并存，否则记忆会被加载/写入两次（双写陷阱）。
+        ChatClient rpgChatClient = null;
+        if (defaultName != null) {
+            rpgChatClient = ChatClient.builder(chatModels.get(defaultName))
+                    .defaultAdvisors(autoMemoryToolsAdvisor, rpgSessionMemoryAdvisor,
+                            toolCallingAdvisor, new MalformedToolCallSanitizer())
+                    .defaultOptions(ToolCallingChatOptions.builder()
+                            .toolCallbacks(resilientTools))
+                    .build();
+        }
+
         // 一次性计算工具定义 token 开销（名称 + 描述 + inputSchema）
-        ChatClientRegistry registry = new ChatClientRegistry(byName, byRole, byRoleBuilder, defaultName);
+        ChatClientRegistry registry = new ChatClientRegistry(byName, byRole, byRoleBuilder, defaultName, rpgChatClient);
         int toolTokens = resilientTools.stream()
                 .mapToInt(tc -> {
                     var def = tc.getToolDefinition();

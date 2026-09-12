@@ -28,6 +28,140 @@ function filterStateDelta(text) {
     return text.replace(/<state_delta>[\s\S]*?<\/state_delta>/gi, '');
 }
 
+// ===== 消息列表渲染（追加式，不覆盖历史）=====
+const RPG_STORAGE_KEY = 'rpg.identity';
+
+function getMessagesContainer() {
+    return document.getElementById('messagesContainer');
+}
+
+function clearMessages() {
+    const c = getMessagesContainer();
+    if (c) c.innerHTML = '';
+}
+
+function scrollNarrationToBottom() {
+    const area = document.getElementById('narrationArea');
+    if (area) area.scrollTop = area.scrollHeight;
+}
+
+/**
+ * 追加一条消息气泡（追加式，历史气泡不被触碰）。
+ * @param {'user'|'assistant'} role 玩家 / GM
+ * @param {string} content 文本内容
+ * @param {{synthetic?:boolean}} [options] synthetic=true 渲染为被压缩摘要块
+ * @returns {HTMLElement|null} 可用于流式更新的内容元素
+ */
+function appendMessage(role, content, options = {}) {
+    const container = getMessagesContainer();
+    if (!container) return null;
+
+    // 被压缩摘要：独立摘要样式，区别于普通 GM 气泡
+    if (options.synthetic) {
+        const wrap = document.createElement('div');
+        wrap.className = 'rpg-message summary';
+        const bubble = document.createElement('div');
+        bubble.className = 'rpg-bubble';
+        const label = document.createElement('div');
+        label.className = 'summary-label';
+        label.textContent = '📝 早期剧情摘要';
+        const body = document.createElement('div');
+        body.className = 'narration-content';
+        body.innerHTML = renderMarkdown(filterStateDelta(content || ''));
+        bubble.appendChild(label);
+        bubble.appendChild(body);
+        wrap.appendChild(bubble);
+        container.appendChild(wrap);
+        scrollNarrationToBottom();
+        return body;
+    }
+
+    const wrap = document.createElement('div');
+    if (role === 'user') {
+        // 玩家气泡：右对齐、红底白字（纯文本，防注入）
+        wrap.className = 'rpg-message user';
+        const bubble = document.createElement('div');
+        bubble.className = 'rpg-bubble';
+        bubble.textContent = content || '';
+        wrap.appendChild(bubble);
+        container.appendChild(wrap);
+        scrollNarrationToBottom();
+        return bubble;
+    }
+
+    // GM 叙述卡片：左对齐、宽卡片，沉浸式排版作用域收窄到卡片内部
+    wrap.className = 'rpg-message gm';
+    const bubble = document.createElement('div');
+    bubble.className = 'rpg-bubble narration-content';
+    bubble.innerHTML = renderMarkdown(filterStateDelta(content || ''));
+    wrap.appendChild(bubble);
+    container.appendChild(wrap);
+    scrollNarrationToBottom();
+    return bubble;
+}
+
+/**
+ * 追加开场白独立块（不套 GM 卡片），返回用于流式填充的内容元素。
+ */
+function appendOpening() {
+    const container = getMessagesContainer();
+    if (!container) return null;
+    const block = document.createElement('div');
+    block.className = 'rpg-opening';
+    const inner = document.createElement('div');
+    inner.className = 'narration-content';
+    block.appendChild(inner);
+    container.appendChild(block);
+    scrollNarrationToBottom();
+    return inner;
+}
+
+// ===== 身份持久化（sessionId + gameStateId）=====
+function persistIdentity() {
+    try {
+        if (currentSessionId && currentGameStateId) {
+            localStorage.setItem(RPG_STORAGE_KEY, JSON.stringify({
+                sessionId: currentSessionId,
+                gameStateId: currentGameStateId
+            }));
+        }
+    } catch (e) { /* localStorage 不可用时忽略 */ }
+}
+
+function restoreIdentity() {
+    try {
+        const raw = localStorage.getItem(RPG_STORAGE_KEY);
+        if (!raw) return null;
+        const data = JSON.parse(raw);
+        if (data && data.sessionId && data.gameStateId) return data;
+    } catch (e) { /* 解析失败忽略 */ }
+    return null;
+}
+
+/**
+ * 拉取并重放会话历史（后端 read-time 清洗后的干净消息）。
+ * @returns {Promise<boolean>} 是否重放了至少一条消息
+ */
+async function loadHistory() {
+    if (!currentSessionId) return false;
+    try {
+        const res = await fetch(`/rpg/game/history?sessionId=${encodeURIComponent(currentSessionId)}`);
+        if (!res.ok) return false;
+        const messages = await res.json();
+        if (!Array.isArray(messages) || messages.length === 0) return false;
+        messages.forEach(m => {
+            // 工具事件已在后端过滤；此处仅渲染 user / assistant / 合成摘要
+            appendMessage(m.role === 'user' ? 'user' : 'assistant', m.content, {
+                synthetic: m.synthetic === true
+            });
+        });
+        return true;
+    } catch (e) {
+        console.warn('历史重放失败', e);
+        return false;
+    }
+}
+
 // ===== 工坊模式 Tab 切换 =====
 document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -248,9 +382,12 @@ document.getElementById('confirmStartBtn').addEventListener('click', async () =>
         const gs = await res.json();
         currentGameStateId = gs.id;
         currentWorldId = worldId;
+        // 持久化身份（sessionId + gameStateId），支持刷新恢复
+        persistIdentity();
         // 切换到游戏模式
         switchToGameMode();
-        // 启动开场白
+        // 新开局：清空容器后展示开场白
+        clearMessages();
         await startOpening(gs.id);
     } catch (e) { alert('启动游戏失败: ' + e.message); }
 });
@@ -282,8 +419,8 @@ document.getElementById('modeToggle').addEventListener('click', () => {
 // ===== 开场白 SSE 流式 =====
 async function startOpening(gameStateId) {
     document.getElementById('inputArea').hidden = true;
-    const narrationContent = document.getElementById('narrationContent');
-    narrationContent.innerHTML = '';
+    // 开场白作为独立块置顶（不套 GM 卡片），流式只更新该块
+    const openingEl = appendOpening();
     narrationBuffer = '';
 
     try {
@@ -310,11 +447,10 @@ async function startOpening(gameStateId) {
                         const parsed = JSON.parse(data);
                         if (parsed.content) {
                             narrationBuffer += parsed.content;
-                            // 过滤 state_delta 后渲染
+                            // 过滤 state_delta 后渲染，仅更新开场白块
                             const filtered = filterStateDelta(narrationBuffer);
-                            narrationContent.innerHTML = renderMarkdown(filtered);
-                            document.getElementById('narrationArea').scrollTop =
-                                document.getElementById('narrationArea').scrollHeight;
+                            if (openingEl) openingEl.innerHTML = renderMarkdown(filtered);
+                            scrollNarrationToBottom();
                         } else if (parsed.type === 'opening_complete') {
                             // 开场白完成
                         }
@@ -350,9 +486,9 @@ gameForm.addEventListener('submit', async (e) => {
 
     abortController = new AbortController();
 
-    // 追加玩家行动到叙述区域
-    const narrationContent = document.getElementById('narrationContent');
-    narrationContent.innerHTML += `<p><em>你：${message}</em></p><hr>`;
+    // 追加玩家气泡（右、红底白字）；随后追加一个空 GM 卡片承接流式叙述（不再插入 <hr>）
+    appendMessage('user', message);
+    const gmBubble = appendMessage('assistant', '');
     narrationBuffer = '';
 
     try {
@@ -385,12 +521,14 @@ gameForm.addEventListener('submit', async (e) => {
                         const parsed = JSON.parse(data);
                         if (parsed.content) {
                             narrationBuffer += parsed.content;
+                            // 流式只更新当前 GM 气泡，历史气泡不被触碰
                             const filtered = filterStateDelta(narrationBuffer);
-                            narrationContent.innerHTML = renderMarkdown(filtered);
-                            document.getElementById('narrationArea').scrollTop =
-                                document.getElementById('narrationArea').scrollHeight;
+                            if (gmBubble) gmBubble.innerHTML = renderMarkdown(filtered);
+                            scrollNarrationToBottom();
                         } else if (parsed.error) {
-                            narrationContent.innerHTML += `<p style="color:#e94560">⚠️ ${parsed.error}</p>`;
+                            if (gmBubble) {
+                                gmBubble.innerHTML += `<p class="rpg-error">⚠️ ${parsed.error}</p>`;
+                            }
                         }
                     } catch (e) { /* ignore */ }
                 }
@@ -462,7 +600,10 @@ document.getElementById('loadBtn').addEventListener('click', async () => {
             item.innerHTML = `<span>轮次 ${gs.turnCount} | ${gs.currentLocation || '未知'}</span><span>${gs.id.substring(0,8)}</span>`;
             item.addEventListener('click', async () => {
                 currentGameStateId = gs.id;
-                currentSessionId = currentSessionId || crypto.randomUUID();
+                currentWorldId = gs.worldId || currentWorldId;
+                // 复用存档关联的 session 以重放历史；无关联时才新建
+                currentSessionId = gs.sessionId || crypto.randomUUID();
+                persistIdentity();
                 // 更新 session 关联
                 await fetch('/rpg/game/load', {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -470,7 +611,16 @@ document.getElementById('loadBtn').addEventListener('click', async () => {
                 });
                 document.getElementById('loadOverlay').hidden = true;
                 switchToGameMode();
-                await startOpening(gs.id);
+                clearMessages();
+                // 重放该存档关联 session 的历史；为空（旧存档/空会话）则回退到重新生成开场白
+                const replayed = await loadHistory();
+                if (replayed) {
+                    document.getElementById('inputArea').hidden = false;
+                    document.getElementById('gameInput').focus();
+                    updateStatusPanel(gs.id);
+                } else {
+                    await startOpening(gs.id);
+                }
             });
             list.appendChild(item);
         });
@@ -498,3 +648,21 @@ async function refreshCharList() {
         });
     } catch (e) { console.error('加载角色列表失败', e); }
 }
+
+// ===== 页面初始化：恢复持久化身份并重放历史（支持刷新恢复）=====
+(function initRpg() {
+    const saved = restoreIdentity();
+    if (!saved) return;
+    currentSessionId = saved.sessionId;
+    currentGameStateId = saved.gameStateId;
+    // 自动进入游戏模式并重放历史
+    switchToGameMode();
+    clearMessages();
+    loadHistory().then(replayed => {
+        document.getElementById('inputArea').hidden = false;
+        if (!replayed) {
+            appendMessage('assistant', '（未找到可恢复的对话历史，可继续输入行动或重新读档。）');
+        }
+        updateStatusPanel(currentGameStateId);
+    });
+})();

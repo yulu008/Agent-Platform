@@ -215,9 +215,9 @@
 
 <!-- ========== 游戏模式 ========== -->
 <main class="game-mode" id="gameMode" hidden>
-    <!-- 叙述区域 -->
+    <!-- 叙述区域：追加式对话气泡列表（不覆盖历史） -->
     <div class="narration-area" id="narrationArea">
-        <div class="narration-content" id="narrationContent"></div>
+        <div class="rpg-messages" id="messagesContainer"></div>
     </div>
 
     <!-- 状态面板 -->
@@ -247,6 +247,10 @@
     </div>
 </div>
 
+<!-- Thymeleaf 注入 sessionId 到 JS 全局变量（RPG 会话由前端生成，此处为兜底注入位，缺省 null） -->
+<script th:inline="javascript">
+    window.__SESSION_ID__ = /*[[${sessionId}]]*/ null;
+</script>
 <script th:src="@{/js/rpg.js(v=${#dates.createNow().time})}"></script>
 </body>
 </html>
