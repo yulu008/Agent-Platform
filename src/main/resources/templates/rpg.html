@@ -230,6 +230,13 @@
 
     <!-- 输入区域 -->
     <div class="input-area" id="inputArea" hidden>
+        <!-- 模型选择器（参考 chat.html 模型栏） -->
+        <div class="model-bar">
+            <label class="model-label" for="modelSelector">🤖 模型</label>
+            <select class="model-selector" id="modelSelector" title="选择对话模型">
+                <option value="">默认（云端）</option>
+            </select>
+        </div>
         <form id="gameForm" class="game-input-form">
             <input type="text" id="gameInput" placeholder="输入你的行动..." autocomplete="off"/>
             <button type="submit" class="btn-send" id="gameSendBtn">发送</button>

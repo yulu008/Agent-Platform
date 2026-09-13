@@ -105,13 +105,14 @@ public class RpgGameController {
     /**
      * 游戏回合：玩家输入 → GameLoopService → GM 叙述 SSE 流式。
      * <p>
-     * 请求体: {"gameStateId":"xxx","sessionId":"yyy","message":"我走进客栈"}
+     * 请求体: {"gameStateId":"xxx","sessionId":"yyy","message":"我走进客栈","model":"可选模型名"}
      */
     @PostMapping(value = "/game/turn", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<ServerSentEvent<Object>> gameTurn(@RequestBody Map<String, String> request) {
         String gameStateId = request.get("gameStateId");
         String sessionId = request.get("sessionId");
         String message = request.get("message");
+        String model = request.get("model");
 
         // 步骤1-4: 准备轮次（触发器扫描、软条件评估、概率检定、GM 上下文组装）
         GameLoopService.TurnContext turnContext;
@@ -124,8 +125,16 @@ public class RpgGameController {
                     .build());
         }
 
-        // 获取 GM 专属 ChatClient（rpgSessionMemoryAdvisor，maxEvents=30，与主聊天隔离）
-        ChatClient chatClient = chatClientRegistry.forRpg();
+        // 获取 GM 专属 ChatClient（rpgSessionMemoryAdvisor，maxEvents=30，与主聊天隔离），按前端选择的模型路由
+        ChatClient chatClient;
+        try {
+            chatClient = chatClientRegistry.forRpg(model);
+        } catch (IllegalArgumentException e) {
+            log.warn("RPG 模型路由失败: {}", e.getMessage());
+            return Flux.just(ServerSentEvent.<Object>builder()
+                    .data(Map.of("error", e.getMessage()))
+                    .build());
+        }
 
         // 拼接完整回复（用于 post-processing）
         StringBuilder fullResponse = new StringBuilder();

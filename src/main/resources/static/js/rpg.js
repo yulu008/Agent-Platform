@@ -11,16 +11,47 @@ let isGameMode = false;
 let abortController = null;
 let narrationBuffer = '';
 
-// 简易 Markdown 渲染
-function renderMarkdown(text) {
-    return text
-        .replace(/^### (.+)$/gm, '<h3>$1</h3>')
-        .replace(/^## (.+)$/gm, '<h2>$1</h2>')
-        .replace(/^# (.+)$/gm, '<h1>$1</h1>')
-        .replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>')
+// 行内 Markdown（代码、加粗）
+function inlineMarkdown(s) {
+    return s
         .replace(/`([^`]+)`/g, '<code>$1</code>')
-        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-        .replace(/\n/g, '<br>');
+        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+}
+
+// 简易 Markdown 渲染（块级：标题/引用/列表/分隔线；行内：代码/加粗）
+function renderMarkdown(text) {
+    const lines = String(text == null ? '' : text).split('\n');
+    let html = '';
+    let listType = null; // 'ul' | 'ol'
+    const closeList = () => { if (listType) { html += '</' + listType + '>'; listType = null; } };
+    for (const line of lines) {
+        const ul = line.match(/^\s*[-*]\s+(.*)$/);
+        const ol = line.match(/^\s*\d+[.)]\s+(.*)$/);
+        if (ul) {
+            if (listType !== 'ul') { closeList(); html += '<ul>'; listType = 'ul'; }
+            html += '<li>' + inlineMarkdown(ul[1]) + '</li>';
+            continue;
+        }
+        if (ol) {
+            if (listType !== 'ol') { closeList(); html += '<ol>'; listType = 'ol'; }
+            html += '<li>' + inlineMarkdown(ol[1]) + '</li>';
+            continue;
+        }
+        closeList();
+        if (/^\s*(-{3,}|\*{3,})\s*$/.test(line)) { html += '<hr>'; continue; }
+        const h3 = line.match(/^###\s+(.*)$/);
+        const h2 = line.match(/^##\s+(.*)$/);
+        const h1 = line.match(/^#\s+(.*)$/);
+        const bq = line.match(/^>\s?(.*)$/);
+        if (h3) { html += '<h3>' + inlineMarkdown(h3[1]) + '</h3>'; continue; }
+        if (h2) { html += '<h2>' + inlineMarkdown(h2[1]) + '</h2>'; continue; }
+        if (h1) { html += '<h1>' + inlineMarkdown(h1[1]) + '</h1>'; continue; }
+        if (bq) { html += '<blockquote>' + inlineMarkdown(bq[1]) + '</blockquote>'; continue; }
+        if (line.trim() === '') { html += '<br>'; continue; }
+        html += inlineMarkdown(line) + '<br>';
+    }
+    closeList();
+    return html;
 }
 
 // state_delta 过滤（客户端二次过滤，后端引擎已过滤一次）
@@ -473,6 +504,28 @@ const gameForm = document.getElementById('gameForm');
 const gameInput = document.getElementById('gameInput');
 const gameSendBtn = document.getElementById('gameSendBtn');
 const gameStopBtn = document.getElementById('gameStopBtn');
+const modelSelector = document.getElementById('modelSelector');
+
+// ===== 模型选择器（参考 chat.js）=====
+async function loadModels() {
+    if (!modelSelector) return;
+    try {
+        const res = await fetch('/chat/models');
+        if (!res.ok) return;
+        const models = await res.json();
+        // 保留默认占位项（value="" 表示用后端 default 模型）
+        modelSelector.innerHTML = '<option value="">默认（云端）</option>';
+        models.forEach(name => {
+            const opt = document.createElement('option');
+            opt.value = name;
+            opt.textContent = name;
+            modelSelector.appendChild(opt);
+        });
+    } catch (e) {
+        console.warn('模型列表加载失败:', e);
+    }
+}
+loadModels();
 
 gameForm.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -497,7 +550,8 @@ gameForm.addEventListener('submit', async (e) => {
             body: JSON.stringify({
                 gameStateId: currentGameStateId,
                 sessionId: currentSessionId,
-                message
+                message,
+                model: modelSelector ? modelSelector.value : ''
             }),
             signal: abortController.signal
         });

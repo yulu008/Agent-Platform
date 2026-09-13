@@ -26,26 +26,26 @@ public class ChatClientRegistry {
     private final Map<String, ChatClient.Builder> byRoleBuilder;
     private final String defaultName;
 
-    /** RPG 专属对话 client（挂 rpgSessionMemoryAdvisor，maxEvents=30，与主聊天隔离） */
-    private final ChatClient rpgChatClient;
+    /** RPG 专属对话 client（挂 rpgSessionMemoryAdvisor，maxEvents=30，与主聊天隔离），按模型名索引 */
+    private final Map<String, ChatClient> rpgByName;
 
     /** 工具定义的估算 token 开销（启动时一次性计算并缓存） */
     private final AtomicInteger cachedToolTokens = new AtomicInteger(0);
 
     public ChatClientRegistry(Map<String, ChatClient> byName,
+                               Map<String, ChatClient> rpgByName,
                                Map<String, ChatClient> byRole,
                                Map<String, ChatClient.Builder> byRoleBuilder,
-                               String defaultName,
-                               ChatClient rpgChatClient) {
+                               String defaultName) {
         Assert.notEmpty(byName, "至少配置一个 roles 含 chat 的模型");
         Assert.hasText(defaultName, "未配置 default-model=true 的对话模型");
         Assert.isTrue(byName.containsKey(defaultName),
                 "default 模型 [" + defaultName + "] 不在对话模型列表 " + byName.keySet());
         this.byName = Collections.unmodifiableMap(byName);
+        this.rpgByName = Collections.unmodifiableMap(rpgByName);
         this.byRole = Collections.unmodifiableMap(byRole);
         this.byRoleBuilder = Collections.unmodifiableMap(byRoleBuilder);
         this.defaultName = defaultName;
-        this.rpgChatClient = rpgChatClient;
     }
 
     /**
@@ -66,12 +66,16 @@ public class ChatClientRegistry {
      * <p>
      * 用于 RPG 游戏回合生成（{@code RpgGameController}），替代 {@link #forChat(String)}，
      * 以免与主聊天共享 maxEvents=10 的压缩窗口。调用时仍须传 sessionId。
+     * 缺省（null/空）取 default 模型的 RPG client，未知模型抛 400 友好提示。
      */
-    public ChatClient forRpg() {
-        if (rpgChatClient == null) {
-            throw new IllegalStateException("RPG 专属 ChatClient 未装配");
+    public ChatClient forRpg(String name) {
+        String key = (name == null || name.isBlank()) ? defaultName : name;
+        ChatClient client = rpgByName.get(key);
+        if (client == null) {
+            throw new IllegalArgumentException(
+                    "未知 RPG 模型: " + name + "，可用模型: " + rpgByName.keySet());
         }
-        return rpgChatClient;
+        return client;
     }
 
     /**

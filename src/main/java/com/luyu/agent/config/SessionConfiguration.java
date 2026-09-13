@@ -180,8 +180,9 @@ public class SessionConfiguration {
                 .toolCallingManager(toolCallingManager)
                 .build();
 
-        // 遍历模型构建对话 client（byName）+ 辅助 client（byRole）+ 辅助 builder（byRoleBuilder）
+        // 遍历模型构建对话 client（byName）+ RPG client（rpgByName）+ 辅助 client（byRole）+ 辅助 builder（byRoleBuilder）
         Map<String, ChatClient> byName = new LinkedHashMap<>();
+        Map<String, ChatClient> rpgByName = new LinkedHashMap<>();
         Map<String, ChatClient> byRole = new HashMap<>();
         Map<String, ChatClient.Builder> byRoleBuilder = new HashMap<>();
         String defaultName = null;
@@ -202,6 +203,16 @@ public class SessionConfiguration {
                                 .toolCallbacks(resilientTools))
                         .build();
                 byName.put(name, chatClient);
+
+                // RPG 专属 client：同模型但用 rpgSessionMemoryAdvisor（maxEvents=30），供前端模型选择路由
+                ChatClient rpgClient = ChatClient.builder(model)
+                        .defaultAdvisors(autoMemoryToolsAdvisor, rpgSessionMemoryAdvisor,
+                                toolCallingAdvisor, new MalformedToolCallSanitizer())
+                        .defaultOptions(ToolCallingChatOptions.builder()
+                                .toolCallbacks(resilientTools))
+                        .build();
+                rpgByName.put(name, rpgClient);
+
                 if (props.isDefaultModel()) {
                     defaultName = name;
                 }
@@ -228,22 +239,13 @@ public class SessionConfiguration {
             log.warn("ChatClientRegistry 未挂载任何工具回调（skills/agents 目录均为空）");
         }
 
-        // RPG 专属对话 client：基于默认对话模型，advisor 链用 rpgSessionMemoryAdvisor（maxEvents=30）
+        // RPG 专属对话 client 已按模型构建（rpgByName），advisor 链用 rpgSessionMemoryAdvisor（maxEvents=30）
         // 替代 sessionMemoryAdvisor，其余（AutoMemoryTools、容错工具链）与主对话 client 一致。
         // ⚠️ 必须是独立 client，其 advisor 链中只含 rpgSessionMemoryAdvisor，不与默认 sessionMemoryAdvisor
         //    并存，否则记忆会被加载/写入两次（双写陷阱）。
-        ChatClient rpgChatClient = null;
-        if (defaultName != null) {
-            rpgChatClient = ChatClient.builder(chatModels.get(defaultName))
-                    .defaultAdvisors(autoMemoryToolsAdvisor, rpgSessionMemoryAdvisor,
-                            toolCallingAdvisor, new MalformedToolCallSanitizer())
-                    .defaultOptions(ToolCallingChatOptions.builder()
-                            .toolCallbacks(resilientTools))
-                    .build();
-        }
 
         // 一次性计算工具定义 token 开销（名称 + 描述 + inputSchema）
-        ChatClientRegistry registry = new ChatClientRegistry(byName, byRole, byRoleBuilder, defaultName, rpgChatClient);
+        ChatClientRegistry registry = new ChatClientRegistry(byName, rpgByName, byRole, byRoleBuilder, defaultName);
         int toolTokens = resilientTools.stream()
                 .mapToInt(tc -> {
                     var def = tc.getToolDefinition();
