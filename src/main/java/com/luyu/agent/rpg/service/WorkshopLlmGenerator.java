@@ -1,5 +1,6 @@
 package com.luyu.agent.rpg.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.luyu.agent.config.ChatClientRegistry;
 import com.luyu.agent.rpg.model.CharacterCard;
@@ -8,6 +9,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.stereotype.Service;
+
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * 工坊 LLM 生成器。
@@ -26,6 +32,9 @@ public class WorkshopLlmGenerator {
             请根据以下关键词生成一个 RPG 世界观设定，以 JSON 格式输出。
             关键词：%s
 
+            命名硬约束：所有名称（世界名/角色名/地点名）必须使用汉字，且与世界文化风格一致
+            （如日式世界用「东狼」式汉字名）；禁止罗马音、纯英文。
+
             JSON 格式要求：
             {
               "name": "世界名称",
@@ -43,6 +52,9 @@ public class WorkshopLlmGenerator {
             请根据以下描述生成一个 RPG 角色卡，以 JSON 格式输出。
             描述：%s
             角色类型：%s
+
+            命名硬约束：角色名称必须使用汉字，且与世界文化风格一致
+            （如日式世界用「东狼」式汉字名）；禁止罗马音、纯英文。
 
             JSON 格式要求：
             {
@@ -68,6 +80,37 @@ public class WorkshopLlmGenerator {
             玩家角色：%s
 
             请直接输出开场白模板文本，不要包含其他说明。
+            """;
+
+    /**
+     * 存量罗马音/英文名字批量汉字化改名提示词。
+     * <p>
+     * 输出为 {@code {旧名: 新汉字名}} 映射，校验矩阵在 {@code WorkshopService.localizeNames} 侧执行。
+     */
+    private static final String RENAME_GEN_PROMPT = """
+            以下 RPG 世界的角色名使用了罗马音或英文，请把每个名字改写为汉字名。
+
+            世界名称：%s
+            时代背景：%s
+            世界氛围：%s
+
+            待改名清单：
+            %s
+
+            改写要求：
+            1. 新名必须全部使用汉字，禁止罗马音、拉丁字母与纯英文
+            2. 保留原名的文化风格与读音意象（如日式名 okami azuma →「大神东」一类汉字名；
+               西式名 Elena →「艾莲娜」一类中文译名）
+            3. 新名彼此不得重复，也不得与已是汉字的名字重复
+            4. 只输出 JSON，key 必须与待改名清单中的旧名完全一致（不得做大小写或空格变体），value 为新汉字名
+
+            JSON 格式：
+            {
+              "旧名1": "新汉字名1",
+              "旧名2": "新汉字名2"
+            }
+
+            请仅输出 JSON，不要包含其他文本。
             """;
 
     private final ChatClientRegistry chatClientRegistry;
@@ -136,7 +179,59 @@ public class WorkshopLlmGenerator {
         return response.trim();
     }
 
+    /**
+     * LLM 批量生成「旧名 → 新汉字名」映射（工坊一键中文化改名用）。
+     * <p>
+     * 单次调用、无 advisor 的 workshop 纯净 client。本方法只负责调用与解析，
+     * <b>不做任何校验也不写库</b>；覆盖完整性、CJK 含量、重名与冲突校验由
+     * {@code WorkshopService.localizeNames} 在事务前统一执行。
+     *
+     * @param cards 待改名的角色卡（已筛出含拉丁字母的名字）
+     * @param world 世界观（提供文化风格依据）
+     * @return 旧名 → 新名映射（保序，已剔除空白项）；入参为空时返回空映射（不调 LLM）
+     * @throws RuntimeException LLM 调用或 JSON 解析失败
+     */
+    public Map<String, String> renameToChinese(List<CharacterCard> cards, WorldSetting world) {
+        if (cards == null || cards.isEmpty()) {
+            return Map.of();
+        }
+        String listing = cards.stream()
+                .map(c -> String.format("- %s（%s，身份：%s）",
+                        c.getName(),
+                        "player".equals(c.getType()) ? "玩家角色" : "NPC",
+                        blankTo(c.getIdentity(), "未设定")))
+                .collect(Collectors.joining("\n"));
+        String prompt = String.format(RENAME_GEN_PROMPT,
+                world == null ? "（未设定）" : blankTo(world.getName(), "（未设定）"),
+                world == null ? "（未设定）" : blankTo(world.getEra(), "（未设定）"),
+                world == null ? "（未设定）" : blankTo(world.getAtmosphere(), "（未设定）"),
+                listing);
+        String response = callLlm(prompt);
+        if (response == null) {
+            throw new RuntimeException("LLM 生成改名映射失败");
+        }
+        try {
+            Map<String, String> raw = mapper.readValue(extractJson(response),
+                    new TypeReference<LinkedHashMap<String, String>>() {});
+            Map<String, String> result = new LinkedHashMap<>();
+            raw.forEach((k, v) -> {
+                if (k != null && v != null && !k.isBlank() && !v.isBlank()) {
+                    result.put(k.strip(), v.strip());
+                }
+            });
+            log.info("LLM 改名映射已生成: {} 项", result.size());
+            return result;
+        } catch (Exception e) {
+            log.error("解析 LLM 改名输出失败: {}", e.getMessage(), e);
+            throw new RuntimeException("解析改名映射失败: " + e.getMessage());
+        }
+    }
+
     // ==================== 辅助方法 ====================
+
+    private static String blankTo(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value;
+    }
 
     private String callLlm(String prompt) {
         try {

@@ -62,4 +62,22 @@ public class RpgGameStateRepository {
                 "SELECT * FROM rpg_game_state ORDER BY updated_at DESC",
                 BeanPropertyRowMapper.newInstance(GameState.class));
     }
+
+    /**
+     * 同一世界的全部存档（一键中文化改名时需迁移各存档的 npcStates key）。
+     */
+    public List<GameState> findByWorldId(String worldId) {
+        return jdbcTemplate.query(
+                "SELECT * FROM rpg_game_state WHERE world_id = ? ORDER BY updated_at DESC",
+                BeanPropertyRowMapper.newInstance(GameState.class), worldId);
+    }
+
+    /**
+     * 仅重写 npc_states（key 从旧名迁移为角色卡 ID），不动轮次与位置。
+     */
+    public void updateNpcStates(String id, String npcStates) {
+        jdbcTemplate.update(
+                "UPDATE rpg_game_state SET npc_states = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                npcStates, id);
+    }
 }

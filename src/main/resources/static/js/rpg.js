@@ -59,6 +59,32 @@ function filterStateDelta(text) {
     return text.replace(/<state_delta>[\s\S]*?<\/state_delta>/gi, '');
 }
 
+// ===== 【生成中】占位（纯前端生命周期，不动后端 SSE 协议）=====
+const GENERATING_HTML = '<span class="rpg-generating">【生成中】</span>';
+
+/**
+ * 流式开始前写入占位，避免等待期出现空白气泡。
+ * 首个内容 chunk 到达时，既有的 `innerHTML = renderMarkdown(...)` 赋值会天然覆盖它。
+ */
+function showGenerating(el) {
+    if (el) el.innerHTML = GENERATING_HTML;
+}
+
+/**
+ * 流终止后的兜底：一个内容 chunk 都没收到时（narrationBuffer 仍为空），
+ * 占位必须换成终态文案，否则页面永远停在「生成中」。
+ * 占位已被内容或上一次终态文案替换时本函数是 no-op，故可在 catch 与正常结束处重复调用。
+ */
+function settlePlaceholder(el, text, isError = false) {
+    if (!el || narrationBuffer) return;
+    if (!el.querySelector('.rpg-generating')) return;
+    el.innerHTML = '';
+    const span = document.createElement('span');
+    span.className = isError ? 'rpg-error' : 'rpg-settled';
+    span.textContent = text;
+    el.appendChild(span);
+}
+
 // ===== 消息列表渲染（追加式，不覆盖历史）=====
 const RPG_STORAGE_KEY = 'rpg.identity';
 
@@ -299,6 +325,51 @@ document.getElementById('confirmGenerateCharBtn').addEventListener('click', asyn
     } catch (e) { alert('生成失败: ' + e.message); }
 });
 
+// ===== 一键中文化改名（存量罗马音存档的修复入口）=====
+document.getElementById('localizeNamesBtn').addEventListener('click', async () => {
+    if (!currentWorldId) { alert('请先保存世界观'); return; }
+    if (!confirm('把本世界含罗马音/英文的角色名批量改为汉字名？\n'
+            + '同时会把存档 npcStates key、触发器与关系引用迁移到角色卡 ID。\n'
+            + '建议避开回合生成中执行。')) return;
+
+    const btn = document.getElementById('localizeNamesBtn');
+    const label = btn.textContent.trim();
+    btn.disabled = true;
+    btn.textContent = '改名中...';
+    try {
+        const res = await fetch(`/rpg/workshop/localize-names?worldId=${encodeURIComponent(currentWorldId)}`,
+            {method: 'POST'});
+        const body = await res.json().catch(() => null);
+        if (!res.ok) {
+            alert('改名失败: ' + ((body && body.error) || ('HTTP ' + res.status)));
+            return;
+        }
+        const renames = (body && body.renames) || [];
+        if (renames.length === 0) {
+            alert('该世界没有需要中文化的名字。');
+            return;
+        }
+        // 卡名与 npcStates key 都变了，缓存必须作废
+        worldCharCards = {};
+        cachedCharWorldId = null;
+        alert(formatLocalizeSummary(renames, body));
+        await refreshCharList();
+    } catch (e) {
+        alert('改名失败: ' + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = label;
+    }
+});
+
+function formatLocalizeSummary(renames, body) {
+    const lines = renames.map(r => `・${r.oldName} → ${r.newName}`);
+    return `已改名 ${renames.length} 项：\n${lines.join('\n')}\n\n引用迁移：`
+        + `存档 ${body.gameStateCount} 个 / npcStates key ${body.npcStateKeyCount} 个 / `
+        + `触发器 ${body.triggerCount} 条 / 关系 ${body.relationshipCount} 条 / `
+        + `笔记本文件 ${body.notebookFileCount} 个`;
+}
+
 // ===== 地点保存 =====
 document.getElementById('saveLocBtn').addEventListener('click', async () => {
     if (!currentWorldId) { alert('请先保存世界观'); return; }
@@ -453,6 +524,7 @@ async function startOpening(gameStateId) {
     // 开场白作为独立块置顶（不套 GM 卡片），流式只更新该块
     const openingEl = appendOpening();
     narrationBuffer = '';
+    showGenerating(openingEl);
 
     try {
         const res = await fetch('/rpg/game/start', {
@@ -491,7 +563,10 @@ async function startOpening(gameStateId) {
         }
     } catch (e) {
         console.error('开场白加载失败', e);
+        settlePlaceholder(openingEl, '（开场白加载失败）', true);
     }
+    // 流正常结束但未收到任何内容时也要清掉占位
+    settlePlaceholder(openingEl, '（开场白无内容）');
 
     // 显示输入区域
     document.getElementById('inputArea').hidden = false;
@@ -543,6 +618,7 @@ gameForm.addEventListener('submit', async (e) => {
     appendMessage('user', message);
     const gmBubble = appendMessage('assistant', '');
     narrationBuffer = '';
+    showGenerating(gmBubble);
 
     try {
         const res = await fetch('/rpg/game/turn', {
@@ -581,7 +657,12 @@ gameForm.addEventListener('submit', async (e) => {
                             scrollNarrationToBottom();
                         } else if (parsed.error) {
                             if (gmBubble) {
-                                gmBubble.innerHTML += `<p class="rpg-error">⚠️ ${parsed.error}</p>`;
+                                if (narrationBuffer) {
+                                    gmBubble.innerHTML += `<p class="rpg-error">⚠️ ${parsed.error}</p>`;
+                                } else {
+                                    // 尚无叙述内容：错误行替换占位，而不是拼在「生成中」后面
+                                    settlePlaceholder(gmBubble, '⚠️ ' + parsed.error, true);
+                                }
                             }
                         }
                     } catch (e) { /* ignore */ }
@@ -591,10 +672,14 @@ gameForm.addEventListener('submit', async (e) => {
     } catch (e) {
         if (e.name === 'AbortError') {
             console.log('流式已中止');
+            settlePlaceholder(gmBubble, '（已中止）');
         } else {
             console.error('回合请求失败', e);
+            settlePlaceholder(gmBubble, '⚠️ 回合请求失败: ' + e.message, true);
         }
     }
+    // 流正常结束但未收到任何内容时也要清掉占位
+    settlePlaceholder(gmBubble, '（本轮无叙述）');
 
     gameInput.disabled = false;
     gameSendBtn.hidden = false;
@@ -690,18 +775,44 @@ function showCompactToast(message) {
 }
 
 // ===== 状态面板更新 =====
+// npcStates 的 key 在迁移后是角色卡 ID，需经世界角色卡列表解析为卡名再显示。
+// 缓存按 worldId 作键：刷新恢复路径不设 currentWorldId，故 worldId 从存档接口拿。
+let worldCharCards = {};
+let cachedCharWorldId = null;
+
+async function loadWorldCharCards(worldId) {
+    try {
+        const res = await fetch(`/rpg/workshop/characters?worldId=${encodeURIComponent(worldId)}`);
+        if (!res.ok) return;
+        const chars = await res.json();
+        worldCharCards = {};
+        chars.forEach(c => { worldCharCards[c.id] = c.name; });
+        cachedCharWorldId = worldId;
+    } catch (e) {
+        console.warn('角色卡缓存加载失败', e);
+    }
+}
+
+/** key 命中角色卡 ID 时显示卡名，未命中原样显示（兼容未迁移存档） */
+function displayNpcKey(key) {
+    return worldCharCards[key] || key;
+}
+
 async function updateStatusPanel(gameStateId) {
     if (!gameStateId) return;
     try {
         const res = await fetch(`/rpg/game/state?gameStateId=${gameStateId}`);
         const gs = await res.json();
+        if (gs.worldId && gs.worldId !== cachedCharWorldId) {
+            await loadWorldCharCards(gs.worldId);
+        }
         document.getElementById('statusLocation').textContent = gs.currentLocation || '-';
         document.getElementById('statusTurn').textContent = gs.turnCount || 0;
         // 解析 NPC 状态
         if (gs.npcStates) {
             try {
                 const npcStates = JSON.parse(gs.npcStates);
-                const npcNames = Object.keys(npcStates);
+                const npcNames = Object.keys(npcStates).map(displayNpcKey);
                 document.getElementById('statusNpcs').textContent =
                     npcNames.length > 0 ? npcNames.join(', ') : '-';
             } catch { document.getElementById('statusNpcs').textContent = '-'; }
@@ -782,6 +893,251 @@ async function refreshCharList() {
             container.appendChild(item);
         });
     } catch (e) { console.error('加载角色列表失败', e); }
+}
+
+// ===== 存档记忆管理弹窗（当前存档的 GM 笔记本，可增删改查）=====
+// 与 /memory 页面的全局记忆库互不相干：这里操作的是 ~/.agent/rpg-saves/<gameStateId>/ 下的文件。
+const MEMORY_TYPES = [
+    {type: 'npc_memory', icon: '👤', label: 'NPC 记忆'},
+    {type: 'foreshadow', icon: '🪝', label: '伏笔'},
+    {type: 'world_lore', icon: '🗺️', label: '世界细节'},
+    {type: 'player_style', icon: '🎭', label: '玩家偏好'}
+];
+let memoryList = [];
+let memorySelectedFile = null;
+let memoryEditing = false;
+
+function saveMemoryApi() {
+    return `/rpg/saves/${encodeURIComponent(currentGameStateId)}/memories`;
+}
+
+document.getElementById('memoryMgrBtn').addEventListener('click', async () => {
+    if (!currentGameStateId) { showCompactToast('请先开始冒险或读取存档'); return; }
+    document.getElementById('memoryScopeHint').textContent =
+        `存档 ${currentGameStateId.substring(0, 8)} · ~/.agent/rpg-saves/${currentGameStateId}`;
+    document.getElementById('memoryOverlay').hidden = false;
+    showMemoryHint();
+    await loadSaveMemoryList();
+});
+
+document.getElementById('closeMemoryBtn').addEventListener('click', closeMemoryDialog);
+document.getElementById('refreshMemoryBtn').addEventListener('click', () => loadSaveMemoryList());
+document.getElementById('newMemoryBtn').addEventListener('click', () => openMemoryForm(null));
+document.getElementById('cancelMemoryBtn').addEventListener('click', () => {
+    // 从表单退回：有选中项回详情，否则回提示态
+    if (memorySelectedFile) showMemoryDetail(memorySelectedFile);
+    else showMemoryHint();
+});
+document.getElementById('editMemoryBtn').addEventListener('click', () => showMemoryFormForEdit());
+document.getElementById('deleteMemoryBtn').addEventListener('click', () => confirmDeleteMemory());
+document.getElementById('memoryConfirmNo').addEventListener('click', () => {
+    document.getElementById('memoryConfirmOverlay').hidden = true;
+});
+document.getElementById('memoryConfirmYes').addEventListener('click', () => doDeleteMemory());
+document.getElementById('saveMemoryBtn').addEventListener('click', () => saveMemoryFromForm());
+
+function closeMemoryDialog() {
+    document.getElementById('memoryOverlay').hidden = true;
+    document.getElementById('memoryConfirmOverlay').hidden = true;
+}
+
+/** 右侧回到初始提示态（同时清选中与编辑标记） */
+function showMemoryHint() {
+    memorySelectedFile = null;
+    memoryEditing = false;
+    document.getElementById('memoryHint').hidden = false;
+    document.getElementById('memoryDetail').hidden = true;
+    document.getElementById('memoryForm').hidden = true;
+}
+
+async function loadSaveMemoryList() {
+    try {
+        const res = await fetch(saveMemoryApi());
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        memoryList = await res.json();
+    } catch (e) {
+        memoryList = [];
+        renderMemoryGroups(`记忆列表加载失败：${e.message}`);
+        return;
+    }
+    renderMemoryGroups();
+}
+
+/** 按四类型分桶渲染（未知类型归入「其他」）；列表为空时渲染提示行 */
+function renderMemoryGroups(emptyMessage) {
+    const box = document.getElementById('memoryGroups');
+    box.innerHTML = '';
+    if (memoryList.length === 0) {
+        box.appendChild(memoryEmptyNode(
+            emptyMessage || '这个存档还没有记忆文件。点「＋ 新建」写第一条。'));
+        return;
+    }
+    const buckets = new Map(MEMORY_TYPES.map(t => [t.type, []]));
+    const others = [];
+    memoryList.forEach(m => {
+        const bucket = buckets.get(m.type);
+        if (bucket) bucket.push(m); else others.push(m);
+    });
+    MEMORY_TYPES.forEach(t => appendMemoryGroup(box, `${t.icon} ${t.label}`, buckets.get(t.type)));
+    appendMemoryGroup(box, '📄 其他', others);
+}
+
+function memoryEmptyNode(text) {
+    const div = document.createElement('div');
+    div.className = 'memory-empty';
+    div.textContent = text;
+    return div;
+}
+
+function appendMemoryGroup(box, title, entries) {
+    if (!entries || entries.length === 0) return;
+    const head = document.createElement('div');
+    head.className = 'memory-group-title';
+    head.textContent = `${title}（${entries.length}）`;
+    box.appendChild(head);
+    entries.forEach(entry => {
+        const item = document.createElement('div');
+        item.className = 'memory-item';
+        if (entry.fileName === memorySelectedFile) item.classList.add('active');
+        const name = document.createElement('div');
+        name.textContent = entry.name || entry.fileName;
+        const file = document.createElement('div');
+        file.className = 'memory-item-file';
+        file.textContent = entry.fileName;
+        item.appendChild(name);
+        item.appendChild(file);
+        item.addEventListener('click', () => showMemoryDetail(entry.fileName));
+        box.appendChild(item);
+    });
+}
+
+async function showMemoryDetail(fileName) {
+    try {
+        const res = await fetch(`${saveMemoryApi()}/detail?file=${encodeURIComponent(fileName)}`);
+        if (!res.ok) {
+            const body = await res.json().catch(() => null);
+            throw new Error((body && body.error) || ('HTTP ' + res.status));
+        }
+        const detail = await res.json();
+        memorySelectedFile = fileName;
+        renderMemoryMeta(detail);
+        document.getElementById('memoryContent').textContent = detail.content || '（空）';
+        document.getElementById('memoryHint').hidden = true;
+        document.getElementById('memoryDetail').hidden = false;
+        document.getElementById('memoryForm').hidden = true;
+        renderMemoryGroups();   // 同步左侧选中高亮
+    } catch (e) {
+        showCompactToast(`❌ 读取记忆失败：${e.message}`);
+    }
+}
+
+function renderMemoryMeta(detail) {
+    const meta = document.getElementById('memoryMeta');
+    meta.innerHTML = '';
+    const typeInfo = MEMORY_TYPES.find(t => t.type === detail.type);
+    meta.appendChild(memoryBadge(`${typeInfo ? typeInfo.icon + ' ' : ''}${detail.type || '未分类'}`, true));
+    if (detail.name) meta.appendChild(memoryBadge(detail.name, false));
+    if (detail.description) meta.appendChild(memoryBadge(detail.description, false));
+    meta.appendChild(memoryBadge(detail.fileName, false));
+}
+
+function memoryBadge(text, isType) {
+    const span = document.createElement('span');
+    span.className = isType ? 'memory-badge type' : 'memory-badge';
+    span.textContent = text;
+    return span;
+}
+
+/** entry 为 null 时是新建态；否则为编辑态（文件名锁定，改名等于删除+新建） */
+function openMemoryForm(entry) {
+    memoryEditing = !!entry;
+    const fileInput = document.getElementById('memFileInput');
+    fileInput.value = entry ? entry.fileName : suggestMemoryFileName();
+    fileInput.readOnly = !!entry;
+    document.getElementById('memNameInput').value = entry ? (entry.name || '') : '';
+    document.getElementById('memDescInput').value = entry ? (entry.description || '') : '';
+    document.getElementById('memTypeInput').value =
+        entry && MEMORY_TYPES.some(t => t.type === entry.type) ? entry.type : 'npc_memory';
+    document.getElementById('memContentInput').value = entry ? (entry.content || '') : '';
+    document.getElementById('memoryHint').hidden = true;
+    document.getElementById('memoryDetail').hidden = true;
+    document.getElementById('memoryForm').hidden = false;
+    document.getElementById('memNameInput').focus();
+}
+
+function suggestMemoryFileName() {
+    const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
+    return `note_${stamp}.md`;
+}
+
+async function showMemoryFormForEdit() {
+    if (!memorySelectedFile) return;
+    try {
+        const res = await fetch(`${saveMemoryApi()}/detail?file=${encodeURIComponent(memorySelectedFile)}`);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        openMemoryForm(await res.json());
+    } catch (e) {
+        showCompactToast(`❌ 读取记忆失败：${e.message}`);
+    }
+}
+
+async function saveMemoryFromForm() {
+    const file = document.getElementById('memFileInput').value.trim();
+    const name = document.getElementById('memNameInput').value.trim();
+    if (!file) { showCompactToast('❌ 文件名不能为空'); return; }
+    if (!name) { showCompactToast('❌ 名称不能为空'); return; }
+    const payload = {
+        file,
+        name,
+        description: document.getElementById('memDescInput').value.trim(),
+        type: document.getElementById('memTypeInput').value,
+        content: document.getElementById('memContentInput').value
+    };
+    const btn = document.getElementById('saveMemoryBtn');
+    btn.disabled = true;
+    try {
+        const res = await fetch(saveMemoryApi(), {
+            method: memoryEditing ? 'PUT' : 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        });
+        const body = await res.json().catch(() => null);
+        if (!res.ok) throw new Error((body && body.error) || ('HTTP ' + res.status));
+        memorySelectedFile = file;
+        showCompactToast(memoryEditing ? '✅ 记忆已更新' : '✅ 记忆已创建');
+        await loadSaveMemoryList();
+        await showMemoryDetail(file);   // 保留选中态
+    } catch (e) {
+        showCompactToast(`❌ 保存失败：${e.message}`);
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+function confirmDeleteMemory() {
+    if (!memorySelectedFile) return;
+    document.getElementById('memoryConfirmText').textContent =
+        `确认删除「${memorySelectedFile}」？此操作不可撤销。`;
+    document.getElementById('memoryConfirmOverlay').hidden = false;
+}
+
+async function doDeleteMemory() {
+    document.getElementById('memoryConfirmOverlay').hidden = true;
+    const file = memorySelectedFile;
+    if (!file) return;
+    try {
+        const res = await fetch(`${saveMemoryApi()}?file=${encodeURIComponent(file)}`, {method: 'DELETE'});
+        if (!res.ok) {
+            const body = await res.json().catch(() => null);
+            throw new Error((body && body.error) || ('HTTP ' + res.status));
+        }
+        showCompactToast('🗑️ 记忆已删除');
+        memorySelectedFile = null;
+        await loadSaveMemoryList();
+        showMemoryHint();
+    } catch (e) {
+        showCompactToast(`❌ 删除失败：${e.message}`);
+    }
 }
 
 // ===== 页面初始化：恢复持久化身份并重放历史（支持刷新恢复）=====

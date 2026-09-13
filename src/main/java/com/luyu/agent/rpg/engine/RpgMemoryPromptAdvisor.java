@@ -61,7 +61,7 @@ public class RpgMemoryPromptAdvisor implements BaseAdvisor {
 
     @Autowired
     public RpgMemoryPromptAdvisor(GmContextAssembler contextAssembler) {
-        this(contextAssembler.getMemoryPrompt());
+        this(joinTemplates(contextAssembler.getMemoryPrompt(), contextAssembler.getNarrativeRules()));
     }
 
     /**
@@ -138,5 +138,23 @@ public class RpgMemoryPromptAdvisor implements BaseAdvisor {
             }
         }
         return "";
+    }
+
+    /**
+     * 拼接记忆规范与叙事规范为单一注入文本（空白段自动跳过）。
+     * <p>
+     * 两者同属「第 2 轮起上下文中不存在、必须每轮 augment」的规范类提示词，
+     * 合并为一次注入避免再建一个 advisor 重复 order/哨兵语义。
+     */
+    private static String joinTemplates(String memoryPrompt, String narrativeRules) {
+        String memory = memoryPrompt == null ? "" : memoryPrompt.strip();
+        String rules = narrativeRules == null ? "" : narrativeRules.strip();
+        if (memory.isEmpty()) {
+            return rules;
+        }
+        if (rules.isEmpty()) {
+            return memory;
+        }
+        return memory + "\n\n" + rules;
     }
 }

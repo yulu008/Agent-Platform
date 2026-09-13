@@ -59,6 +59,10 @@
             <div class="form-actions">
                 <button class="btn-secondary" id="generateWorldBtn">✨ LLM 生成</button>
                 <button class="btn-primary" id="saveWorldBtn">保存世界观</button>
+                <button class="btn-secondary" id="localizeNamesBtn"
+                        title="把本世界含罗马音/英文的角色名批量改为汉字名，并把存档引用迁移到角色卡 ID">
+                    一键中文化改名
+                </button>
             </div>
             <div class="llm-input" id="worldLlmInput" hidden>
                 <input type="text" id="worldKeywords" placeholder="输入关键词，如：蒸汽朋克 失落的魔法 钟表城"/>
@@ -243,6 +247,8 @@
             <select class="model-selector" id="modelSelector" title="选择对话模型">
                 <option value="">默认（云端）</option>
             </select>
+            <button type="button" class="memory-mgr-btn" id="memoryMgrBtn"
+                    title="管理当前存档的 GM 笔记本（增删改查）">📔 记忆管理</button>
         </div>
         <form id="gameForm" class="game-input-form">
             <input type="text" id="gameInput" placeholder="输入你的行动..." autocomplete="off"/>
@@ -263,6 +269,82 @@
         <h3>选择存档</h3>
         <div id="saveList" class="save-list"></div>
         <button class="btn-secondary" id="closeLoadBtn">关闭</button>
+    </div>
+</div>
+
+<!-- ========== 存档记忆管理弹窗（当前存档的 GM 笔记本） ========== -->
+<div class="load-overlay" id="memoryOverlay" hidden>
+    <div class="load-dialog memory-dialog">
+        <div class="memory-head">
+            <h3>📔 记忆管理</h3>
+            <span class="memory-scope" id="memoryScopeHint"></span>
+            <button type="button" class="memory-close" id="closeMemoryBtn" title="关闭">✕</button>
+        </div>
+        <div class="memory-body">
+            <div class="memory-list-pane">
+                <div class="memory-toolbar">
+                    <button type="button" class="btn-secondary" id="newMemoryBtn">＋ 新建</button>
+                    <button type="button" class="btn-secondary" id="refreshMemoryBtn">刷新</button>
+                </div>
+                <div class="memory-groups" id="memoryGroups"></div>
+            </div>
+            <div class="memory-detail-pane">
+                <div class="memory-hint" id="memoryHint">从左侧选一条记忆查看，或点「＋ 新建」。</div>
+                <!-- 详情态 -->
+                <div class="memory-detail" id="memoryDetail" hidden>
+                    <div class="memory-meta" id="memoryMeta"></div>
+                    <div class="memory-content" id="memoryContent"></div>
+                    <div class="memory-actions">
+                        <button type="button" class="btn-secondary" id="editMemoryBtn">编辑</button>
+                        <button type="button" class="btn-danger" id="deleteMemoryBtn">删除</button>
+                    </div>
+                </div>
+                <!-- 表单态（新建/编辑共用） -->
+                <div class="memory-form" id="memoryForm" hidden>
+                    <div class="form-row">
+                        <label>文件名</label>
+                        <input type="text" id="memFileInput" placeholder="如 npc_dong-lang.md"/>
+                    </div>
+                    <div class="form-row">
+                        <label>名称</label>
+                        <input type="text" id="memNameInput" placeholder="一行标题"/>
+                    </div>
+                    <div class="form-row">
+                        <label>描述</label>
+                        <input type="text" id="memDescInput" placeholder="一行描述（写入索引）"/>
+                    </div>
+                    <div class="form-row">
+                        <label>类型</label>
+                        <select id="memTypeInput">
+                            <option value="npc_memory">npc_memory（NPC 长期记忆）</option>
+                            <option value="foreshadow">foreshadow（伏笔）</option>
+                            <option value="world_lore">world_lore（世界细节）</option>
+                            <option value="player_style">player_style（玩家偏好）</option>
+                        </select>
+                    </div>
+                    <div class="form-row">
+                        <label>正文</label>
+                        <textarea id="memContentInput" rows="10" placeholder="记忆正文..."></textarea>
+                    </div>
+                    <div class="memory-actions">
+                        <button type="button" class="btn-primary" id="saveMemoryBtn">保存</button>
+                        <button type="button" class="btn-secondary" id="cancelMemoryBtn">取消</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 删除二次确认（自包含于 rpg.css，不依赖 chat.css 的 .confirm-dialog） -->
+<div class="load-overlay memory-confirm-overlay" id="memoryConfirmOverlay" hidden>
+    <div class="load-dialog memory-confirm">
+        <h3>🗑️ 删除记忆</h3>
+        <p id="memoryConfirmText">确认删除这条记忆？此操作不可撤销。</p>
+        <div class="memory-actions">
+            <button type="button" class="btn-secondary" id="memoryConfirmNo">取消</button>
+            <button type="button" class="btn-danger" id="memoryConfirmYes">删除</button>
+        </div>
     </div>
 </div>
 

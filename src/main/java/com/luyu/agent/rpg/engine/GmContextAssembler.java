@@ -31,6 +31,13 @@ public class GmContextAssembler {
     private static final String INCREMENTAL_PROMPT_PATH = "rpg/gm-incremental-prompt.md";
 
     /**
+     * GM 叙事规范提示词（NPC 汉字指称、禁章节字眼、npc_states key 用卡 ID）。
+     * 与 {@link #MEMORY_PROMPT_PATH} 一同由 {@link RpgMemoryPromptAdvisor} 每轮注入 system 消息，
+     * 原因同记忆规范：首轮 system prompt 不落库，第 2 轮起上下文中不存在。
+     */
+    private static final String NARRATIVE_RULES_PATH = "rpg/gm-narrative-rules.md";
+
+    /**
      * GM 记忆规范提示词。由 {@link RpgMemoryPromptAdvisor} <b>每轮</b>注入 system 消息，
      * 而不是拼进首轮 system prompt（{@code RpgGameController} 只在第 1 轮调 {@code .system(...)}，
      * 且 {@code SessionMemoryAdvisor} 从不持久化 SystemMessage，第 2 轮起上下文里压根没有它），
@@ -57,6 +64,7 @@ public class GmContextAssembler {
     private final String systemPromptTemplate;
     private final String incrementalPromptTemplate;
     private final String memoryPromptTemplate;
+    private final String narrativeRulesTemplate;
 
     public GmContextAssembler(RpgWorldSettingRepository worldRepo,
                                RpgCharacterCardRepository charRepo,
@@ -69,6 +77,7 @@ public class GmContextAssembler {
         this.systemPromptTemplate = loadTemplate(SYSTEM_PROMPT_PATH);
         this.incrementalPromptTemplate = loadTemplate(INCREMENTAL_PROMPT_PATH);
         this.memoryPromptTemplate = loadTemplate(MEMORY_PROMPT_PATH);
+        this.narrativeRulesTemplate = loadTemplate(NARRATIVE_RULES_PATH);
     }
 
     /**
@@ -81,6 +90,15 @@ public class GmContextAssembler {
      */
     public String getMemoryPrompt() {
         return memoryPromptTemplate;
+    }
+
+    /**
+     * GM 叙事规范提示词原文（汉字指称、禁章节字眼、npc_states key 用卡 ID）。
+     *
+     * @return 提示词原文；加载失败时为空串
+     */
+    public String getNarrativeRules() {
+        return narrativeRulesTemplate;
     }
 
     /**
@@ -160,6 +178,7 @@ public class GmContextAssembler {
     private String formatCard(CharacterCard card) {
         if (card == null) return "（未设定）";
         return String.format("""
+                ID：%s
                 名称：%s（%s）
                 身份：%s
                 性格：%s
@@ -167,7 +186,7 @@ public class GmContextAssembler {
                 动机：%s
                 说话风格：%s
                 知识：%s
-                """, card.getName(), card.getType(), card.getIdentity(),
+                """, card.getId(), card.getName(), card.getType(), card.getIdentity(),
                 card.getPersonality(), card.getBackground(),
                 card.getMotivation(), card.getSpeechStyle(), card.getKnowledge());
     }

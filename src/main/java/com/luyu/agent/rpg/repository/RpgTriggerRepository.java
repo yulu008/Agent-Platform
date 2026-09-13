@@ -49,4 +49,13 @@ public class RpgTriggerRepository {
                 "SELECT * FROM rpg_trigger WHERE npc_id = ? ORDER BY created_at",
                 BeanPropertyRowMapper.newInstance(Trigger.class), npcId);
     }
+
+    /**
+     * 仅重写关联 NPC 引用（一键中文化改名时将旧名修正为角色卡 ID）。
+     */
+    public void updateNpcId(String id, String npcId) {
+        jdbcTemplate.update(
+                "UPDATE rpg_trigger SET npc_id = ? WHERE id = ?",
+                npcId, id);
+    }
 }

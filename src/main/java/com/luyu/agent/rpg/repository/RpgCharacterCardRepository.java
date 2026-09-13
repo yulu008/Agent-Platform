@@ -48,4 +48,16 @@ public class RpgCharacterCardRepository {
                 "SELECT * FROM rpg_character_card WHERE world_id = ? AND type = ? ORDER BY created_at",
                 BeanPropertyRowMapper.newInstance(CharacterCard.class), worldId, type);
     }
+
+    /**
+     * 仅重写名字一列（一键中文化改名用）。
+     * <p>
+     * ID 不变，故 npcStates key / trigger.npcId / relationship 引用一旦 ID 化，
+     * 后续改名永远只动本列。
+     */
+    public void updateName(String id, String name) {
+        jdbcTemplate.update(
+                "UPDATE rpg_character_card SET name = ? WHERE id = ?",
+                name, id);
+    }
 }

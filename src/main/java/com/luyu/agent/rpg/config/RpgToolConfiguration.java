@@ -50,11 +50,11 @@ public class RpgToolConfiguration {
      * RPG 存档记忆根目录。每个存档占一个子目录 {@code <gameStateId>/}，
      * 与主聊天的 {@code ~/.agent/memories} 完全隔离。
      * <p>
+     * 路径字面量收拢到 {@link RpgSavePaths}（工坊改名的笔记本跟随、存档记忆 REST 端点共用）。
      * 子目录前缀由 {@link SaveScopedMemoryCallback} 在调用期注入，
      * 因为 {@code AutoMemoryTools} 的 root 在构建期就固定、无法随存档变化。
      */
-    private static final String RPG_SAVES_DIR =
-            System.getProperty("user.home") + "/.agent/rpg-saves";
+    private static final String RPG_SAVES_DIR = RpgSavePaths.ROOT;
 
     /**
      * 底层 AutoMemoryTools 工具名 → 对外暴露的 GM 工具名（保序，仅用于装配与日志）。

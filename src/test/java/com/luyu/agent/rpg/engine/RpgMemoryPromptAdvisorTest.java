@@ -11,6 +11,8 @@ import org.springframework.core.Ordered;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * {@link RpgMemoryPromptAdvisor} 单元测试。
@@ -22,8 +24,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li>{@code RpgGameController} 只在首轮调 {@code .system(...)}，第 2 轮起 prompt 里
  *       没有任何 SystemMessage，框架会以 {@code new SystemMessage("")} 调用注入函数。</li>
  * </ol>
- * 提示词经真实的 {@link GmContextAssembler} 从 classpath 加载，因此这些用例同时验证了
- * {@code rpg/gm-memory-prompt.md} 的可加载性与内容完整性。advisor 为纯逻辑，无需 Spring 上下文
+ * 提示词经真实的 {@link GmContextAssembler} 从 classpath 加载（记忆规范 + 叙事规范合并为单一注入文本），
+ * 因此这些用例同时验证了 {@code rpg/gm-memory-prompt.md}、{@code rpg/gm-narrative-rules.md} 的
+ * 可加载性与内容完整性。advisor 为纯逻辑，无需 Spring 上下文
  * （{@code GmContextAssembler} 的构造函数只读 classpath 资源，不触碰仓库，可传 null）。
  */
 class RpgMemoryPromptAdvisorTest {
@@ -34,8 +37,13 @@ class RpgMemoryPromptAdvisorTest {
     /** 记忆规范提示词的标题，也是幂等哨兵 */
     private static final String MEMORY_PROMPT_HEAD = "# GM 记忆规范";
 
-    private final RpgMemoryPromptAdvisor advisor =
-            new RpgMemoryPromptAdvisor(new GmContextAssembler(null, null, null, null));
+    /** 叙事规范提示词的标题，取自 rpg/gm-narrative-rules.md */
+    private static final String NARRATIVE_RULES_HEAD = "# GM 叙事规范";
+
+    private final GmContextAssembler contextAssembler =
+            new GmContextAssembler(null, null, null, null);
+
+    private final RpgMemoryPromptAdvisor advisor = new RpgMemoryPromptAdvisor(contextAssembler);
 
     private static ChatClientRequest requestWith(Message... messages) {
         return ChatClientRequest.builder()
@@ -105,6 +113,66 @@ class RpgMemoryPromptAdvisorTest {
         ChatClientRequest twice = advisor.before(once, null);
 
         assertThat(systemTextOf(twice)).containsOnlyOnce(MEMORY_PROMPT_HEAD);
+    }
+
+    @Test
+    void 叙事规范提示词能从classpath加载且非空() {
+        String rules = contextAssembler.getNarrativeRules();
+
+        assertThat(rules).isNotBlank();
+        assertThat(rules).startsWith(NARRATIVE_RULES_HEAD);
+        // 规范 1：汉字指称且保留文化风格
+        assertThat(rules).contains("汉字", "禁止罗马音");
+        // 规范 2：禁章节字眼与章节式标题
+        assertThat(rules).contains("序幕", "章节");
+        // 规范 1 附带：npc_states 的 key 用角色卡 ID
+        assertThat(rules).contains("npc_states", "角色卡 ID");
+    }
+
+    @Test
+    void 注入文本同时含记忆规范与叙事规范() {
+        // 两者合并为单一注入文本（D1）：一次 augment，不是两条 system 消息
+        ChatClientRequest result = advisor.before(requestWith(new UserMessage("我推开木门")), null);
+
+        String text = systemTextOf(result);
+        assertThat(text).contains(MEMORY_PROMPT_HEAD).contains(NARRATIVE_RULES_HEAD);
+        // 记忆规范在前、叙事规范紧随其后，且哨兵仍是记忆规范标题（幂等判断不受拼接影响）
+        assertThat(text).startsWith(MEMORY_PROMPT_HEAD);
+        assertThat(text.indexOf(MEMORY_PROMPT_HEAD)).isLessThan(text.indexOf(NARRATIVE_RULES_HEAD));
+        assertThat(result.prompt().getInstructions()).hasSize(2);
+    }
+
+    @Test
+    void 重复执行before_叙事规范只出现一次() {
+        // 拼接后整体走同一条幂等哨兵，叙事规范不会在重入时多出一份
+        ChatClientRequest once = advisor.before(requestWith(new UserMessage("我推开木门")), null);
+        ChatClientRequest twice = advisor.before(once, null);
+
+        assertThat(systemTextOf(twice)).containsOnlyOnce(NARRATIVE_RULES_HEAD);
+    }
+
+    @Test
+    void 记忆与叙事规范都加载失败时整体放行() {
+        // joinTemplates 对双空返回空串，advisor 必须走空文本放行分支而非塞一条空 SystemMessage
+        GmContextAssembler broken = mock(GmContextAssembler.class);
+        when(broken.getMemoryPrompt()).thenReturn("");
+        when(broken.getNarrativeRules()).thenReturn("");
+        RpgMemoryPromptAdvisor advisorWithoutPrompt = new RpgMemoryPromptAdvisor(broken);
+        ChatClientRequest request = requestWith(new UserMessage("我推开木门"));
+
+        assertThat(advisorWithoutPrompt.before(request, null)).isSameAs(request);
+    }
+
+    @Test
+    void 仅叙事规范加载失败时只注入记忆规范() {
+        GmContextAssembler partial = mock(GmContextAssembler.class);
+        when(partial.getMemoryPrompt()).thenReturn(MEMORY_PROMPT_HEAD + "\n\n正文");
+        when(partial.getNarrativeRules()).thenReturn(null);
+        RpgMemoryPromptAdvisor memoryOnly = new RpgMemoryPromptAdvisor(partial);
+
+        String text = systemTextOf(memoryOnly.before(requestWith(new UserMessage("我推开木门")), null));
+
+        assertThat(text).contains(MEMORY_PROMPT_HEAD).doesNotContain(NARRATIVE_RULES_HEAD);
     }
 
     @Test

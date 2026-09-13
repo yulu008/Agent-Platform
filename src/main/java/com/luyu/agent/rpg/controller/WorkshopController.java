@@ -157,6 +157,31 @@ public class WorkshopController {
         }
     }
 
+    // ==================== 一键中文化改名 ====================
+
+    /**
+     * 把该世界含罗马音/英文的角色名改为汉字名，同批把引用 key 迁移到角色卡 ID
+     * （npcStates key、trigger.npcId、relationship 两端）。
+     * <p>
+     * LLM 映射未通过校验矩阵时返回 500 且四张表零写入；无待改名字时返回 200 与空清单。
+     */
+    @PostMapping("/localize-names")
+    public ResponseEntity<Object> localizeNames(@RequestParam String worldId) {
+        if (worldId == null || worldId.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "worldId 不能为空"));
+        }
+        try {
+            return ResponseEntity.ok(workshopService.localizeNames(worldId));
+        } catch (IllegalArgumentException e) {
+            log.warn("一键中文化改名: {}", e.getMessage());
+            return ResponseEntity.notFound().build();
+        } catch (Exception e) {
+            log.error("一键中文化改名失败: {}", e.getMessage(), e);
+            return ResponseEntity.internalServerError()
+                    .body(Map.of("error", e.getMessage() == null ? "改名失败" : e.getMessage()));
+        }
+    }
+
     // ==================== 开始冒险 ====================
 
     @PostMapping("/start")

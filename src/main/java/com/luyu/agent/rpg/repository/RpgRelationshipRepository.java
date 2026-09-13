@@ -52,4 +52,22 @@ public class RpgRelationshipRepository {
                 "UPDATE rpg_relationship SET attitude = ?, trust = ? WHERE id = ?",
                 attitude, trust, id);
     }
+
+    /**
+     * 全量关系（本表无 world_id 列，一键中文化改名时需遍历判定两端引用是否命中旧名）。
+     */
+    public List<Relationship> findAll() {
+        return jdbcTemplate.query(
+                "SELECT * FROM rpg_relationship ORDER BY created_at",
+                BeanPropertyRowMapper.newInstance(Relationship.class));
+    }
+
+    /**
+     * 重写两端角色引用（旧名 → 角色卡 ID）。
+     */
+    public void updateCharRefs(String id, String charAId, String charBId) {
+        jdbcTemplate.update(
+                "UPDATE rpg_relationship SET char_a_id = ?, char_b_id = ? WHERE id = ?",
+                charAId, charBId, id);
+    }
 }
