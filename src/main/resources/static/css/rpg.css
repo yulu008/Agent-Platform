@@ -452,3 +452,89 @@ body {
     cursor: pointer;
 }
 .save-item:hover { background: #f2f4f7; }
+
+/* ========== 上下文用量进度条（参考 chat.css，RPG 浅色红调） ========== */
+.context-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 0 8px;
+    font-size: 11px;
+    color: #667085;
+}
+.context-bar.hidden { display: none; }
+.context-bar-inner {
+    flex: 1;
+    height: 4px;
+    background: #e4e7ec;
+    border-radius: 2px;
+    overflow: hidden;
+}
+.context-bar-fill {
+    height: 100%;
+    background: #e94560;
+    border-radius: 2px;
+    transition: width 0.4s ease, background-color 0.3s ease;
+    width: 0%;
+}
+.context-bar-fill.warning { background: #FF9800; }
+.context-bar-fill.danger { background: #F44336; }
+.context-bar-text {
+    white-space: nowrap;
+    min-width: 140px;
+    text-align: right;
+}
+
+/* ========== 压缩上下文按钮（输入表单内，发送按钮左侧） ========== */
+.compact-btn {
+    width: 40px;
+    height: 40px;
+    border: 1.5px solid #d0d5dd;
+    border-radius: 6px;
+    background: #ffffff;
+    color: #667085;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+}
+.compact-btn svg { width: 16px; height: 16px; }
+.compact-btn:hover {
+    border-color: #e94560;
+    color: #e94560;
+    background: rgba(233, 69, 96, 0.08);
+}
+.compact-btn:active { transform: scale(0.92); }
+.compact-btn.loading {
+    opacity: 0.5;
+    pointer-events: none;
+    animation: compactPulse 1s infinite;
+}
+@keyframes compactPulse {
+    0%, 100% { opacity: 0.5; }
+    50% { opacity: 0.8; }
+}
+
+/* ========== 压缩结果 toast ========== */
+.compact-toast {
+    position: fixed;
+    top: 70px;
+    right: 20px;
+    background: #ffffff;
+    border: 1px solid rgba(233, 69, 96, 0.4);
+    border-radius: 10px;
+    padding: 12px 18px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+    font-size: 13px;
+    color: #1f2329;
+    z-index: 9999;
+    max-width: 320px;
+    white-space: pre-line;
+    animation: rpgSlideIn 0.3s ease;
+}
+@keyframes rpgSlideIn {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}

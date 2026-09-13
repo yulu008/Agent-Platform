@@ -17,7 +17,10 @@ import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.session.SessionEvent;
 import org.springframework.ai.session.SessionService;
 import org.springframework.ai.session.advisor.SessionMemoryAdvisor;
+import org.springframework.ai.session.compaction.CompactionResult;
+import org.springframework.ai.session.compaction.SlidingWindowCompactionStrategy;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
@@ -326,6 +329,55 @@ public class RpgGameController {
             entry.put("synthetic", true);
         }
         return entry;
+    }
+
+    /**
+     * 手动触发 RPG 会话上下文压缩。
+     * <p>
+     * 请求: POST /rpg/sessions/{sessionId}/compact<br>
+     * 响应: {archivedCount, summaryPreview}
+     * <p>
+     * 沿用 RPG 自身的 {@link SlidingWindowCompactionStrategy}（maxEvents=30），与
+     * {@code rpgSessionMemoryAdvisor} 的自动压缩同策略：保护 root/system 事件（首轮全量世界观
+     * prompt 不被截断），仅归档最近 30 个轮次之外的旧叙事事件。滑窗不做 LLM 摘要、不产出
+     * synthetic 合成事件，故 summaryPreview 为固定文案。
+     * <p>
+     * 与 chat 的 {@code POST /chat/sessions/{id}/compact}（RecursiveSummarization, maxEventsToKeep=10）
+     * 各自独立，互不影响。
+     */
+    @PostMapping("/sessions/{sessionId}/compact")
+    public ResponseEntity<Map<String, Object>> compactSession(@PathVariable String sessionId) {
+        try {
+            // 与 rpgSessionMemoryAdvisor 自动压缩同策略：滑动窗口保留最近 30 个事件
+            SlidingWindowCompactionStrategy strategy = SlidingWindowCompactionStrategy.builder()
+                    .maxEvents(30)
+                    .build();
+            // 使用 always-fire trigger 无条件触发；SessionService.compact() 内部处理 CAS 与归档
+            CompactionResult result = sessionService.compact(sessionId, req -> true, strategy);
+
+            int archivedCount = result.archivedEvents().size();
+            if (archivedCount == 0) {
+                return ResponseEntity.ok(Map.of(
+                        "archivedCount", 0,
+                        "summaryPreview", "对话轮次过少，无需压缩"
+                ));
+            }
+
+            log.info("RPG 手动压缩成功: sessionId={}, archivedCount={}, tokensSaved={}",
+                    sessionId, archivedCount, result.tokensEstimatedSaved());
+
+            // 滑窗无 synthetic 摘要，固定文案
+            return ResponseEntity.ok(Map.of(
+                    "archivedCount", archivedCount,
+                    "summaryPreview", "压缩完成"
+            ));
+        } catch (Exception e) {
+            log.error("RPG 压缩执行失败: sessionId={}", sessionId, e);
+            return ResponseEntity.internalServerError().body(Map.of(
+                    "archivedCount", 0,
+                    "summaryPreview", "压缩失败: " + e.getMessage()
+            ));
+        }
     }
 
     // ==================== 辅助方法 ====================

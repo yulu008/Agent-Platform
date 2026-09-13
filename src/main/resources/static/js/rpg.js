@@ -602,11 +602,92 @@ gameForm.addEventListener('submit', async (e) => {
     abortController = null;
     gameInput.focus();
     updateStatusPanel(currentGameStateId);
+    refreshContextInfo();
 });
 
 gameStopBtn.addEventListener('click', () => {
     if (abortController) abortController.abort();
 });
+
+// ===== 上下文用量进度条（参考 chat.js，复用 /chat/context-info 计量端点）=====
+const contextBar = document.getElementById('contextBar');
+const contextBarFill = document.getElementById('contextBarFill');
+const contextBarText = document.getElementById('contextBarText');
+const compactBtn = document.getElementById('compactBtn');
+
+async function refreshContextInfo() {
+    if (!currentSessionId) return;
+    try {
+        const res = await fetch(`/chat/context-info?sessionId=${encodeURIComponent(currentSessionId)}`);
+        if (!res.ok) return;
+        const info = await res.json();
+
+        const percent = info.usagePercent || 0;
+        const used = info.totalTokens || 0;
+        const max = info.maxTokens || 128000;
+
+        // 格式化数字（k 单位）
+        const formatK = (n) => n >= 1000 ? (n / 1000).toFixed(1) + 'k' : n;
+
+        // 更新进度条宽度与颜色分级
+        contextBarFill.style.width = Math.min(percent, 100) + '%';
+        contextBarFill.className = 'context-bar-fill';
+        if (percent > 85) {
+            contextBarFill.classList.add('danger');
+        } else if (percent > 60) {
+            contextBarFill.classList.add('warning');
+        }
+
+        // 文本：RPG 滑窗策略不产出 synthetic 事件，compactionCount 恒为 0，故不显示「已压缩 N 次」（方案 A）
+        contextBarText.textContent = `${formatK(used)} / ${formatK(max)}（${percent.toFixed(1)}%）`;
+        contextBar.classList.remove('hidden');
+    } catch (e) {
+        // 静默失败，不影响游戏主流程
+    }
+}
+
+// ===== 手动压缩上下文（沿用 RPG 自身 SlidingWindow 策略，与 chat 各自独立）=====
+compactBtn.addEventListener('click', async () => {
+    // 流式中禁用
+    if (abortController) return;
+    if (!currentSessionId) return;
+
+    compactBtn.classList.add('loading');
+    compactBtn.disabled = true;
+
+    try {
+        const response = await fetch(`/rpg/sessions/${encodeURIComponent(currentSessionId)}/compact`, {
+            method: 'POST'
+        });
+        const result = await response.json();
+
+        if (result.archivedCount > 0) {
+            showCompactToast(`✅ 已压缩 ${result.archivedCount} 条消息`);
+            // 压缩成功后重放历史区并刷新进度条
+            clearMessages();
+            const replayed = await loadHistory();
+            if (!replayed) {
+                appendMessage('assistant', '（较早剧情轮次已归档，可继续输入行动。）');
+            }
+            refreshContextInfo();
+        } else {
+            showCompactToast(`ℹ️ ${result.summaryPreview}`);
+        }
+    } catch (e) {
+        showCompactToast(`❌ 压缩失败: ${e.message}`);
+    } finally {
+        compactBtn.classList.remove('loading');
+        compactBtn.disabled = false;
+    }
+});
+
+function showCompactToast(message) {
+    const toast = document.createElement('div');
+    toast.className = 'compact-toast';
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 5000);
+}
 
 // ===== 状态面板更新 =====
 async function updateStatusPanel(gameStateId) {
@@ -718,5 +799,6 @@ async function refreshCharList() {
             appendMessage('assistant', '（未找到可恢复的对话历史，可继续输入行动或重新读档。）');
         }
         updateStatusPanel(currentGameStateId);
+        refreshContextInfo();
     });
 })();

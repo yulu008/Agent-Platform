@@ -505,6 +505,60 @@ body::after {
     transition: var(--transition);
 }
 
+/* ===== 气泡复制按钮（复制模型输出的原始 Markdown）===== */
+/* 包裹层：仅包 .message-bubble，为复制按钮提供定位上下文；
+   .tool-cards-container 仍挂在 .message.assistant 下、位于本层之后 */
+.bubble-wrap {
+    position: relative;
+    max-width: 100%;
+}
+
+.copy-btn {
+    position: absolute;
+    top: 6px;
+    right: 8px;
+    z-index: 2;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.72);
+    backdrop-filter: blur(2px);
+    color: var(--text-muted);
+    font-family: inherit;
+    font-size: 12px;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.2s ease, color 0.2s ease, background 0.2s ease;
+}
+
+/* 悬停 assistant 气泡时淡入显现 */
+.message.assistant:hover .copy-btn {
+    opacity: 1;
+}
+
+.copy-btn:hover {
+    color: var(--meadow);
+    background: rgba(255, 255, 255, 0.95);
+}
+
+.copy-btn .copy-icon {
+    width: 13px;
+    height: 13px;
+    display: block;
+}
+
+/* 复制成功反馈态：✓ 已复制 */
+.copy-btn.copied {
+    color: #FFFFFF;
+    background: var(--meadow);
+    border-color: var(--meadow);
+    opacity: 1;
+}
+
 /* ===== 加载动画 — 像龙猫在跳 ===== */
 .typing-indicator {
     display: flex;

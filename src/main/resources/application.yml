@@ -88,6 +88,11 @@ rpg:
     # 应用启动时自动创建 RPG 专用表（参考 spring.ai.session.jdbc 机制）
     initialize-schema: always
     schema-locations: classpath:rpg/schema-h2.sql
+  # 存档级长期记忆（GM 笔记本，落盘 ~/.agent/rpg-saves/<gameStateId>/）
+  memory:
+    # 每 N 轮由引擎向 GM 追加一次「整理笔记」提醒；<= 0 表示完全关闭（GM 仍可自主写入）
+    # 调大→提醒更稀、token 更省但 GM 容易忘记落笔；调小→反之
+    remind-every-turns: 5
 
 # Actuator 端点：暴露 metrics 供可观测性验证
 # /actuator/metrics/gen_ai_client_token_usage_total 查看 token 用量

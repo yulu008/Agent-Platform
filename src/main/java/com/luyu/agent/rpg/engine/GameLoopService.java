@@ -2,6 +2,7 @@ package com.luyu.agent.rpg.engine;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.luyu.agent.rpg.config.RpgMemoryProperties;
 import com.luyu.agent.rpg.model.EventLog;
 import com.luyu.agent.rpg.model.GameState;
 import com.luyu.agent.rpg.model.Trigger;
@@ -47,6 +48,7 @@ public class GameLoopService {
     private final StateDeltaExtractor stateDeltaExtractor;
     private final StateDeltaSanitizer stateDeltaSanitizer;
     private final MotivationEngine motivationEngine;
+    private final RpgMemoryProperties memoryProperties;
 
     public GameLoopService(RpgGameStateRepository stateRepo,
                            RpgEventLogRepository eventRepo,
@@ -57,7 +59,8 @@ public class GameLoopService {
                            GmContextAssembler contextAssembler,
                            StateDeltaExtractor stateDeltaExtractor,
                            StateDeltaSanitizer stateDeltaSanitizer,
-                           MotivationEngine motivationEngine) {
+                           MotivationEngine motivationEngine,
+                           RpgMemoryProperties memoryProperties) {
         this.stateRepo = stateRepo;
         this.eventRepo = eventRepo;
         this.runtimeRepo = runtimeRepo;
@@ -68,6 +71,7 @@ public class GameLoopService {
         this.stateDeltaExtractor = stateDeltaExtractor;
         this.stateDeltaSanitizer = stateDeltaSanitizer;
         this.motivationEngine = motivationEngine;
+        this.memoryProperties = memoryProperties;
     }
 
     /**
@@ -137,7 +141,14 @@ public class GameLoopService {
             systemPrompt = contextAssembler.assembleFirstRound(gameStateId);
             userPrompt = playerAction;
         } else {
-            userPrompt = contextAssembler.assembleIncremental(playerAction, triggered);
+            // 每 N 轮追加一次记忆整理提醒（N 见 rpg.memory.remind-every-turns）。
+            // 刻意只在非首轮生效：首轮的 userPrompt 是玩家行动原文（未经增量模板包裹），
+            // 在其后拼接提醒会让 RpgHistoryCleaner 把提醒当成玩家说的话回放给前端。
+            boolean memoryReminder = memoryProperties.shouldRemind(newTurn);
+            userPrompt = contextAssembler.assembleIncremental(playerAction, triggered, memoryReminder);
+            if (memoryReminder) {
+                log.debug("第 {} 轮触发记忆整理提醒（间隔 {} 轮）", newTurn, memoryProperties.getRemindEveryTurns());
+            }
         }
 
         // 工具上下文

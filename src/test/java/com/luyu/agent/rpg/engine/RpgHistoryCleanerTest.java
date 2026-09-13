@@ -53,6 +53,34 @@ class RpgHistoryCleanerTest {
     }
 
     @Test
+    void cleanUserMessage_带每N轮记忆整理提醒_提醒不会当成玩家说的话() {
+        // 提醒文本由 GmContextAssembler 追加在模板末尾（## GM 任务指令 段内），
+        // 落在 ## 玩家行动 与下一个 \n## 之间之外，故不会被回放给前端
+        String raw = """
+                # GM 增量注入 Prompt（后续轮）
+
+                ## 玩家行动
+
+                我把玉佩当给了林掌柜
+
+                ## 触发器命中
+
+                本轮无触发器命中。
+
+                ## GM 任务指令
+
+                请根据上述玩家行动和触发器命中结果，继续推进故事：
+                1. 描述玩家行动的直接结果
+
+                （整理笔记：本轮是否有值得 NPC 长期记住的事、新埋的伏笔或即兴生成的世界细节？若有，用 GmMemory* 工具写进笔记本。）
+                """;
+        assertThat(cleaner.cleanUserMessage(raw))
+                .isEqualTo("我把玉佩当给了林掌柜")
+                .doesNotContain("整理笔记")
+                .doesNotContain("GmMemory");
+    }
+
+    @Test
     void cleanAssistantMessage_移除stateDelta块仅留叙述() {
         String raw = """
                 小二搭着毛巾迎上来，"客官里边请——"

@@ -30,6 +30,25 @@ public class GmContextAssembler {
     private static final String SYSTEM_PROMPT_PATH = "rpg/gm-system-prompt.md";
     private static final String INCREMENTAL_PROMPT_PATH = "rpg/gm-incremental-prompt.md";
 
+    /**
+     * GM 记忆规范提示词。由 {@link RpgMemoryPromptAdvisor} <b>每轮</b>注入 system 消息，
+     * 而不是拼进首轮 system prompt（{@code RpgGameController} 只在第 1 轮调 {@code .system(...)}，
+     * 且 {@code SessionMemoryAdvisor} 从不持久化 SystemMessage，第 2 轮起上下文里压根没有它），
+     * 也不是塞进增量模板（那是 user 消息，会被每轮持久化，maxEvents=30 的窗口内最多攒 30 份副本）。
+     */
+    private static final String MEMORY_PROMPT_PATH = "rpg/gm-memory-prompt.md";
+
+    /**
+     * 每 N 轮插入一次的记忆整理提醒。
+     * <p>
+     * 追加在增量模板末尾，即 {@code ## GM 任务指令} 段内 —— 刻意避开 {@code ## 玩家行动} 段：
+     * {@link RpgHistoryCleaner} 按「{@code ## 玩家行动} 到下一个 {@code \n## }」截取玩家原文，
+     * 提醒文本落在该区间内会被当成玩家说的话回放给前端。
+     */
+    private static final String MEMORY_REMINDER =
+            "\n\n（整理笔记：本轮是否有值得 NPC 长期记住的事、新埋的伏笔或即兴生成的世界细节？"
+                    + "若有，用 GmMemory* 工具写进笔记本。）";
+
     private final RpgWorldSettingRepository worldRepo;
     private final RpgCharacterCardRepository charRepo;
     private final RpgTriggerRepository triggerRepo;
@@ -37,6 +56,7 @@ public class GmContextAssembler {
 
     private final String systemPromptTemplate;
     private final String incrementalPromptTemplate;
+    private final String memoryPromptTemplate;
 
     public GmContextAssembler(RpgWorldSettingRepository worldRepo,
                                RpgCharacterCardRepository charRepo,
@@ -48,6 +68,19 @@ public class GmContextAssembler {
         this.stateRepo = stateRepo;
         this.systemPromptTemplate = loadTemplate(SYSTEM_PROMPT_PATH);
         this.incrementalPromptTemplate = loadTemplate(INCREMENTAL_PROMPT_PATH);
+        this.memoryPromptTemplate = loadTemplate(MEMORY_PROMPT_PATH);
+    }
+
+    /**
+     * GM 记忆规范提示词原文（四类型定义、文件粒度、frontmatter 约定、负面清单）。
+     * <p>
+     * 刻意<b>不</b>做任何占位符渲染：文中的 JSON 花括号示例（如 {@code {"flags": {...}}}）
+     * 必须原样送达模型。若改用 {@code PromptTemplate} 渲染，花括号会被当成占位符语法而抛异常。
+     *
+     * @return 提示词原文；加载失败时为空串
+     */
+    public String getMemoryPrompt() {
+        return memoryPromptTemplate;
     }
 
     /**
@@ -76,13 +109,25 @@ public class GmContextAssembler {
     }
 
     /**
-     * 组装后续轮增量 prompt。
+     * 组装后续轮增量 prompt（不追加记忆整理提醒）。
      *
      * @param playerAction 玩家行动文本
      * @param triggerHits  触发器命中结果（已通过的触发器列表）
      * @return 增量注入的 user prompt
      */
     public String assembleIncremental(String playerAction, List<Trigger> triggerHits) {
+        return assembleIncremental(playerAction, triggerHits, false);
+    }
+
+    /**
+     * 组装后续轮增量 prompt。
+     *
+     * @param playerAction   玩家行动文本
+     * @param triggerHits    触发器命中结果（已通过的触发器列表）
+     * @param memoryReminder 是否在本轮追加一次记忆整理提醒（每 N 轮由 {@code GameLoopService} 置 true）
+     * @return 增量注入的 user prompt
+     */
+    public String assembleIncremental(String playerAction, List<Trigger> triggerHits, boolean memoryReminder) {
         String triggerText = triggerHits == null || triggerHits.isEmpty()
                 ? "本轮无触发器命中。"
                 : triggerHits.stream()
@@ -90,9 +135,11 @@ public class GmContextAssembler {
                                 t.getId(), t.getNpcId(), t.getAction()))
                         .collect(Collectors.joining("\n"));
 
-        return incrementalPromptTemplate
+        String prompt = incrementalPromptTemplate
                 .replace("{{PLAYER_ACTION}}", playerAction)
                 .replace("{{TRIGGER_HITS}}", triggerText);
+
+        return memoryReminder ? prompt + MEMORY_REMINDER : prompt;
     }
 
     // ==================== 格式化辅助方法 ====================

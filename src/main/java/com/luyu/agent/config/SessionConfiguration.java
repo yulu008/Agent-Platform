@@ -27,6 +27,9 @@ import java.util.List;
 import java.util.Map;
 
 import com.luyu.agent.config.AgentModelsProperties.ModelProps;
+import com.luyu.agent.rpg.config.RpgGmToolCallbacks;
+import com.luyu.agent.rpg.config.RpgMemoryToolCallbacks;
+import com.luyu.agent.rpg.engine.RpgMemoryPromptAdvisor;
 import com.luyu.agent.service.TokenEstimator;
 
 /**
@@ -130,8 +133,9 @@ public class SessionConfiguration {
     /**
      * 多模型 ChatClientRegistry（决策 5：三索引与裸 Builder 复用）。
      * <p>
-     * 容错工具链建一次共享，所有对话 client 复用同一套 advisor（advisor 无状态，通过 context 传 sessionId）。
+     * 主聊天侧的容错工具链建一次共享，所有对话 client 复用同一套 advisor（advisor 无状态，通过 context 传 sessionId）。
      * 对话 client（byName）：每个模型用 fresh builder 挂完整 advisor 链 + 容错工具；
+     * RPG client（rpgByName）：<b>独立工具池与独立容错链</b>，不挂 autoMemoryToolsAdvisor；
      * 辅助 client（byRole）：裸 build 纯净版（title/compaction）；
      * 辅助 builder（byRoleBuilder）：subagent 复用 subagentBuilder bean，其余裸 builder。
      *
@@ -146,6 +150,9 @@ public class SessionConfiguration {
                                                   @Qualifier("sessionMemoryAdvisor") SessionMemoryAdvisor sessionMemoryAdvisor,
                                                   @Qualifier("rpgSessionMemoryAdvisor") SessionMemoryAdvisor rpgSessionMemoryAdvisor,
                                                   List<ToolCallback> tools,
+                                                  RpgGmToolCallbacks rpgGmTools,
+                                                  RpgMemoryToolCallbacks rpgMemoryTools,
+                                                  RpgMemoryPromptAdvisor rpgMemoryPromptAdvisor,
                                                   SubagentConfiguration subagentConfig,
                                                   ChatClient.Builder subagentBuilder) {
         // 收集所有工具回调
@@ -180,6 +187,26 @@ public class SessionConfiguration {
                 .toolCallingManager(toolCallingManager)
                 .build();
 
+        // ── RPG 专属工具池（与主聊天池完全隔离）──────────────────────────────
+        // 内容 = 11 个 get_* 只读世界状态工具 + 4 个 GmMemory* 存档级记忆工具，共 15 个。
+        // 刻意不含 weather / SmartWebFetch / Skill / Task：GM 在沙盒叙事中不应联网、不应查天气、
+        // 不应派子 agent，更不应触碰主聊天的全局记忆根目录 ~/.agent/memories。
+        // 两组 callback 在 RpgToolConfiguration 中已各自用 ResilientToolCallback 包裹，此处不再重复包裹。
+        List<ToolCallback> rpgTools = new ArrayList<>(rpgGmTools.callbacks());
+        rpgTools.addAll(rpgMemoryTools.callbacks());
+
+        // RPG 独立的 resolver / manager / advisor：不与主聊天共享。
+        // StaticToolCallbackResolver 按工具名建索引，两个池的索引必须分开，
+        // 否则主聊天侧一旦引入同名工具就会互相覆盖。
+        StaticToolCallbackResolver rpgStaticResolver = new StaticToolCallbackResolver(rpgTools);
+        ResilientToolCallbackResolver rpgResilientResolver = new ResilientToolCallbackResolver(rpgStaticResolver);
+        DefaultToolCallingManager rpgToolCallingManager = DefaultToolCallingManager.builder()
+                .toolCallbackResolver(rpgResilientResolver)
+                .build();
+        ToolCallingAdvisor rpgToolCallingAdvisor = ToolCallingAdvisor.builder()
+                .toolCallingManager(rpgToolCallingManager)
+                .build();
+
         // 遍历模型构建对话 client（byName）+ RPG client（rpgByName）+ 辅助 client（byRole）+ 辅助 builder（byRoleBuilder）
         Map<String, ChatClient> byName = new LinkedHashMap<>();
         Map<String, ChatClient> rpgByName = new LinkedHashMap<>();
@@ -204,12 +231,18 @@ public class SessionConfiguration {
                         .build();
                 byName.put(name, chatClient);
 
-                // RPG 专属 client：同模型但用 rpgSessionMemoryAdvisor（maxEvents=30），供前端模型选择路由
+                // RPG 专属 client：同模型，但用 rpgSessionMemoryAdvisor（maxEvents=30）+ RPG 独立工具池。
+                // advisor 链不含 autoMemoryToolsAdvisor —— GM 的记忆规范由 rpgMemoryPromptAdvisor 每轮注入，
+                // 记忆工具由 GmMemory* 提供（落盘 ~/.agent/rpg-saves/<gameStateId>/）。
+                // 这样既省掉主聊天那份 10.9KB 英文记忆提示词的每轮开销，
+                // 也避免 GM 把玩家角色（PC）的事当成"用户信息"写进全局记忆污染主聊天用户画像。
+                // rpgMemoryPromptAdvisor 的 order（MIN+200）在链中最小，故它最先执行且不受
+                // ToolCallingAdvisor 工具循环重入影响（详见该类 javadoc）。
                 ChatClient rpgClient = ChatClient.builder(model)
-                        .defaultAdvisors(autoMemoryToolsAdvisor, rpgSessionMemoryAdvisor,
-                                toolCallingAdvisor, new MalformedToolCallSanitizer())
+                        .defaultAdvisors(rpgMemoryPromptAdvisor, rpgSessionMemoryAdvisor,
+                                rpgToolCallingAdvisor, new MalformedToolCallSanitizer())
                         .defaultOptions(ToolCallingChatOptions.builder()
-                                .toolCallbacks(resilientTools))
+                                .toolCallbacks(rpgTools))
                         .build();
                 rpgByName.put(name, rpgClient);
 
@@ -239,8 +272,10 @@ public class SessionConfiguration {
             log.warn("ChatClientRegistry 未挂载任何工具回调（skills/agents 目录均为空）");
         }
 
-        // RPG 专属对话 client 已按模型构建（rpgByName），advisor 链用 rpgSessionMemoryAdvisor（maxEvents=30）
-        // 替代 sessionMemoryAdvisor，其余（AutoMemoryTools、容错工具链）与主对话 client 一致。
+        // RPG 专属对话 client 已按模型构建（rpgByName），与主对话 client 的差异有三处：
+        //   1. SessionMemoryAdvisor 用 rpgSessionMemoryAdvisor（maxEvents=30，更长的可回看窗口）
+        //   2. 工具池用 rpgTools（15 个：11 个 get_* + 4 个 GmMemory*），不含主聊天的记忆工具与联网工具
+        //   3. 不挂 autoMemoryToolsAdvisor，改由 rpgMemoryPromptAdvisor 注入 RPG 记忆规范
         // ⚠️ 必须是独立 client，其 advisor 链中只含 rpgSessionMemoryAdvisor，不与默认 sessionMemoryAdvisor
         //    并存，否则记忆会被加载/写入两次（双写陷阱）。
 
@@ -255,6 +290,17 @@ public class SessionConfiguration {
                 .sum();
         registry.setCachedToolTokens(toolTokens);
         log.info("工具定义 token 开销估算: {} tokens ({} 个工具)", toolTokens, resilientTools.size());
+
+        // RPG 池独立统计：与主聊天池的统计行并列打印，便于对比两侧的工具数与 token 开销
+        int rpgToolTokens = rpgTools.stream()
+                .mapToInt(tc -> {
+                    var def = tc.getToolDefinition();
+                    String schema = def.name() + " " + def.description() + " " + def.inputSchema();
+                    return TokenEstimator.estimateTokens(schema);
+                })
+                .sum();
+        log.info("RPG 专属工具池装配完成: GM 只读工具={} 存档记忆工具={} 合计={} 工具定义 token 开销估算={} tokens",
+                rpgGmTools.callbacks().size(), rpgMemoryTools.callbacks().size(), rpgTools.size(), rpgToolTokens);
 
         return registry;
     }

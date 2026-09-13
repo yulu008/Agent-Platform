@@ -215,6 +215,88 @@ document.addEventListener('click', (e) => {
     }
 });
 
+// ===== 气泡内容复制（复制模型输出的原始 Markdown）=====
+const COPY_ICON = `<svg class="copy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>`;
+const COPIED_ICON = `<svg class="copy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+
+// 占位/空内容不提供复制按钮
+const NON_COPYABLE = new Set(['(执行完成)', '(已中止)', '(空回复)']);
+
+/**
+ * 复制文本到剪贴板：优先 Clipboard API，非安全上下文或失败时回退 execCommand。
+ * @param {string} text 原始 Markdown 文本
+ * @returns {Promise<boolean>} 是否复制成功
+ */
+async function copyToClipboard(text) {
+    if (!text) return false;
+    try {
+        if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(text);
+            return true;
+        }
+    } catch (e) {
+        // 忽略，落到兜底方案
+    }
+    try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.top = '-9999px';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        const ok = document.execCommand('copy');
+        ta.remove();
+        return ok;
+    } catch (e) {
+        return false;
+    }
+}
+
+/**
+ * 确保气泡被 .bubble-wrap 包裹（幂等）：wrap 仅包 .message-bubble，
+ * 原地替换气泡位置，保持其仍在 .tool-cards-container 之前。
+ * @returns {HTMLElement} wrap 元素
+ */
+function ensureBubbleWrap(messageEl, bubbleEl) {
+    const parent = bubbleEl.parentElement;
+    if (parent && parent.classList.contains('bubble-wrap')) {
+        return parent;
+    }
+    const wrap = document.createElement('div');
+    wrap.className = 'bubble-wrap';
+    messageEl.insertBefore(wrap, bubbleEl);
+    wrap.appendChild(bubbleEl);
+    return wrap;
+}
+
+/**
+ * 在 wrap 内挂载复制按钮（幂等），并把原始 Markdown 存入 messageEl.dataset.raw。
+ */
+function attachCopyButton(messageEl, wrapEl, rawText) {
+    messageEl.dataset.raw = rawText;
+    const existing = wrapEl.querySelector('.copy-btn');
+    if (existing) return;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'copy-btn';
+    btn.title = '复制原始 Markdown';
+    btn.innerHTML = COPY_ICON;
+    btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const ok = await copyToClipboard(messageEl.dataset.raw || '');
+        if (!ok) return;
+        btn.classList.add('copied');
+        btn.innerHTML = `${COPIED_ICON}<span>已复制</span>`;
+        setTimeout(() => {
+            btn.classList.remove('copied');
+            btn.innerHTML = COPY_ICON;
+        }, 1500);
+    });
+    wrapEl.appendChild(btn);
+}
+
 // ===== 追加消息气泡（Task 6.5 核心）=====
 function appendMessage(role, content, options = {}) {
     // 如果存在欢迎信息，移除它
@@ -279,6 +361,15 @@ function appendMessage(role, content, options = {}) {
     }
 
     messageEl.appendChild(bubbleEl);
+
+    // assistant 气泡：用 .bubble-wrap 包裹以承载复制按钮（按钮为气泡兄弟节点，规避流式 innerHTML 重写）
+    if (role === 'assistant') {
+        const wrap = ensureBubbleWrap(messageEl, bubbleEl);
+        const trimmed = (content || '').trim();
+        if (trimmed && !NON_COPYABLE.has(trimmed)) {
+            attachCopyButton(messageEl, wrap, content);
+        }
+    }
 
     messagesContainer.appendChild(messageEl);
     scrollToBottom();
@@ -571,7 +662,10 @@ async function sendMessage(message) {
         removeThinkingPulse();
         if (fullResponse) {
             ensureAiMessage();
-            aiBubbleEl.querySelector('.message-bubble').innerHTML = renderMarkdown(fullResponse);
+            const bubble = aiBubbleEl.querySelector('.message-bubble');
+            bubble.innerHTML = renderMarkdown(fullResponse);
+            // 流式完成后再挂复制按钮，dataset.raw 存完整原始 Markdown
+            attachCopyButton(aiBubbleEl, ensureBubbleWrap(aiBubbleEl, bubble), fullResponse);
         } else if (aiBubbleEl) {
             // 仅有工具调用无文本内容时，标记为执行完成
             aiBubbleEl.querySelector('.message-bubble').innerHTML = renderMarkdown('(执行完成)');
@@ -588,6 +682,8 @@ async function sendMessage(message) {
                 const bubble = aiBubbleEl.querySelector('.message-bubble');
                 if (fullResponse) {
                     bubble.innerHTML = renderMarkdown(fullResponse);
+                    // 中止时保留已生成内容，同样提供复制入口
+                    attachCopyButton(aiBubbleEl, ensureBubbleWrap(aiBubbleEl, bubble), fullResponse);
                 } else if (!bubble.textContent.trim()) {
                     bubble.textContent = '(已中止)';
                 }
