@@ -61,8 +61,13 @@ class RpgMemoryPromptAdvisorTest {
         String prompt = new GmContextAssembler(null, null, null, null).getMemoryPrompt();
         assertThat(prompt).isNotBlank();
         assertThat(prompt).startsWith(MEMORY_PROMPT_HEAD);
-        // 四类型定义齐全
-        assertThat(prompt).contains("npc_memory", "foreshadow", "world_lore", "player_style");
+        // 五类型定义齐全（rpg-player-memory：四类型→五类型，新增 player_memory）
+        assertThat(prompt).contains("npc_memory", "foreshadow", "world_lore", "player_style", "player_memory");
+        // player.md 骨架：frontmatter 类型/scope 与固定小节
+        assertThat(prompt).contains("type: player_memory", "scope: player", "player.md");
+        assertThat(prompt).contains("身份与背景", "秘密", "旅途节点", "能力与财物备注");
+        // 数值/枚举事实走 player 节点、禁止写入 player.md 的边界条款
+        assertThat(prompt).contains("player` 节点", "双写漂移");
         // frontmatter 五字段与 200 行截断告诫
         assertThat(prompt).contains("scope", "turn", "200 行");
         // 两步保存流程

@@ -1,6 +1,7 @@
 package com.luyu.agent.controller;
 
 import com.luyu.agent.config.ChatClientRegistry;
+import com.luyu.agent.tenancy.SessionTenantGuard;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
@@ -34,14 +35,17 @@ public class CompactionController {
 
     private final SessionService sessionService;
     private final RecursiveSummarizationCompactionStrategy compactionStrategy;
+    private final SessionTenantGuard sessionTenantGuard;
 
-    public CompactionController(SessionService sessionService, ChatClientRegistry chatClientRegistry) {
+    public CompactionController(SessionService sessionService, ChatClientRegistry chatClientRegistry,
+                                SessionTenantGuard sessionTenantGuard) {
         this.sessionService = sessionService;
         // 压缩摘要固定用云端 GLM 的纯净 client（forRole("compaction")），不受请求级 model 影响
         ChatClient compactionClient = chatClientRegistry.forRole("compaction");
         this.compactionStrategy = RecursiveSummarizationCompactionStrategy.builder(compactionClient)
                 .maxEventsToKeep(10)
                 .build();
+        this.sessionTenantGuard = sessionTenantGuard;
     }
 
     /**
@@ -52,6 +56,10 @@ public class CompactionController {
      */
     @PostMapping("/chat/sessions/{sessionId}/compact")
     public ResponseEntity<Map<String, Object>> compactSession(@PathVariable String sessionId) {
+        // 跨租户会话压缩不可达（session-isolation spec）：404 且零副作用
+        if (sessionTenantGuard.isForeign(sessionId)) {
+            return ResponseEntity.notFound().build();
+        }
         try {
             // 使用 always-fire trigger 无条件触发压缩
             // SessionService.compact() 内部处理 CAS 和归档

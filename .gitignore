@@ -32,3 +32,7 @@ screenshot-leaves-header.png
 src/main/resources/agents/general-purpose.md
 /agent/GENERAL_PURPOSE_SUBAGENT.md
 screenshot-baidu-homepage.png
+
+# 本地临时目录 / Qoder 配置，不提交
+新建文件夹/
+.qoder/

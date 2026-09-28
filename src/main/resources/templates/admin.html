@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>管理端 · 计量与配额 - Agent Platform</title>
+    <link rel="stylesheet" th:href="@{/css/admin.css(v=${#dates.createNow().time})}"/>
+</head>
+<body>
+
+<header class="admin-header">
+    <a href="/" class="back-btn" title="返回首页">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M19 12H5M12 19l-7-7 7-7" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+    </a>
+    <h1><span class="logo-dot"></span>平台管理端 · 计量与配额</h1>
+    <div class="admin-header-meta" id="windowMeta"></div>
+</header>
+
+<nav class="admin-tabs">
+    <button class="admin-tab active" data-tab="usage">用量看板</button>
+    <button class="admin-tab" data-tab="pricing">档位单价</button>
+</nav>
+
+<main class="admin-main">
+    <!-- ============ 用量看板 ============ -->
+    <section class="admin-panel" id="panel-usage">
+        <div class="admin-toolbar">
+            <label>滚动窗口
+                <select id="windowDays">
+                    <option value="7">7 天</option>
+                    <option value="30" selected>30 天</option>
+                    <option value="90">90 天</option>
+                </select>
+            </label>
+            <button class="btn" id="refreshUsage">刷新</button>
+            <span class="hint" id="quotaHint"></span>
+        </div>
+
+        <table class="admin-table" id="usageTable">
+            <thead>
+            <tr>
+                <th>租户</th>
+                <th>tenant_id</th>
+                <th class="num">输入 token</th>
+                <th class="num">输出 token</th>
+                <th class="num">缓存 token</th>
+                <th class="num">当期金额(元)</th>
+                <th>操作</th>
+            </tr>
+            </thead>
+            <tbody id="usageBody">
+            <tr><td colspan="7" class="empty">加载中…</td></tr>
+            </tbody>
+        </table>
+
+        <!-- 租户详情（分解 + 预算 + 明细） -->
+        <div class="tenant-detail" id="tenantDetail" hidden>
+            <div class="tenant-detail-head">
+                <h2 id="tenantDetailTitle">租户详情</h2>
+                <button class="btn ghost" id="closeDetail">收起</button>
+            </div>
+
+            <div class="budget-row">
+                <span>当期已用：<b id="usedYuan">-</b> 元</span>
+                <span>生效预算：<b id="budgetYuan">-</b> 元</span>
+                <span id="overrideTag" class="tag" hidden>租户覆盖</span>
+                <label>新预算(元)
+                    <input type="number" id="budgetInput" min="0" step="0.01" placeholder="留空清除覆盖"/>
+                </label>
+                <button class="btn" id="saveBudget">保存预算</button>
+                <button class="btn ghost" id="clearBudget">清除覆盖</button>
+            </div>
+
+            <div class="breakdown-grid">
+                <div>
+                    <h3>按模型分解</h3>
+                    <table class="admin-table small">
+                        <thead><tr><th>模型</th><th class="num">输入</th><th class="num">输出</th><th class="num">缓存</th><th class="num">金额(元)</th></tr></thead>
+                        <tbody id="byModelBody"></tbody>
+                    </table>
+                </div>
+                <div>
+                    <h3>按调用类型分解</h3>
+                    <table class="admin-table small">
+                        <thead><tr><th>调用类型</th><th class="num">次数</th><th class="num">金额(元)</th></tr></thead>
+                        <tbody id="byCallTypeBody"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <h3>调用明细</h3>
+            <table class="admin-table small">
+                <thead><tr><th>时间</th><th>模型</th><th>类型</th><th>会话</th><th class="num">输入</th><th class="num">输出</th><th class="num">缓存</th><th class="num">金额(元)</th></tr></thead>
+                <tbody id="logsBody"></tbody>
+            </table>
+            <div class="pager">
+                <button class="btn ghost" id="prevPage">上一页</button>
+                <span id="pageInfo">-</span>
+                <button class="btn ghost" id="nextPage">下一页</button>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============ 档位单价 ============ -->
+    <section class="admin-panel" id="panel-pricing" hidden>
+        <p class="hint">单位：元/百万 token（数值上等于 微元/token，按整数存储）。改动即时生效，无需重启。</p>
+        <table class="admin-table" id="pricingTable">
+            <thead>
+            <tr><th>档位</th><th class="num">输入</th><th class="num">输出</th><th class="num">缓存命中输入</th><th>来源</th><th>操作</th></tr>
+            </thead>
+            <tbody id="pricingBody">
+            <tr><td colspan="6" class="empty">加载中…</td></tr>
+            </tbody>
+        </table>
+    </section>
+</main>
+
+<div class="toast" id="toast" hidden></div>
+
+<script th:src="@{/js/auth-redirect.js(v=${#dates.createNow().time})}"></script>
+<script th:src="@{/js/admin/admin.js(v=${#dates.createNow().time})}"></script>
+</body>
+</html>

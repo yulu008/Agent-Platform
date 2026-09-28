@@ -2,6 +2,7 @@ package com.luyu.agent.rpg.tools;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.luyu.agent.tenancy.TenantContext;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.model.ToolContext;
 import org.springframework.ai.tool.ToolCallback;
@@ -15,8 +16,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * {@link SaveScopedMemoryCallback} 单元测试。
  * <p>
- * 该包装器是存档隔离的<b>唯一</b>强制点：GM 看到的工具签名里没有任何存档信息，
- * 全靠本层在调用期注入 {@code <gameStateId>/} 前缀。因此路径改写与越狱拦截必须有测试钉住 ——
+ * 该包装器是「租户 + 存档」双隔离的<b>唯一</b>强制点：GM 看到的工具签名里没有任何
+ * 租户/存档信息，全靠本层在调用期注入 {@code <tenantId>/rpg-saves/<gameStateId>/}
+ * 双重前缀。因此路径改写与越狱拦截必须有测试钉住 ——
  * 尤其 {@code gs-001/../gs-002/x.md} 这种形式：归一化后是 {@code <root>/gs-002/x.md}，
  * 仍在 {@code AutoMemoryTools} 的根目录内，底层防护会放行，只有本层的逐段校验能拦住。
  */
@@ -25,6 +27,9 @@ class SaveScopedMemoryCallbackTest {
     private static final ObjectMapper mapper = new ObjectMapper();
     private static final String INPUT_SCHEMA =
             "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"}}}";
+
+    /** 测试用租户 ID（模拟验签后的 JWT 租户声明） */
+    private static final String TENANT_ID = "t-a";
 
     /** 记录被委托调用的入参，用于断言改写结果 */
     private static final class RecordingCallback implements ToolCallback {
@@ -63,7 +68,15 @@ class SaveScopedMemoryCallbackTest {
     private final SaveScopedMemoryCallback callback =
             new SaveScopedMemoryCallback(delegate, "GmMemoryView", "读取当前存档的记忆文件");
 
+    /** 模拟 GameLoopService.prepareTurn 放入的完整上下文：gameStateId + tenantId */
     private static ToolContext saveContext(String gameStateId) {
+        return new ToolContext(Map.of(
+                SaveScopedMemoryCallback.GAME_STATE_ID_KEY, gameStateId,
+                TenantContext.TOOL_CONTEXT_KEY, TENANT_ID));
+    }
+
+    /** 只有 gameStateId、缺 tenantId 的不完整上下文 */
+    private static ToolContext contextWithoutTenant(String gameStateId) {
         return new ToolContext(Map.of(SaveScopedMemoryCallback.GAME_STATE_ID_KEY, gameStateId));
     }
 
@@ -75,20 +88,21 @@ class SaveScopedMemoryCallbackTest {
     // ==================== 路径改写 ====================
 
     @Test
-    void 相对路径被加上存档前缀() throws Exception {
+    void 相对路径被加上租户加存档双重前缀() throws Exception {
         String result = callback.call("{\"path\":\"MEMORY.md\"}", saveContext("gs-001"));
 
         assertThat(result).isEqualTo("底层执行成功");
-        assertThat(pathOf(delegate.lastInput)).isEqualTo("gs-001/MEMORY.md");
+        assertThat(pathOf(delegate.lastInput)).isEqualTo(TENANT_ID + "/rpg-saves/gs-001/MEMORY.md");
     }
 
     @Test
     void 反斜杠与点斜杠前缀被归一化() throws Exception {
         callback.call("{\"path\":\".\\\\npc\\\\npc_lin.md\"}", saveContext("gs-002"));
-        assertThat(pathOf(delegate.lastInput)).isEqualTo("gs-002/npc/npc_lin.md");
+        assertThat(pathOf(delegate.lastInput))
+                .isEqualTo(TENANT_ID + "/rpg-saves/gs-002/npc/npc_lin.md");
 
         callback.call("{\"path\":\"./npc_lin.md\"}", saveContext("gs-002"));
-        assertThat(pathOf(delegate.lastInput)).isEqualTo("gs-002/npc_lin.md");
+        assertThat(pathOf(delegate.lastInput)).isEqualTo(TENANT_ID + "/rpg-saves/gs-002/npc_lin.md");
     }
 
     @Test
@@ -97,7 +111,7 @@ class SaveScopedMemoryCallbackTest {
                 saveContext("gs-001"));
 
         JsonNode root = mapper.readTree(delegate.lastInput);
-        assertThat(root.get("path").asText()).isEqualTo("gs-001/npc_lin.md");
+        assertThat(root.get("path").asText()).isEqualTo(TENANT_ID + "/rpg-saves/gs-001/npc_lin.md");
         assertThat(root.get("content").asText()).isEqualTo("# 林掌柜\n他记得那枚玉佩");
         assertThat(root.size()).isEqualTo(2);
     }
@@ -143,9 +157,31 @@ class SaveScopedMemoryCallbackTest {
 
     @Test
     void 缺少gameStateId时拒绝执行不回落根目录() {
-        String result = callback.call("{\"path\":\"MEMORY.md\"}", new ToolContext(Map.of()));
+        String result = callback.call("{\"path\":\"MEMORY.md\"}", new ToolContext(Map.of(
+                TenantContext.TOOL_CONTEXT_KEY, TENANT_ID)));
 
         assertThat(result).contains("缺少存档标识");
+        assertThat(delegate.callCount).isZero();
+    }
+
+    @Test
+    void 缺少tenantId时拒绝执行不回落根目录() {
+        // file-isolation spec：无 tid 拒执行且零写入，绝不回落无租户的根目录
+        String result = callback.call("{\"path\":\"MEMORY.md\"}", contextWithoutTenant("gs-001"));
+
+        assertThat(result).contains("缺少存档标识").contains("租户标识");
+        assertThat(delegate.callCount).isZero();
+    }
+
+    @Test
+    void 非法租户ID被拒() {
+        // 穿越形态的 tenantId 不允许进入前缀拼接
+        String result = callback.call("{\"path\":\"MEMORY.md\"}",
+                new ToolContext(Map.of(
+                        SaveScopedMemoryCallback.GAME_STATE_ID_KEY, "gs-001",
+                        TenantContext.TOOL_CONTEXT_KEY, "../evil")));
+
+        assertThat(result).contains("工具调用失败");
         assertThat(delegate.callCount).isZero();
     }
 

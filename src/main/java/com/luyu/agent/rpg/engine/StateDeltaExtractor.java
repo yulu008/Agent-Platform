@@ -3,6 +3,7 @@ package com.luyu.agent.rpg.engine;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.luyu.agent.config.ChatClientRegistry;
+import com.luyu.agent.metering.MeteringAdvisor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
@@ -33,6 +34,11 @@ public class StateDeltaExtractor {
               "flags": {"新标记": true},
               "npc_states": {
                 "NPC-ID": {"status": "状态", "motives": {"greed": 0.1, "fear": -0.2}}
+              },
+              "player": {
+                "money": 数值变化量（支出为负，不是余额；无变更则省略）,
+                "abilities": {"能力名": "等级或状态"},
+                "titles": ["称号"]
               },
               "events": ["简要事件描述"]
             }
@@ -108,6 +114,7 @@ public class StateDeltaExtractor {
             ChatClient compactionClient = chatClientRegistry.forRole("compaction");
             String response = compactionClient.prompt()
                     .user(prompt)
+                    .advisors(a -> a.param(MeteringAdvisor.CALL_TYPE_CONTEXT_KEY, "state_delta"))
                     .call()
                     .content();
             if (response == null || response.isBlank()) {

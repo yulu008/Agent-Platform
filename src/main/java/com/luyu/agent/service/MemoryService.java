@@ -1,19 +1,21 @@
 package com.luyu.agent.service;
 
+import com.luyu.agent.tenancy.TenantPaths;
 import org.springframework.stereotype.Service;
 
-import java.nio.file.Paths;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 
 /**
- * 全局记忆文件管理服务
+ * 全局记忆文件管理服务（多租户版，tasks 4.2）
  *
- * 对应 {@code ~/.agent/memories/} 这一个 root，是 {@link MemoryFileStore} 的薄委托：
- * 文件读写、frontmatter 解析与防穿越校验都在存储组件里，本类只负责固定 root 并保持
- * 既有公开签名不变（memory.html 与 {@code /api/memories} 零感知）。
+ * root 按当前请求租户解析：{@code ~/.agent/tenants/<tenantId>/memories/}（design D6），
+ * 是 {@link MemoryFileStore} 的薄委托：文件读写、frontmatter 解析与防穿越校验都在存储组件里，
+ * 本类只保持既有公开签名不变（memory.html 与 {@code /api/memories} 零感知）。拆构造期固定 root
+ * 为每请求构造（与 {@code RpgSaveMemoryController} 同模式），跨租户自然互不可见。
  *
- * 存档级 RPG 笔记本（{@code ~/.agent/rpg-saves/<gameStateId>/}）不走本类，
+ * 存档级 RPG 笔记本（{@code ~/.agent/tenants/<tid>/rpg-saves/<gameStateId>/}）不走本类，
  * 由 {@code RpgSaveMemoryController} 每请求构造独立 root 的 {@link MemoryFileStore}。
  *
  * 记忆文件为带 YAML frontmatter 的 Markdown 格式：
@@ -27,15 +29,28 @@ import java.util.Map;
 @Service
 public class MemoryService {
 
-    /** 记忆文件根目录（与 AutoMemoryToolsAdvisor 一致） */
-    private static final String MEMORIES_DIR =
-            System.getProperty("user.home") + "/.agent/memories";
+    /**
+     * 当前请求租户的记忆存储（root = 租户目录下 memories/）。
+ * 租户上下文缺失即快速失败，绝不回落无租户根目录。
+     */
+    private MemoryFileStore currentStore() {
+        MemoryFileStore store = new MemoryFileStore(memoriesDirOf());
+        store.ensureRootExists();
+        return store;
+    }
 
-    private final MemoryFileStore store;
+    /**
+     * 租户记忆根解析（单独成方法，便于单测替换为临时目录；同 RpgSaveMemoryController.saveDirOf 模式）。
+     */
+    protected Path memoriesDirOf() {
+        return TenantPaths.memoriesDir();
+    }
 
-    public MemoryService() {
-        this.store = new MemoryFileStore(Paths.get(MEMORIES_DIR));
-        this.store.ensureRootExists();
+    /**
+     * 校验相对路径是否合法（不越出本租户记忆根目录）；供 Controller 区分 400（非法）与 404（不存在）。
+     */
+    public boolean isValidPath(String fileName) {
+        return currentStore().resolveSafe(fileName) != null;
     }
 
     /**
@@ -44,7 +59,7 @@ public class MemoryService {
      * @return 记忆条目列表，每条包含 name、description、type、fileName（相对路径）
      */
     public List<Map<String, String>> listMemories() {
-        return store.list();
+        return currentStore().list();
     }
 
     /**
@@ -54,7 +69,7 @@ public class MemoryService {
      * @return 记忆详情（name、description、type、content），不存在返回 null
      */
     public Map<String, String> readMemory(String fileName) {
-        return store.read(fileName);
+        return currentStore().read(fileName);
     }
 
     /**
@@ -64,6 +79,6 @@ public class MemoryService {
      * @return true=删除成功，false=文件不存在
      */
     public boolean deleteMemory(String fileName) {
-        return store.delete(fileName);
+        return currentStore().delete(fileName);
     }
 }

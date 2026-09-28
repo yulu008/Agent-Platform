@@ -1,5 +1,7 @@
 package com.luyu.agent.controller;
 
+import com.luyu.agent.tenancy.SessionTenantGuard;
+import com.luyu.agent.tenancy.TenantContext;
 import org.springframework.ai.session.CreateSessionRequest;
 import org.springframework.ai.session.Session;
 import org.springframework.ai.session.SessionRepository;
@@ -21,19 +23,24 @@ import java.util.Map;
  * 提供会话列表查询、新建会话、清空会话消息的 REST API
  * 
  * 数据源：Spring AI Session API（SessionService + SessionRepository）
+ * 
+ * 会话归属跟随请求租户（第 5 层，session-isolation spec）：AI_SESSION.user_id 装
+ * {@link TenantContext} 租户 ID——列表只含本租户，新建归属本租户，
+ * 删除/清空跨租户会话统一 404 且零副作用。
  */
 @RestController
 public class SessionController {
 
-    private static final String DEFAULT_USER_ID = "default-user";
-
     private final SessionService sessionService;
     private final SessionRepository sessionRepository;
+    private final SessionTenantGuard sessionTenantGuard;
 
     public SessionController(SessionService sessionService,
-                             SessionRepository sessionRepository) {
+                             SessionRepository sessionRepository,
+                             SessionTenantGuard sessionTenantGuard) {
         this.sessionService = sessionService;
         this.sessionRepository = sessionRepository;
+        this.sessionTenantGuard = sessionTenantGuard;
     }
 
     /**
@@ -43,7 +50,7 @@ public class SessionController {
      */
     @GetMapping("/chat/sessions")
     public List<Map<String, Object>> listSessions() {
-        return sessionRepository.findByUserId(DEFAULT_USER_ID)
+        return sessionRepository.findByUserId(TenantContext.requireTenantId())
                 .stream()
                 .sorted(Comparator.comparing(Session::createdAt).reversed())
                 .map(s -> {
@@ -68,7 +75,7 @@ public class SessionController {
     public Map<String, String> createSession() {
         Session session = sessionService.create(
                 CreateSessionRequest.builder()
-                        .userId(DEFAULT_USER_ID)
+                        .userId(TenantContext.requireTenantId())
                         .metadata("title", "新对话")
                         .build()
         );
@@ -85,6 +92,10 @@ public class SessionController {
      */
     @DeleteMapping("/chat/messages")
     public ResponseEntity<Void> clearMessages(@RequestParam String sessionId) {
+        // 跨租户会话表现为不存在（session-isolation spec）：404 且零副作用
+        if (sessionTenantGuard.isForeign(sessionId)) {
+            return ResponseEntity.notFound().build();
+        }
         // Session API 不支持单独清空事件，删除整个会话
         // 前端会在清空后重新创建会话
         sessionService.delete(sessionId);
@@ -99,6 +110,10 @@ public class SessionController {
      */
     @DeleteMapping("/chat/sessions/{sessionId}")
     public ResponseEntity<Void> deleteSession(@PathVariable String sessionId) {
+        // 跨租户会话表现为不存在（session-isolation spec）：404 且零副作用
+        if (sessionTenantGuard.isForeign(sessionId)) {
+            return ResponseEntity.notFound().build();
+        }
         sessionService.delete(sessionId);
         return ResponseEntity.noContent().build();
     }

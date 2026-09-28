@@ -16,6 +16,9 @@ public class RpgMemoryProperties {
     /** 默认提醒间隔：每 5 轮一次 */
     public static final int DEFAULT_REMIND_EVERY_TURNS = 5;
 
+    /** 默认世界背景重注入间隔：每 10 轮一次 */
+    public static final int DEFAULT_WORLD_REFRESH_EVERY_TURNS = 10;
+
     /**
      * 每 N 轮由引擎向 GM 追加一次「整理笔记」提醒。
      * <p>
@@ -23,12 +26,28 @@ public class RpgMemoryProperties {
      */
     private int remindEveryTurns = DEFAULT_REMIND_EVERY_TURNS;
 
+    /**
+     * 每 N 轮向 GM 重注入一次「世界背景回顾」块（精简世界观 + 笔记本索引）。
+     * <p>
+     * 背景与语义见 {@link #shouldRefreshWorld(int)} 的 javadoc；
+     * 设为 0 或负数即完全关闭重注入。
+     */
+    private int worldRefreshEveryTurns = DEFAULT_WORLD_REFRESH_EVERY_TURNS;
+
     public int getRemindEveryTurns() {
         return remindEveryTurns;
     }
 
     public void setRemindEveryTurns(int remindEveryTurns) {
         this.remindEveryTurns = remindEveryTurns;
+    }
+
+    public int getWorldRefreshEveryTurns() {
+        return worldRefreshEveryTurns;
+    }
+
+    public void setWorldRefreshEveryTurns(int worldRefreshEveryTurns) {
+        this.worldRefreshEveryTurns = worldRefreshEveryTurns;
     }
 
     /**
@@ -42,5 +61,23 @@ public class RpgMemoryProperties {
      */
     public boolean shouldRemind(int turn) {
         return remindEveryTurns > 0 && turn > 0 && turn % remindEveryTurns == 0;
+    }
+
+    /**
+     * 判断给定轮次是否应重注入「世界背景回顾」块。
+     * <p>
+     * 世界观只渲染进首轮 system prompt，而 {@code SessionMemoryAdvisor} 从不持久化
+     * SystemMessage，第 2 轮起上下文里没有世界观原文，长对话后世界细节会漂移。
+     * 重注入块追加在增量 prompt（user 消息，落库进 30 事件滑窗），一次注入的余晖
+     * 可覆盖后续十几轮，故间隔可远大于 {@link #shouldRemind(int)} 的提醒间隔。
+     * <p>
+     * 与 {@code shouldRemind} 同样集中取模：让「{@code <= 0} 表示关闭」只有一份实现，
+     * 规避 {@code worldRefreshEveryTurns == 0} 时的除零异常。
+     *
+     * @param turn 本轮轮次（从 1 开始）
+     * @return true 表示本轮应在增量 prompt 末尾追加世界背景回顾块
+     */
+    public boolean shouldRefreshWorld(int turn) {
+        return worldRefreshEveryTurns > 0 && turn > 0 && turn % worldRefreshEveryTurns == 0;
     }
 }

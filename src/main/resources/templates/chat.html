@@ -26,6 +26,7 @@
             <div class="fx-flash"></div>
         </div>
         <button class="header-btn memory-toggle" id="memoryToggle" title="长期记忆">📝</button>
+        <a href="/rpg" class="header-btn rpg-link" title="RPG 首页">🎲</a>
     </header>
 
     <!-- 左侧会话抽屉 -->
@@ -116,6 +117,7 @@
     <!-- Markdown 渲染库（本地 vendor，离线可用） -->
     <script th:src="@{/vendor/marked.min.js(v=${#dates.createNow().time})}"></script>
     <script th:src="@{/vendor/purify.min.js(v=${#dates.createNow().time})}"></script>
+    <script th:src="@{/js/auth-redirect.js(v=${#dates.createNow().time})}"></script>
     <script th:src="@{/js/chat.js(v=${#dates.createNow().time})}"></script>
 </body>
 </html>

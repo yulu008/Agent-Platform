@@ -1,6 +1,7 @@
 package com.luyu.agent.rpg.engine;
 
 import com.luyu.agent.config.ChatClientRegistry;
+import com.luyu.agent.metering.MeteringAdvisor;
 import com.luyu.agent.rpg.model.EventLog;
 import com.luyu.agent.rpg.model.Trigger;
 import com.luyu.agent.rpg.repository.RpgEventLogRepository;
@@ -71,6 +72,7 @@ public class SoftConditionEvaluator {
             ChatClient compactionClient = chatClientRegistry.forRole("compaction");
             String response = compactionClient.prompt()
                     .user(prompt)
+                    .advisors(a -> a.param(MeteringAdvisor.CALL_TYPE_CONTEXT_KEY, "soft_condition"))
                     .call()
                     .content();
             boolean result = parseBooleanResponse(response);

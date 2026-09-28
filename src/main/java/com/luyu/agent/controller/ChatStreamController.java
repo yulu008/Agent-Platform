@@ -1,10 +1,17 @@
 package com.luyu.agent.controller;
 
 import com.luyu.agent.config.ChatClientRegistry;
+import com.luyu.agent.config.PostEmissionStreamException;
+import com.luyu.agent.moderation.ContentModerationGate;
+import com.luyu.agent.moderation.ModerationResult;
+import com.luyu.agent.metering.QuotaExceededException;
+import com.luyu.agent.metering.QuotaGuard;
 import com.luyu.agent.service.ContextInfo;
 import com.luyu.agent.service.ContextInfoService;
 import com.luyu.agent.service.ImageUploadService;
 import com.luyu.agent.service.SessionTitleGenerator;
+import com.luyu.agent.tenancy.SessionTenantGuard;
+import com.luyu.agent.tenancy.TenantContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
@@ -17,12 +24,14 @@ import org.springframework.ai.session.SessionEvent;
 import org.springframework.ai.session.SessionService;
 import org.springframework.ai.session.advisor.SessionMemoryAdvisor;
 import org.springframework.core.io.FileSystemResource;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.util.MimeTypeUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
 import java.util.NoSuchElementException;
@@ -58,6 +67,9 @@ public class ChatStreamController {
     private final SessionTitleGenerator sessionTitleGenerator;
     private final ContextInfoService contextInfoService;
     private final ImageUploadService imageUploadService;
+    private final SessionTenantGuard sessionTenantGuard;
+    private final ContentModerationGate moderationGate;
+    private final QuotaGuard quotaGuard;
 
     /** 已触发过标题生成的 sessionId 集合，避免重复触发 */
     private final Set<String> titleTriggeredSessions = ConcurrentHashMap.newKeySet();
@@ -66,12 +78,18 @@ public class ChatStreamController {
                                 SessionService sessionService,
                                 SessionTitleGenerator sessionTitleGenerator,
                                 ContextInfoService contextInfoService,
-                                ImageUploadService imageUploadService) {
+                                ImageUploadService imageUploadService,
+                                SessionTenantGuard sessionTenantGuard,
+                                ContentModerationGate moderationGate,
+                                QuotaGuard quotaGuard) {
         this.chatClientRegistry = chatClientRegistry;
         this.sessionService = sessionService;
         this.sessionTitleGenerator = sessionTitleGenerator;
         this.contextInfoService = contextInfoService;
         this.imageUploadService = imageUploadService;
+        this.sessionTenantGuard = sessionTenantGuard;
+        this.moderationGate = moderationGate;
+        this.quotaGuard = quotaGuard;
     }
 
     /**
@@ -92,6 +110,49 @@ public class ChatStreamController {
         String message = request.get("message");
         String sessionId = request.get("sessionId");
         String imageBase64 = request.get("imageBase64");
+
+        // 请求线程捕获租户 ID（SSE 订阅/工具回调可能切线程，ThreadLocal 不可靠）。
+        // USER_ID_CONTEXT_KEY（"chat_memory_user_id"）：SessionMemoryAdvisor 原生支持
+        // 请求级 userId 覆盖，非空则覆盖构建期 defaultUserId —— 记忆文件按租户隔离（第 4 层）。
+        final String tenantId = TenantContext.requireTenantId();
+
+        // 跨租户会话守卫（session-isolation spec）：会话存在且归属他租户 → 表现为不存在，
+        // 拒绝发消息（否则事件/标题/图片会写进他租户会话）；会话不存在不拦（advisor 自动建）
+        if (sessionTenantGuard.isForeign(sessionId)) {
+            log.warn("跨租户会话访问被拒: sessionId={}, tenant={}", sessionId, tenantId);
+            return Flux.just(ServerSentEvent.<Object>builder()
+                    .data(Map.of("error", "会话不存在或无权访问"))
+                    .build());
+        }
+
+        // 输入内容审查闸门（input-content-moderation）：调模型前同步审查用户输入原文。
+        // 命中即整条拒答 + 中止，且在 SessionMemoryAdvisor 生效前提前返回 ——
+        // 被拒输入不进入会话持久化链路，不写 AI_SESSION（spec「命中输入不落库」）。
+        ModerationResult moderation = moderationGate.check(message);
+        if (moderation.blocked()) {
+            return Flux.just(
+                    ServerSentEvent.<Object>builder()
+                            .data(Map.of("content", moderationGate.refusalMessage()))
+                            .build(),
+                    ServerSentEvent.<Object>builder()
+                            .data("[DONE]")
+                            .build());
+        }
+
+        // 配额硬拒（tenant-token-metering / design D8）：用户发起型入口起流前事前检查。
+        // 超限以 SSE error 事件返回友好提示（不进入模型调用）；配额开关关闭时 QuotaGuard 直接放行。
+        try {
+            quotaGuard.check(tenantId);
+        } catch (QuotaExceededException qe) {
+            log.info("配额超限拒绝聊天: sessionId={}, tenant={}", sessionId, tenantId);
+            return Flux.just(
+                    ServerSentEvent.<Object>builder()
+                            .data(Map.of("error", qe.getMessage()))
+                            .build(),
+                    ServerSentEvent.<Object>builder()
+                            .data("[DONE]")
+                            .build());
+        }
 
         // 请求级模型路由：缺省取 default，未知模型返回 400 提示
         final ChatClient chatClient;
@@ -149,7 +210,10 @@ public class ChatStreamController {
                     .build();
             contentFlux = chatClient.prompt()
                     .messages(userMessage)
-                    .advisors(a -> a.param(SessionMemoryAdvisor.SESSION_ID_CONTEXT_KEY, sessionId))
+                    .toolContext(java.util.Map.of(TenantContext.TOOL_CONTEXT_KEY, tenantId))
+                    .advisors(a -> a.param(SessionMemoryAdvisor.SESSION_ID_CONTEXT_KEY, sessionId)
+                            .param(SessionMemoryAdvisor.USER_ID_CONTEXT_KEY, tenantId)
+                            .param(com.luyu.agent.metering.MeteringAdvisor.CALL_TYPE_CONTEXT_KEY, "chat"))
                     .stream()
                     .content()
                     .map(token -> {
@@ -165,10 +229,10 @@ public class ChatStreamController {
                             log.info("流式中止，已保存部分回复: sessionId={}, length={}",
                                     sessionId, fullResponse.length());
                         }
-                        triggerTitleGenerationIfFirstRound(sessionId);
+                        triggerTitleGenerationIfFirstRound(sessionId, tenantId);
                     })
                     .doOnComplete(() -> {
-                        triggerTitleGenerationIfFirstRound(sessionId);
+                        triggerTitleGenerationIfFirstRound(sessionId, tenantId);
                     })
                     .onErrorResume(error -> {
                         boolean isChunkMergerError = isStreamAggregationError(error);
@@ -178,7 +242,7 @@ public class ChatStreamController {
                             log.warn("流式异常但已保存部分回复: sessionId={}, length={}, 原因: {}",
                                     sessionId, fullResponse.length(),
                                     isChunkMergerError ? "ChunkMerger分片合并失败" : error.getClass().getSimpleName());
-                            triggerTitleGenerationIfFirstRound(sessionId);
+                            triggerTitleGenerationIfFirstRound(sessionId, tenantId);
                             return Flux.empty();
                         }
                         String userMsg = extractFriendlyError(error);
@@ -187,7 +251,7 @@ public class ChatStreamController {
                         } else {
                             log.error("SSE 流式响应异常: sessionId={}, 原因: {}", sessionId, userMsg, error);
                         }
-                        triggerTitleGenerationIfFirstRound(sessionId);
+                        triggerTitleGenerationIfFirstRound(sessionId, tenantId);
                         return Flux.just(
                                 ServerSentEvent.<Object>builder()
                                         .data(Map.of("error", userMsg))
@@ -199,7 +263,10 @@ public class ChatStreamController {
         } else {
             contentFlux = chatClient.prompt()
                     .user(message)
-                    .advisors(a -> a.param(SessionMemoryAdvisor.SESSION_ID_CONTEXT_KEY, sessionId))
+                    .toolContext(java.util.Map.of(TenantContext.TOOL_CONTEXT_KEY, tenantId))
+                    .advisors(a -> a.param(SessionMemoryAdvisor.SESSION_ID_CONTEXT_KEY, sessionId)
+                            .param(SessionMemoryAdvisor.USER_ID_CONTEXT_KEY, tenantId)
+                            .param(com.luyu.agent.metering.MeteringAdvisor.CALL_TYPE_CONTEXT_KEY, "chat"))
                     .stream()
                     .content()
                     .map(token -> {
@@ -215,10 +282,10 @@ public class ChatStreamController {
                             log.info("流式中止，已保存部分回复: sessionId={}, length={}",
                                     sessionId, fullResponse.length());
                         }
-                        triggerTitleGenerationIfFirstRound(sessionId);
+                        triggerTitleGenerationIfFirstRound(sessionId, tenantId);
                     })
                     .doOnComplete(() -> {
-                        triggerTitleGenerationIfFirstRound(sessionId);
+                        triggerTitleGenerationIfFirstRound(sessionId, tenantId);
                     })
                     .onErrorResume(error -> {
                         boolean isChunkMergerError = isStreamAggregationError(error);
@@ -228,7 +295,7 @@ public class ChatStreamController {
                             log.warn("流式异常但已保存部分回复: sessionId={}, length={}, 原因: {}",
                                     sessionId, fullResponse.length(),
                                     isChunkMergerError ? "ChunkMerger分片合并失败" : error.getClass().getSimpleName());
-                            triggerTitleGenerationIfFirstRound(sessionId);
+                            triggerTitleGenerationIfFirstRound(sessionId, tenantId);
                             return Flux.empty();
                         }
                         String userMsg = extractFriendlyError(error);
@@ -237,7 +304,7 @@ public class ChatStreamController {
                         } else {
                             log.error("SSE 流式响应异常: sessionId={}, 原因: {}", sessionId, userMsg, error);
                         }
-                        triggerTitleGenerationIfFirstRound(sessionId);
+                        triggerTitleGenerationIfFirstRound(sessionId, tenantId);
                         return Flux.just(
                                 ServerSentEvent.<Object>builder()
                                         .data(Map.of("error", userMsg))
@@ -273,6 +340,10 @@ public class ChatStreamController {
     public List<Map<String, Object>> getHistory(@RequestParam String sessionId) {
         if (sessionId == null || sessionId.trim().isEmpty()) {
             throw new IllegalArgumentException("sessionId 不能为空");
+        }
+        // 跨租户会话历史不可达：404，不泄露他租户会话存在性
+        if (sessionTenantGuard.isForeign(sessionId)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "会话不存在或无权访问");
         }
 
         List<SessionEvent> events = sessionService.getEvents(sessionId);
@@ -343,6 +414,9 @@ public class ChatStreamController {
         if (sessionId == null || sessionId.trim().isEmpty()) {
             throw new IllegalArgumentException("sessionId 不能为空");
         }
+        if (sessionTenantGuard.isForeign(sessionId)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "会话不存在或无权访问");
+        }
         return contextInfoService.getContextInfo(sessionId);
     }
 
@@ -376,6 +450,11 @@ public class ChatStreamController {
      * 将底层异常转换为用户友好的错误提示
      */
     private String extractFriendlyError(Throwable error) {
+        // 先识别已发内容后的流式中断信号（StreamFallbackChatModel 守卫抛出，
+        // 防御性兑底：正常情况下已发内容路径在上游已保存部分回复并静默结束）
+        if (PostEmissionStreamException.findIn(error) != null) {
+            return "模型流式响应中断（工具调用格式不兼容），已保留已生成的部分回复，请重新提问。";
+        }
         // 先按异常类型检测（遍历整个 cause 链）
         if (isStreamAggregationError(error)) {
             return "模型响应分片异常（工具调用格式不兼容），请重新提问或新建会话。";
@@ -469,7 +548,7 @@ public class ChatStreamController {
      * tool call / tool response / 多条 assistant 等多个事件，
      * 事件总数远超 2，用 size == 2 判断会导致标题永不生成。
      */
-    private void triggerTitleGenerationIfFirstRound(String sessionId) {
+    private void triggerTitleGenerationIfFirstRound(String sessionId, String tenantId) {
         try {
             // 去重：同一 session 只触发一次
             if (!titleTriggeredSessions.add(sessionId)) {
@@ -505,7 +584,7 @@ public class ChatStreamController {
                     .reduce((first, second) -> second)
                     .orElse("");
 
-            sessionTitleGenerator.generateTitleAsync(sessionId, userMsg, assistantMsg);
+            sessionTitleGenerator.generateTitleAsync(sessionId, userMsg, assistantMsg, tenantId);
         } catch (Exception e) {
             log.warn("触发标题生成失败: sessionId={}", sessionId, e);
             titleTriggeredSessions.remove(sessionId);

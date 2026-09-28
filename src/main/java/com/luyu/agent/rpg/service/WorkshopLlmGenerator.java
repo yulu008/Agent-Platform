@@ -3,6 +3,7 @@ package com.luyu.agent.rpg.service;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.luyu.agent.config.ChatClientRegistry;
+import com.luyu.agent.metering.MeteringAdvisor;
 import com.luyu.agent.rpg.model.CharacterCard;
 import com.luyu.agent.rpg.model.WorldSetting;
 import org.slf4j.Logger;
@@ -26,7 +27,8 @@ import java.util.stream.Collectors;
 public class WorkshopLlmGenerator {
 
     private static final Logger log = LoggerFactory.getLogger(WorkshopLlmGenerator.class);
-    private static final ObjectMapper mapper = new ObjectMapper();
+    private static final ObjectMapper mapper = new ObjectMapper()
+            .configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
     private static final String WORLD_GEN_PROMPT = """
             请根据以下关键词生成一个 RPG 世界观设定，以 JSON 格式输出。
@@ -86,6 +88,7 @@ public class WorkshopLlmGenerator {
      * 存量罗马音/英文名字批量汉字化改名提示词。
      * <p>
      * 输出为 {@code {旧名: 新汉字名}} 映射，校验矩阵在 {@code WorkshopService.localizeNames} 侧执行。
+     * 清单包含两类条目：角色卡（带身份）与无角色卡的剧情临时 NPC 名（带存档状态摘要）。
      */
     private static final String RENAME_GEN_PROMPT = """
             以下 RPG 世界的角色名使用了罗马音或英文，请把每个名字改写为汉字名。
@@ -100,7 +103,7 @@ public class WorkshopLlmGenerator {
             改写要求：
             1. 新名必须全部使用汉字，禁止罗马音、拉丁字母与纯英文
             2. 保留原名的文化风格与读音意象（如日式名 okami azuma →「大神东」一类汉字名；
-               西式名 Elena →「艾莲娜」一类中文译名）
+               西式名 Elena →「艾莲娜」一类中文译名）；若能从读音推断出合理的原名用字，优先沿用该写法
             3. 新名彼此不得重复，也不得与已是汉字的名字重复
             4. 只输出 JSON，key 必须与待改名清单中的旧名完全一致（不得做大小写或空格变体），value 为新汉字名
 
@@ -142,13 +145,14 @@ public class WorkshopLlmGenerator {
 
     /**
      * LLM 生成完整角色卡。
+     * <p>
+     * 创建时不区分玩家/NPC，类型固定为 npc；"谁是玩家"由开始冒险时的 playerCharId 运行时确定。
      *
      * @param description 角色描述
-     * @param type        角色类型（player/npc）
      * @return 解析后的 CharacterCard 对象
      */
-    public CharacterCard generateCharacter(String description, String type) {
-        String prompt = String.format(CHARACTER_GEN_PROMPT, description, type, type);
+    public CharacterCard generateCharacter(String description) {
+        String prompt = String.format(CHARACTER_GEN_PROMPT, description, "npc", "npc");
         String response = callLlm(prompt);
         if (response == null) {
             throw new RuntimeException("LLM 生成角色卡失败");
@@ -180,27 +184,44 @@ public class WorkshopLlmGenerator {
     }
 
     /**
+     * 无角色卡的剧情临时 NPC 待改名条目：拼音/罗马音名 + 存档状态摘要（供 LLM 推断身份与用字）。
+     */
+    public record OrphanNpcName(String name, String context) {}
+
+    /**
      * LLM 批量生成「旧名 → 新汉字名」映射（工坊一键中文化改名用）。
      * <p>
      * 单次调用、无 advisor 的 workshop 纯净 client。本方法只负责调用与解析，
      * <b>不做任何校验也不写库</b>；覆盖完整性、CJK 含量、重名与冲突校验由
      * {@code WorkshopService.localizeNames} 在事务前统一执行。
      *
-     * @param cards 待改名的角色卡（已筛出含拉丁字母的名字）
-     * @param world 世界观（提供文化风格依据）
-     * @return 旧名 → 新名映射（保序，已剔除空白项）；入参为空时返回空映射（不调 LLM）
+     * @param cards   待改名的角色卡（已筛出含拉丁字母的名字）
+     * @param orphans 待改名的无卡临时 NPC 名（来自存档 npc_states key，含拉丁字母且非卡 ID/卡名）
+     * @param world   世界观（提供文化风格依据）
+     * @return 旧名 → 新名映射（保序，已剔除空白项）；两份入参均为空时返回空映射（不调 LLM）
      * @throws RuntimeException LLM 调用或 JSON 解析失败
      */
-    public Map<String, String> renameToChinese(List<CharacterCard> cards, WorldSetting world) {
-        if (cards == null || cards.isEmpty()) {
+    public Map<String, String> renameToChinese(List<CharacterCard> cards,
+                                               List<OrphanNpcName> orphans,
+                                               WorldSetting world) {
+        boolean noCards = cards == null || cards.isEmpty();
+        boolean noOrphans = orphans == null || orphans.isEmpty();
+        if (noCards && noOrphans) {
             return Map.of();
         }
-        String listing = cards.stream()
+        String cardListing = noCards ? "" : cards.stream()
                 .map(c -> String.format("- %s（%s，身份：%s）",
                         c.getName(),
                         "player".equals(c.getType()) ? "玩家角色" : "NPC",
                         blankTo(c.getIdentity(), "未设定")))
                 .collect(Collectors.joining("\n"));
+        String orphanListing = noOrphans ? "" : orphans.stream()
+                .map(o -> String.format("- %s（剧情临时 NPC，无角色卡；存档状态：%s）",
+                        o.name(), blankTo(o.context(), "未知")))
+                .collect(Collectors.joining("\n"));
+        String listing = noCards ? orphanListing
+                : noOrphans ? cardListing
+                : cardListing + "\n" + orphanListing;
         String prompt = String.format(RENAME_GEN_PROMPT,
                 world == null ? "（未设定）" : blankTo(world.getName(), "（未设定）"),
                 world == null ? "（未设定）" : blankTo(world.getEra(), "（未设定）"),
@@ -238,6 +259,7 @@ public class WorkshopLlmGenerator {
             ChatClient client = chatClientRegistry.forRole("workshop");
             return client.prompt()
                     .user(prompt)
+                    .advisors(a -> a.param(MeteringAdvisor.CALL_TYPE_CONTEXT_KEY, "workshop"))
                     .call()
                     .content();
         } catch (Exception e) {

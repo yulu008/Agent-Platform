@@ -1,10 +1,16 @@
 package com.luyu.agent.rpg.controller;
 
+import com.luyu.agent.metering.QuotaExceededException;
+import com.luyu.agent.metering.QuotaGuard;
+import com.luyu.agent.moderation.ContentModerationGate;
+import com.luyu.agent.moderation.ModerationResult;
 import com.luyu.agent.rpg.model.*;
 import com.luyu.agent.rpg.service.WorkshopLlmGenerator;
 import com.luyu.agent.rpg.service.WorkshopService;
+import com.luyu.agent.tenancy.TenantContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -25,11 +31,33 @@ public class WorkshopController {
 
     private final WorkshopService workshopService;
     private final WorkshopLlmGenerator llmGenerator;
+    private final ContentModerationGate moderationGate;
+    private final QuotaGuard quotaGuard;
 
     public WorkshopController(WorkshopService workshopService,
-                              WorkshopLlmGenerator llmGenerator) {
+                              WorkshopLlmGenerator llmGenerator,
+                              ContentModerationGate moderationGate,
+                              QuotaGuard quotaGuard) {
         this.workshopService = workshopService;
         this.llmGenerator = llmGenerator;
+        this.moderationGate = moderationGate;
+        this.quotaGuard = quotaGuard;
+    }
+
+    /**
+     * 配额硬拒（tenant-token-metering / design D8）：工坊同步生成前的事前检查。
+     * 超限返回 402 + {error} 友好提示（前端已有 errJson.error 分支呈现）；未超限返回 null；
+     * 配额开关关闭时 QuotaGuard 直接放行（返回 null）。
+     */
+    private ResponseEntity<?> quotaRejection() {
+        try {
+            quotaGuard.check(TenantContext.getTenantId());
+            return null;
+        } catch (QuotaExceededException qe) {
+            log.info("配额超限拒绝工坊生成: tenant={}", TenantContext.getTenantId());
+            return ResponseEntity.status(HttpStatus.PAYMENT_REQUIRED)
+                    .body(Map.of("error", qe.getMessage()));
+        }
     }
 
     // ==================== 世界观 ====================
@@ -50,11 +78,38 @@ public class WorkshopController {
         return world != null ? ResponseEntity.ok(world) : ResponseEntity.notFound().build();
     }
 
+    /**
+     * 阻塞式删除世界观：存在子数据时 409 + 具体原因；不存在 404；成功 204。
+     */
+    @DeleteMapping("/world/{id}")
+    public ResponseEntity<Object> deleteWorld(@PathVariable String id) {
+        try {
+            workshopService.deleteWorld(id);
+            return ResponseEntity.noContent().build();
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.notFound().build();
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(409).body(Map.of("error", e.getMessage()));
+        }
+    }
+
     @PostMapping("/generate-world")
-    public ResponseEntity<WorldSetting> generateWorld(@RequestBody Map<String, String> request) {
+    public ResponseEntity<?> generateWorld(@RequestBody Map<String, String> request) {
         String keywords = request.get("keywords");
         if (keywords == null || keywords.isBlank()) {
             return ResponseEntity.badRequest().build();
+        }
+        // 输入内容审查闸门（input-content-moderation）：调模型生成前同步审查提示词，
+        // 命中返回拒答结构体而非生成结果（spec「命中处置」「工坊端点命中拒答」）。
+        ModerationResult moderation = moderationGate.check(keywords);
+        if (moderation.blocked()) {
+            return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                    .body(Map.of("moderation", true, "error", moderationGate.refusalMessage()));
+        }
+        // 配额硬拒：调模型生成前事前检查（tenant-token-metering / design D8）
+        ResponseEntity<?> quotaReject = quotaRejection();
+        if (quotaReject != null) {
+            return quotaReject;
         }
         try {
             WorldSetting world = llmGenerator.generateWorld(keywords);
@@ -82,18 +137,45 @@ public class WorkshopController {
     }
 
     @PostMapping("/generate-character")
-    public ResponseEntity<CharacterCard> generateCharacter(@RequestBody Map<String, String> request) {
+    public ResponseEntity<?> generateCharacter(@RequestBody Map<String, String> request) {
         String description = request.get("description");
-        String type = request.getOrDefault("type", "npc");
         if (description == null || description.isBlank()) {
             return ResponseEntity.badRequest().build();
         }
+        // 输入内容审查闸门（input-content-moderation）：调模型生成前同步审查提示词，
+        // 命中返回拒答结构体而非生成结果（spec「命中处置」「工坊端点命中拒答」）。
+        ModerationResult moderation = moderationGate.check(description);
+        if (moderation.blocked()) {
+            return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                    .body(Map.of("moderation", true, "error", moderationGate.refusalMessage()));
+        }
+        // 配额硬拒：调模型生成前事前检查（tenant-token-metering / design D8）
+        ResponseEntity<?> quotaReject = quotaRejection();
+        if (quotaReject != null) {
+            return quotaReject;
+        }
         try {
-            CharacterCard card = llmGenerator.generateCharacter(description, type);
+            // 创建时不区分玩家/NPC，类型固定 npc（运行时由 startGame 的 playerCharId 确定玩家）
+            CharacterCard card = llmGenerator.generateCharacter(description);
             return ResponseEntity.ok(card);
         } catch (Exception e) {
             log.error("生成角色卡失败: {}", e.getMessage());
             return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    /**
+     * 阻塞式删除角色：被关系/触发器/存档引用时 409 + 具体原因；不存在 404；成功 204。
+     */
+    @DeleteMapping("/character/{id}")
+    public ResponseEntity<Object> deleteCharacter(@PathVariable String id) {
+        try {
+            workshopService.deleteCharacter(id);
+            return ResponseEntity.noContent().build();
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.notFound().build();
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(409).body(Map.of("error", e.getMessage()));
         }
     }
 
@@ -136,7 +218,7 @@ public class WorkshopController {
     // ==================== 开场白 ====================
 
     @PostMapping("/generate-opening")
-    public ResponseEntity<String> generateOpening(@RequestBody Map<String, String> request) {
+    public ResponseEntity<Object> generateOpening(@RequestBody Map<String, String> request) {
         String worldId = request.get("worldId");
         String playerCharId = request.get("playerCharId");
         if (worldId == null || playerCharId == null) {
@@ -146,6 +228,12 @@ public class WorkshopController {
         CharacterCard player = workshopService.getCharacter(playerCharId);
         if (world == null || player == null) {
             return ResponseEntity.notFound().build();
+        }
+        // 配额硬拒：调模型生成前事前检查（tenant-token-metering / design D8）
+        ResponseEntity<?> quotaReject = quotaRejection();
+        if (quotaReject != null) {
+            return ResponseEntity.status(HttpStatus.PAYMENT_REQUIRED)
+                    .body(quotaReject.getBody());
         }
         try {
             String template = llmGenerator.generateOpeningTemplate(world, player);
@@ -185,15 +273,20 @@ public class WorkshopController {
     // ==================== 开始冒险 ====================
 
     @PostMapping("/start")
-    public ResponseEntity<GameState> startGame(@RequestBody Map<String, String> request) {
+    public ResponseEntity<Object> startGame(@RequestBody Map<String, String> request) {
         String worldId = request.get("worldId");
         String playerCharId = request.get("playerCharId");
         String sessionId = request.get("sessionId");
         if (worldId == null || playerCharId == null) {
             return ResponseEntity.badRequest().build();
         }
-        GameState gs = workshopService.startGame(worldId, playerCharId, sessionId);
-        return ResponseEntity.ok(gs);
+        try {
+            GameState gs = workshopService.startGame(worldId, playerCharId, sessionId);
+            return ResponseEntity.ok(gs);
+        } catch (IllegalArgumentException e) {
+            // 玩家角色不存在或不属于该世界
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
     }
 
     // ==================== 存档列表 ====================

@@ -27,13 +27,20 @@ public class StateDeltaSanitizer {
     private static final Logger log = LoggerFactory.getLogger(StateDeltaSanitizer.class);
     private static final ObjectMapper mapper = new ObjectMapper();
 
-    /** 匹配 <state_delta>...</state_delta> 块 */
+    /** 匹配完整 <state_delta>...</state_delta> 块（容忍标签内空白变体，如 < state_delta >） */
     private static final Pattern STATE_DELTA_PATTERN =
-            Pattern.compile("<state_delta>\\s*([\\s\\S]*?)\\s*</state_delta>",
+            Pattern.compile("<\\s*state_delta\\s*>\\s*([\\s\\S]*?)\\s*<\\s*/\\s*state_delta\\s*>",
                     Pattern.CASE_INSENSITIVE);
+
+    /** 仅匹配开标签（用于未闭合块的截断与兜底提取） */
+    private static final Pattern OPEN_TAG_PATTERN =
+            Pattern.compile("<\\s*state_delta\\s*>", Pattern.CASE_INSENSITIVE);
 
     /**
      * 从 GM 输出文本中提取纯叙述部分（移除 state_delta 块）。
+     * <p>
+     * 除完整闭合块外，还需处理 GM 漏写闭合标签（流被截断/格式漂移）的未闭合块：
+     * 从开标签起整体截断，否则块内 JSON 会泄漏到前端叙述与历史回放。
      *
      * @param gmOutput GM 原始输出
      * @return 过滤后的纯叙述文本
@@ -42,8 +49,12 @@ public class StateDeltaSanitizer {
         if (gmOutput == null || gmOutput.isEmpty()) {
             return "";
         }
-        Matcher matcher = STATE_DELTA_PATTERN.matcher(gmOutput);
-        return matcher.replaceAll("").trim();
+        String narration = STATE_DELTA_PATTERN.matcher(gmOutput).replaceAll("");
+        Matcher open = OPEN_TAG_PATTERN.matcher(narration);
+        if (open.find()) {
+            narration = narration.substring(0, open.start());
+        }
+        return narration.trim();
     }
 
     /**
@@ -59,12 +70,11 @@ public class StateDeltaSanitizer {
         if (gmOutput == null || gmOutput.isEmpty()) {
             return null;
         }
-        Matcher matcher = STATE_DELTA_PATTERN.matcher(gmOutput);
-        if (!matcher.find()) {
+        String rawJson = extractBlockText(gmOutput);
+        if (rawJson == null) {
             log.debug("state_delta 块未找到，需走 Step2 LLM fallback");
             return null;
         }
-        String rawJson = matcher.group(1).trim();
         try {
             JsonNode parsed = mapper.readTree(rawJson);
             log.debug("state_delta Step1 解析成功");
@@ -73,6 +83,24 @@ public class StateDeltaSanitizer {
             log.warn("state_delta Step1 JSON 解析失败，需走 Step2: {}", e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * 提取 state_delta 块内文本：优先完整闭合块，兼容未闭合块（从开标签截取到文本末尾）。
+     *
+     * @return 块内文本，或 null（无块）
+     */
+    private String extractBlockText(String gmOutput) {
+        Matcher matcher = STATE_DELTA_PATTERN.matcher(gmOutput);
+        if (matcher.find()) {
+            return matcher.group(1).trim();
+        }
+        Matcher open = OPEN_TAG_PATTERN.matcher(gmOutput);
+        if (open.find()) {
+            log.warn("state_delta 块未闭合（缺少 </state_delta>），按开标签截断提取");
+            return gmOutput.substring(open.end()).trim();
+        }
+        return null;
     }
 
     /**
@@ -87,18 +115,14 @@ public class StateDeltaSanitizer {
         if (gmOutput == null || gmOutput.isEmpty()) {
             return null;
         }
-        Matcher matcher = STATE_DELTA_PATTERN.matcher(gmOutput);
-        if (matcher.find()) {
-            return matcher.group(1).trim();
-        }
-        return null;
+        return extractBlockText(gmOutput);
     }
 
     /**
-     * 检查 GM 输出中是否包含 state_delta 块。
+     * 检查 GM 输出中是否包含 state_delta 块（含未闭合块）。
      */
     public boolean hasStateDelta(String gmOutput) {
         return gmOutput != null && !gmOutput.isEmpty()
-                && STATE_DELTA_PATTERN.matcher(gmOutput).find();
+                && OPEN_TAG_PATTERN.matcher(gmOutput).find();
     }
 }

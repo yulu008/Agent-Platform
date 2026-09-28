@@ -120,7 +120,9 @@ public class TriggerEngine {
      * <p>
      * 支持的字段前缀：
      * <ul>
-     *   <li>{@code player.*} → GameState 中的玩家相关字段</li>
+     *   <li>{@code player.*} → GameState 中的玩家相关字段；除 location/char_id 外，
+     *       其余子字段（如 {@code player.money}、{@code player.abilities.剑阵}）从
+     *       player_states JSON 逐层读取（rpg-player-memory），字段不存在返回 null</li>
      *   <li>{@code npc.*} → npc_states JSON 中的 NPC 状态</li>
      *   <li>{@code turn_count} / {@code current_location} → GameState 直接字段</li>
      * </ul>
@@ -144,7 +146,8 @@ public class TriggerEngine {
                 case "char_id":
                     return gameState.getPlayerCharId();
                 default:
-                    return null;
+                    // 其余子字段从 player_states JSON 逐层读取（如 player.money、player.abilities.剑阵）
+                    return extractFromPlayerStates(gameState.getPlayerStates(), subField);
             }
         } else if (field.startsWith("npc.")) {
             String subField = field.substring("npc.".length());
@@ -158,6 +161,37 @@ public class TriggerEngine {
                 default:
                     return null;
             }
+        }
+    }
+
+    /**
+     * 从 player_states JSON 中按点分路径逐层提取字段值（叶子节点）。
+     * <p>
+     * null/非法 JSON/路径不存在均返回 null（现有比较行为不变：null 不等于任何期望值，条件不通过）。
+     */
+    private Object extractFromPlayerStates(String playerStatesJson, String subField) {
+        if (playerStatesJson == null || playerStatesJson.isBlank() || subField == null || subField.isBlank()) {
+            return null;
+        }
+        try {
+            JsonNode node = mapper.readTree(playerStatesJson);
+            for (String segment : subField.split("\\.")) {
+                if (node == null || node.isMissingNode() || node.isNull()) {
+                    return null;
+                }
+                node = node.path(segment);
+            }
+            if (node == null || node.isMissingNode() || node.isNull()) {
+                return null;
+            }
+            if (node.isValueNode()) {
+                return jsonNodeToObject(node);
+            }
+            // 非叶子（对象/数组）不参与比较，视为不可解析
+            return null;
+        } catch (Exception e) {
+            log.warn("player_states 解析失败，字段视为不存在: {}", e.getMessage());
+            return null;
         }
     }
 

@@ -3,6 +3,9 @@ package com.luyu.agent.rpg.tools;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.luyu.agent.rpg.config.RpgSavePaths;
+import com.luyu.agent.tenancy.TenantContext;
+import com.luyu.agent.tenancy.TenantPaths;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.model.ToolContext;
@@ -21,14 +24,15 @@ import org.springframework.lang.Nullable;
  *       与主聊天的 {@code Memory*} 工具彻底区分，避免
  *       {@code AutoMemoryToolsAdvisor} 的按名过滤与 {@code StaticToolCallbackResolver}
  *       的按名索引冲突。</li>
- *   <li><b>路径注入</b>：在调用期把入参 JSON 的 {@code path} 改写为
- *       {@code <gameStateId>/<原 path>}，使绑定固定根目录的
- *       {@code AutoMemoryTools} 能按存档隔离落盘。</li>
+ *   <li><b>路径注入（双重前缀：租户 + 存档）</b>：在调用期把入参 JSON 的 {@code path}
+ *       改写为 {@code <tenantId>/rpg-saves/<gameStateId>/<原 path>}，使绑定固定租户总根
+ *       {@code ~/.agent/tenants} 的 {@code AutoMemoryTools} 按
+ *       「租户 → 存档」两级隔离落盘（design D6 / tasks 4.4）。</li>
  * </ol>
  * <p>
- * {@code gameStateId} 取自 {@link ToolContext}，由
- * {@code GameLoopService.prepareTurn} 放入、{@code RpgGameController} 透传。
- * GM 无需知道前缀，也无从指定其他存档。
+ * {@code gameStateId} 与 {@code tenantId} 均取自 {@link ToolContext}，由
+ * {@code GameLoopService.prepareTurn} 在请求线程放入（tenantId 来自验签后的 JWT）、
+ * {@code RpgGameController} 透传。GM 无需知道前缀，也无从指定其他租户或存档。
  * <p>
  * <b>为什么穿越校验放在本层而不依赖底层</b>：{@code AutoMemoryTools.resolveSafePath}
  * 只保证最终路径不逃出记忆根目录，而 {@code gs-001/../gs-002/x.md} 归一化后是
@@ -49,8 +53,8 @@ public class SaveScopedMemoryCallback implements ToolCallback {
     private static final String PATH_FIELD = "path";
 
     private static final String MISSING_SAVE_ERROR =
-            "工具调用失败：当前上下文缺少存档标识（gameStateId），无法定位记忆目录。"
-                    + "请通过正常的游戏回合流程调用本工具。";
+            "工具调用失败：当前上下文缺少存档标识（gameStateId）或租户标识（tenantId），"
+                    + "无法定位记忆目录。请通过正常的游戏回合流程调用本工具。";
 
     private final ToolCallback delegate;
     private final ToolDefinition toolDefinition;
@@ -82,8 +86,8 @@ public class SaveScopedMemoryCallback implements ToolCallback {
     }
 
     /**
-     * 无 ToolContext 的调用路径一律拒绝：拿不到 gameStateId 就无法确定存档，
-     * 回落到根目录会产生无归属的孤儿记忆文件。
+     * 无 ToolContext 的调用路径一律拒绝：拿不到 gameStateId / tenantId 就无法定位
+     * 「租户 + 存档」双层级目录，回落到总根会产生无归属的孤儿记忆文件。
      */
     @Override
     public String call(String toolInput) {
@@ -94,16 +98,17 @@ public class SaveScopedMemoryCallback implements ToolCallback {
 
     @Override
     public String call(String toolInput, @Nullable ToolContext toolContext) {
-        String gameStateId = resolveGameStateId(toolContext);
-        if (gameStateId == null || gameStateId.isBlank()) {
-            log.warn("工具[{}] 调用缺少 {}，已拒绝执行。input={}",
-                    toolDefinition.name(), GAME_STATE_ID_KEY, toolInput);
+        String gameStateId = resolveFromContext(toolContext, GAME_STATE_ID_KEY);
+        String tenantId = resolveFromContext(toolContext, TenantContext.TOOL_CONTEXT_KEY);
+        if (isBlank(gameStateId) || isBlank(tenantId)) {
+            log.warn("工具[{}] 调用缺少 {} / {}，已拒绝执行。input={}",
+                    toolDefinition.name(), GAME_STATE_ID_KEY, TenantContext.TOOL_CONTEXT_KEY, toolInput);
             return MISSING_SAVE_ERROR;
         }
 
         String rewritten;
         try {
-            rewritten = injectSavePrefix(toolInput, gameStateId);
+            rewritten = injectSavePrefix(toolInput, tenantId, gameStateId);
         } catch (IllegalArgumentException e) {
             // 入参非法（缺 path / 穿越 / 非 JSON 对象）：回可读错误给模型，不中断游戏循环
             log.warn("工具[{}] 入参被拒绝: {}", toolDefinition.name(), e.getMessage());
@@ -117,9 +122,11 @@ public class SaveScopedMemoryCallback implements ToolCallback {
     }
 
     /**
-     * 把入参 JSON 的 path 改写为 {@code <gameStateId>/<规范化后的原 path>}。
+     * 把入参 JSON 的 path 改写为 {@code <tenantId>/rpg-saves/<gameStateId>/<规范化后的原 path>}。
+     * 两个 ID 均先过白名单（安全单段），杜绝拼入穿越序列。
      */
-    private String injectSavePrefix(String toolInput, String gameStateId) throws Exception {
+    private String injectSavePrefix(String toolInput, String tenantId, String gameStateId)
+            throws Exception {
         if (toolInput == null || toolInput.isBlank()) {
             throw new IllegalArgumentException("缺少入参，至少需要提供 path。");
         }
@@ -132,7 +139,9 @@ public class SaveScopedMemoryCallback implements ToolCallback {
             throw new IllegalArgumentException("缺少 path 参数。");
         }
         String relative = normalizeRelativePath(pathNode.asText());
-        obj.put(PATH_FIELD, gameStateId + "/" + relative);
+        String safeTenantId = TenantPaths.requireSafeTenantId(tenantId);
+        String safeGameStateId = RpgSavePaths.requireSafeGameStateId(gameStateId);
+        obj.put(PATH_FIELD, safeTenantId + "/rpg-saves/" + safeGameStateId + "/" + relative);
         return mapper.writeValueAsString(obj);
     }
 
@@ -161,11 +170,15 @@ public class SaveScopedMemoryCallback implements ToolCallback {
         return path;
     }
 
-    private String resolveGameStateId(@Nullable ToolContext toolContext) {
+    private String resolveFromContext(@Nullable ToolContext toolContext, String key) {
         if (toolContext == null || toolContext.getContext() == null) {
             return null;
         }
-        Object value = toolContext.getContext().get(GAME_STATE_ID_KEY);
+        Object value = toolContext.getContext().get(key);
         return value == null ? null : value.toString();
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 }

@@ -27,10 +27,13 @@ import java.util.List;
 import java.util.Map;
 
 import com.luyu.agent.config.AgentModelsProperties.ModelProps;
+import com.luyu.agent.metering.MeteringAdvisor;
 import com.luyu.agent.rpg.config.RpgGmToolCallbacks;
 import com.luyu.agent.rpg.config.RpgMemoryToolCallbacks;
 import com.luyu.agent.rpg.engine.RpgMemoryPromptAdvisor;
 import com.luyu.agent.service.TokenEstimator;
+import com.luyu.agent.tenancy.TenantPaths;
+import com.luyu.agent.tenancy.TenantScopedMemoryCallback;
 
 /**
  * Session API 配置
@@ -52,9 +55,11 @@ public class SessionConfiguration {
 
     private static final Logger log = LoggerFactory.getLogger(SessionConfiguration.class);
 
-    /** 长期记忆文件存储目录 */
-    private static final String MEMORIES_DIR =
-            System.getProperty("user.home") + "/.agent/memories";
+    /**
+     * 长期记忆文件总根（多租户版，design D6）：指向租户总根 {@code ~/.agent/tenants}，
+     * {@code <tenantId>/} 路径段由 {@link TenantScopedMemoryCallback} 在调用期从 ToolContext 注入。
+     */
+    private static final String MEMORIES_DIR = TenantPaths.ROOT;
 
     /**
      * 构建 AutoMemoryToolsAdvisor（长期记忆层）
@@ -79,7 +84,9 @@ public class SessionConfiguration {
     @Bean
     public SessionMemoryAdvisor sessionMemoryAdvisor(SessionService sessionService) {
         return SessionMemoryAdvisor.builder(sessionService)
-                .defaultUserId("default-user")
+                // 兼容期兼作 fallback：请求级 USER_ID_CONTEXT_KEY 覆盖未传时才落到 default 租户
+                // （与存量回填 AiSessionTenantBackfill 的目标值一致）
+                .defaultUserId(TenantPaths.DEFAULT_TENANT)
                 .compactionTrigger(new TokenThresholdCompactionTrigger())
                 .compactionStrategy(
                         SlidingWindowCompactionStrategy.builder()
@@ -98,7 +105,9 @@ public class SessionConfiguration {
     @Bean
     public SessionMemoryAdvisor rpgSessionMemoryAdvisor(SessionService sessionService) {
         return SessionMemoryAdvisor.builder(sessionService)
-                .defaultUserId("default-user")
+                // 同 sessionMemoryAdvisor：fallback 为 default 租户（spike 2.2 结论——
+                // 请求级 param 原生覆盖，主聊天与 RPG 两侧调用点均已接线）
+                .defaultUserId(TenantPaths.DEFAULT_TENANT)
                 .compactionTrigger(new TokenThresholdCompactionTrigger())
                 .compactionStrategy(
                         SlidingWindowCompactionStrategy.builder()
@@ -115,7 +124,8 @@ public class SessionConfiguration {
      */
     @Bean
     public ChatClient.Builder subagentBuilder(Map<String, ChatModel> chatModels,
-                                               AgentModelsProperties properties) {
+                                               AgentModelsProperties properties,
+                                               MeteringAdvisor meteringAdvisor) {
         for (Map.Entry<String, ModelProps> entry : properties.getModels().entrySet()) {
             List<String> roles = entry.getValue().getRoles();
             if (roles != null && roles.contains("subagent")) {
@@ -124,7 +134,8 @@ public class SessionConfiguration {
                     throw new IllegalStateException(
                             "subagent 角色模型 " + entry.getKey() + " 未装配 ChatModel");
                 }
-                return ChatClient.builder(model);
+                // 挂计量 advisor（tasks 5.4 / design D2、D5）：子代理调用归账到发起租户
+                return ChatClient.builder(model).defaultAdvisors(meteringAdvisor);
             }
         }
         throw new IllegalStateException("未配置 roles 含 subagent 的模型");
@@ -154,7 +165,8 @@ public class SessionConfiguration {
                                                   RpgMemoryToolCallbacks rpgMemoryTools,
                                                   RpgMemoryPromptAdvisor rpgMemoryPromptAdvisor,
                                                   SubagentConfiguration subagentConfig,
-                                                  ChatClient.Builder subagentBuilder) {
+                                                  ChatClient.Builder subagentBuilder,
+                                                  MeteringAdvisor meteringAdvisor) {
         // 收集所有工具回调
         List<ToolCallback> allTools = new ArrayList<>(tools);
         ToolCallback taskTool = subagentConfig.createTaskToolCallback();
@@ -162,11 +174,15 @@ public class SessionConfiguration {
             allTools.add(taskTool);
         }
 
-        // 构建 AutoMemoryTools 实例，转换为 ToolCallback[] 并加入工具列表
+        // 构建 AutoMemoryTools 实例并加入工具列表：root = 租户总根，
+        // 每个 callback 包 TenantScopedMemoryCallback（调用期注入 <tenantId>/ 前缀，缺失拒绝执行），
+        // 再统一包 ResilientToolCallback（容错 + 可观测性）
         AutoMemoryTools memoryTools = AutoMemoryTools.builder()
                 .memoriesDir(MEMORIES_DIR)
                 .build();
-        allTools.addAll(Arrays.asList(ToolCallbacks.from(memoryTools)));
+        Arrays.stream(ToolCallbacks.from(memoryTools))
+                .<ToolCallback>map(TenantScopedMemoryCallback::new)
+                .forEach(allTools::add);
 
         // 用容错包装器包裹每个工具（拦截 JSON 解析失败）
         List<ToolCallback> resilientTools = allTools.stream()
@@ -225,7 +241,7 @@ public class SessionConfiguration {
             if (roles.contains("chat")) {
                 ChatClient chatClient = ChatClient.builder(model)
                         .defaultAdvisors(autoMemoryToolsAdvisor, sessionMemoryAdvisor,
-                                toolCallingAdvisor, new MalformedToolCallSanitizer())
+                                toolCallingAdvisor, new MalformedToolCallSanitizer(), meteringAdvisor)
                         .defaultOptions(ToolCallingChatOptions.builder()
                                 .toolCallbacks(resilientTools))
                         .build();
@@ -240,7 +256,7 @@ public class SessionConfiguration {
                 // ToolCallingAdvisor 工具循环重入影响（详见该类 javadoc）。
                 ChatClient rpgClient = ChatClient.builder(model)
                         .defaultAdvisors(rpgMemoryPromptAdvisor, rpgSessionMemoryAdvisor,
-                                rpgToolCallingAdvisor, new MalformedToolCallSanitizer())
+                                rpgToolCallingAdvisor, new MalformedToolCallSanitizer(), meteringAdvisor)
                         .defaultOptions(ToolCallingChatOptions.builder()
                                 .toolCallbacks(rpgTools))
                         .build();
@@ -254,12 +270,13 @@ public class SessionConfiguration {
             // 辅助 client + 裸 builder（固定到首个含该 role 的模型，即 glm）
             for (String role : roles) {
                 if (!"chat".equals(role)) {
-                    byRole.putIfAbsent(role, ChatClient.builder(model).build());
+                    // 辅助 client 也挂计量 advisor（tasks 5.3 / design D2）：compaction/workshop/title 内部调用同样计费
+                    byRole.putIfAbsent(role, ChatClient.builder(model).defaultAdvisors(meteringAdvisor).build());
                     // subagent 复用 subagentBuilder bean（与 SubagentConfiguration @Lazy 注入一致）
                     if ("subagent".equals(role)) {
                         byRoleBuilder.putIfAbsent(role, subagentBuilder);
                     } else {
-                        byRoleBuilder.putIfAbsent(role, ChatClient.builder(model));
+                        byRoleBuilder.putIfAbsent(role, ChatClient.builder(model).defaultAdvisors(meteringAdvisor));
                     }
                 }
             }

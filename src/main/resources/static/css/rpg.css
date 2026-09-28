@@ -111,12 +111,13 @@ body {
     border-radius: 6px;
     color: #1f2329;
     font-size: 14px;
+    font-family: inherit;
 }
 .form-row input:focus, .form-row textarea:focus, .form-row select:focus {
     border-color: #e94560;
     outline: none;
 }
-.form-row textarea { resize: vertical; font-family: monospace; }
+.form-row textarea { resize: vertical; min-height: 230px; }
 
 .form-actions {
     display: flex;
@@ -133,6 +134,12 @@ body {
     font-size: 14px;
 }
 .btn-primary:hover { background: #c73650; }
+.btn-primary:disabled {
+    background: #d0d5dd;
+    color: #98a2b3;
+    cursor: not-allowed;
+    opacity: 0.7;
+}
 .btn-secondary {
     padding: 8px 20px;
     background: #f2f4f7;
@@ -148,64 +155,70 @@ body {
     display: flex;
     gap: 8px;
     margin-top: 12px;
+    align-items: flex-start;
 }
-.llm-input input {
+.llm-input input, .llm-input textarea {
     flex: 1;
     padding: 8px 12px;
     background: #ffffff;
     border: 1px solid #d0d5dd;
     border-radius: 6px;
     color: #1f2329;
+    font-family: inherit;
 }
+.llm-input textarea { resize: vertical; min-height: 140px; }
 
-.saved-list {
+
+
+/* ========== 首页（rpg-home-entry：唯一落地视图，存档卡片网格 + 新开冒险）========== */
+.home-mode {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 24px 16px;
+}
+.home-count {
+    font-size: 14px;
+    color: #475467;
+    margin-bottom: 16px;
+}
+.home-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 12px;
+}
+.new-adventure-card {
+    margin-bottom: 24px;
+    padding: 20px;
     background: #ffffff;
-    border: 1px solid #e4e7ec;
+    border: 1.5px dashed #d0d5dd;
     border-radius: 8px;
-    padding: 16px;
-    margin-top: 16px;
-}
-.saved-list h3 { font-size: 14px; margin-bottom: 12px; color: #667085; }
-.list-items { display: flex; flex-direction: column; gap: 8px; }
-.list-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 8px 12px;
-    background: #f9fafb;
-    border-radius: 4px;
-    font-size: 13px;
-}
-
-/* 开始冒险 */
-.start-adventure {
     text-align: center;
-    margin: 32px 0;
 }
-.btn-start {
-    padding: 14px 40px;
-    background: linear-gradient(135deg, #e94560, #c73650);
-    border: none;
-    border-radius: 8px;
-    color: white;
-    font-size: 18px;
-    cursor: pointer;
-    box-shadow: 0 4px 12px rgba(233,69,96,0.3);
+.new-adventure-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: #c73650;
+    margin-bottom: 14px;
 }
-.btn-start:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(233,69,96,0.4); }
-.start-options {
+.new-adventure-form {
     display: flex;
     gap: 10px;
     justify-content: center;
     align-items: center;
-    margin-top: 16px;
+    flex-wrap: wrap;
 }
-.start-options select {
+.new-adventure-form select {
     padding: 8px 12px;
     background: #ffffff;
     border: 1px solid #d0d5dd;
     border-radius: 6px;
     color: #1f2329;
+    min-width: 180px;
+}
+.new-adventure-hint {
+    margin-top: 12px;
+    font-size: 12px;
+    color: #98a2b3;
 }
 
 /* ========== 游戏模式 ========== */
@@ -231,6 +244,8 @@ body {
 
 .rpg-message {
     display: flex;
+    /* 操作行（回溯/重新生成）独占一行换行到气泡下方，不影响无按钮时的布局 */
+    flex-wrap: wrap;
     animation: rpgBubbleAppear 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 @keyframes rpgBubbleAppear {
@@ -293,6 +308,37 @@ body {
 }
 
 .rpg-error { color: #e94560; }
+
+/* ========== 消息级回溯/重新生成按钮（rpg-chat-backtrack）========== */
+/* 气泡下方操作行：flex-basis 100% 换行到气泡下方，行内按钮随气泡对齐方向 */
+.rpg-msg-actions {
+    flex-basis: 100%;
+    display: flex;
+    gap: 8px;
+    margin-top: 6px;
+}
+.rpg-message.user .rpg-msg-actions { justify-content: flex-end; }
+.rpg-message.gm .rpg-msg-actions { justify-content: flex-start; }
+
+.rpg-action-btn {
+    border: 1px solid #e4e7ec;
+    background: #ffffff;
+    color: #667085;
+    border-radius: 8px;
+    padding: 3px 12px;
+    font-size: 12px;
+    line-height: 1.6;
+    cursor: pointer;
+    transition: border-color 0.15s ease, color 0.15s ease, opacity 0.15s ease;
+}
+.rpg-action-btn:hover:not(:disabled) {
+    border-color: rgba(233, 69, 96, 0.55);
+    color: #e94560;
+}
+.rpg-action-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
 
 /* 沉浸式叙述排版（现仅作用于 GM 卡片 / 开场白 / 摘要内部的 .narration-content） */
 .narration-content {
@@ -357,6 +403,35 @@ body {
 }
 .status-item label { color: #667085; }
 .status-item span { color: #1f2329; }
+/* 全量花名册折叠区（rpg-scene-cast）：NPC 行只显示当前场景班底，此处折叠展示已结识全部 NPC */
+.status-roster {
+    margin: 2px 0 6px;
+    font-size: 12px;
+}
+.status-roster summary {
+    color: #98a2b3;
+    cursor: pointer;
+    user-select: none;
+    padding: 2px 0;
+}
+.status-roster summary:hover { color: #667085; }
+.status-roster-list {
+    display: block;
+    color: #667085;
+    line-height: 1.7;
+    word-break: break-all;
+    padding: 2px 0 4px 10px;
+}
+.status-subheader {
+    font-size: 12px;
+    font-weight: bold;
+    color: #98a2b3;
+    margin: 10px 0 2px;
+    padding-top: 8px;
+    border-top: 1px dashed #e4e7ec;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
 
 /* 输入区域 */
 .input-area {
@@ -422,7 +497,7 @@ body {
 .btn-stop { background: #667085; color: white; }
 .btn-stop:hover { background: #525c6b; }
 
-/* ========== 读档弹窗 ========== */
+/* ========== 历史存档卡片列表弹窗 ========== */
 .load-overlay {
     position: fixed;
     inset: 0;
@@ -442,16 +517,54 @@ body {
     overflow-y: auto;
 }
 .load-dialog h3 { margin-bottom: 16px; color: #c73650; }
-.save-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
-.save-item {
+/* .save-dialog / .save-list 已随 loadOverlay 弹窗移除（rpg-home-entry）：
+   存档卡片渲染迁移至首页 .home-grid，卡片本体样式 .save-card* 不变 */
+.save-card {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 14px;
+    background: #f9fafb;
+    border: 1px solid #e4e7ec;
+    border-radius: 8px;
+}
+.save-card-head {
     display: flex;
     justify-content: space-between;
-    padding: 10px 12px;
-    background: #f9fafb;
+    align-items: baseline;
+    gap: 8px;
+}
+.save-card-world {
+    font-weight: 600;
+    color: #1d2939;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.save-card-time { font-size: 11px; color: #98a2b3; flex-shrink: 0; }
+.save-card-char { font-size: 13px; color: #475467; }
+.save-card-char .save-card-location { color: #98a2b3; }
+.save-card-meta { font-size: 12px; color: #667085; }
+.save-card-actions { display: flex; gap: 8px; margin-top: 4px; }
+.save-card-btn {
+    flex: 1;
+    padding: 6px 0;
+    border: none;
     border-radius: 6px;
+    font-size: 13px;
     cursor: pointer;
 }
-.save-item:hover { background: #f2f4f7; }
+.save-card-btn.continue { background: #e94560; color: white; }
+.save-card-btn.continue:hover { background: #c73650; }
+.save-card-btn.delete { background: #f2f4f7; color: #d92d20; }
+.save-card-btn.delete:hover { background: #fee4e2; }
+.save-empty {
+    padding: 32px 0;
+    text-align: center;
+    color: #98a2b3;
+    font-size: 13px;
+    margin-top: 16px;
+}
 
 /* ========== 上下文用量进度条（参考 chat.css，RPG 浅色红调） ========== */
 .context-bar {
@@ -553,6 +666,12 @@ body {
 }
 /* 流终止但未收到任何内容时的终态文案（已中止 / 无叙述） */
 .rpg-settled { color: #667085; font-size: 14px; }
+
+/* GM 工具调用状态行（叙述静默期的可见反馈；随内容重写自然清除，回合收尾兜底删除） */
+.rpg-tool-status {
+    display: block;
+    margin-top: 6px;
+}
 
 /* ========== 记忆管理入口按钮（model-bar 内、模型选择器右侧） ========== */
 .memory-mgr-btn {

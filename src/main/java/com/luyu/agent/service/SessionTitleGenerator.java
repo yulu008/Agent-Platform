@@ -1,6 +1,7 @@
 package com.luyu.agent.service;
 
 import com.luyu.agent.config.ChatClientRegistry;
+import com.luyu.agent.metering.MeteringAdvisor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
@@ -44,9 +45,11 @@ public class SessionTitleGenerator {
      * @param sessionId     会话 ID
      * @param userMsg       首条用户消息
      * @param assistantMsg  首条 AI 回复
+     * @param tenantId      发起租户（显式透传：@Async 跨线程后 ThreadLocal 丢失，
+     *                      经 advisor param 交给 MeteringAdvisor 归账，tasks 6.x / design D3）
      */
     @Async
-    public void generateTitleAsync(String sessionId, String userMsg, String assistantMsg) {
+    public void generateTitleAsync(String sessionId, String userMsg, String assistantMsg, String tenantId) {
         try {
             // 幂等保护：标题已生成过则不再重复请求模型（符合设计 D2：仅默认标题时触发）
             Session existing = sessionRepository.findById(sessionId);
@@ -61,9 +64,12 @@ public class SessionTitleGenerator {
             }
 
             String prompt = String.format("用户: %s\n助手: %s", userMsg, assistantMsg);
+            final String tid = tenantId == null ? "" : tenantId;
             String title = titleClient.prompt()
                     .system(TITLE_SYSTEM_PROMPT)
                     .user(prompt)
+                    .advisors(a -> a.param(MeteringAdvisor.TENANT_CONTEXT_KEY, tid)
+                            .param(MeteringAdvisor.CALL_TYPE_CONTEXT_KEY, "title"))
                     .call()
                     .content();
 

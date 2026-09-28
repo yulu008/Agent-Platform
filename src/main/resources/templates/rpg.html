@@ -15,15 +15,31 @@
         <span id="worldName"></span> | <span id="charName"></span>
     </div>
     <div class="header-actions">
-        <button class="header-btn" id="modeToggle" title="切换模式">工坊模式</button>
-        <button class="header-btn" id="saveBtn" title="存档" hidden>💾</button>
-        <button class="header-btn" id="loadBtn" title="读档" hidden>📂</button>
-        <a href="/" class="header-btn" title="返回主页">←</a>
+        <button class="header-btn" id="homeNavBtn" title="返回首页" hidden>🏠 首页</button>
+        <button class="header-btn" id="workshopNavBtn" title="进入工坊（编辑世界观与角色）">🛠 工坊</button>
+        <a href="/" class="header-btn" title="返回平台主页">←</a>
     </div>
 </header>
 
+<!-- ========== 首页（唯一落地视图，rpg-home-entry）========== -->
+<main class="home-mode" id="homeMode">
+    <!-- 新开冒险卡片（进入游戏模式的路径②：世界观 + 玩家角色） -->
+    <div class="new-adventure-card" id="newAdventureCard">
+        <div class="new-adventure-title">⚔️ 新开冒险</div>
+        <div class="new-adventure-form">
+            <select id="selectWorld"><option value="">选择世界观...</option></select>
+            <select id="selectPlayer"><option value="">选择玩家角色...</option></select>
+            <button class="btn-primary" id="confirmStartBtn">确认开始</button>
+        </div>
+        <div class="new-adventure-hint">没有合适的世界观或角色？先进工坊创作，再回来开局。</div>
+    </div>
+    <div class="home-count" id="homeSaveCount">共 0 个存档</div>
+    <div id="saveList" class="home-grid"></div>
+    <div id="saveEmpty" class="save-empty" hidden>暂无存档，从新开冒险开始你的第一次冒险吧</div>
+</main>
+
 <!-- ========== 工坊模式 ========== -->
-<main class="workshop-mode" id="workshopMode">
+<main class="workshop-mode" id="workshopMode" hidden>
     <div class="workshop-tabs">
         <button class="tab-btn active" data-tab="world">世界观</button>
         <button class="tab-btn" data-tab="character">角色卡</button>
@@ -37,36 +53,44 @@
         <div class="editor-section">
             <h2>世界观设定</h2>
             <div class="form-row">
+                <label>已保存世界观</label>
+                <select id="worldSelect">
+                    <option value="">（新建）</option>
+                </select>
+            </div>
+            <div class="form-row">
                 <label>名称</label>
-                <input type="text" id="worldNameInput" placeholder="如：钟表城"/>
+                <input type="text" id="worldNameInput" placeholder="如：钟表城" autocomplete="off"/>
             </div>
             <div class="form-row">
                 <label>时代</label>
-                <input type="text" id="worldEraInput" placeholder="如：蒸汽朋克时代"/>
+                <input type="text" id="worldEraInput" placeholder="如：蒸汽朋克时代" autocomplete="off"/>
             </div>
             <div class="form-row">
                 <label>描述</label>
-                <textarea id="worldDescInput" rows="4" placeholder="世界描述..."></textarea>
+                <textarea id="worldDescInput" rows="10" placeholder="世界描述..." autocomplete="off"></textarea>
             </div>
             <div class="form-row">
                 <label>规则</label>
-                <textarea id="worldRulesInput" rows="3" placeholder='["魔法退化","蒸汽动力"]'></textarea>
+                <textarea id="worldRulesInput" rows="10" placeholder='["魔法退化","蒸汽动力"]' autocomplete="off"></textarea>
             </div>
             <div class="form-row">
                 <label>氛围</label>
-                <input type="text" id="worldAtmosphereInput" placeholder="如：灰暗、机械感"/>
+                <input type="text" id="worldAtmosphereInput" placeholder="如：灰暗、机械感" autocomplete="off"/>
             </div>
             <div class="form-actions">
+                <button class="btn-secondary" id="newWorldBtn" title="清空表单，准备新建世界观">➕ 新建</button>
                 <button class="btn-secondary" id="generateWorldBtn">✨ LLM 生成</button>
                 <button class="btn-primary" id="saveWorldBtn">保存世界观</button>
+                <button class="btn-danger" id="deleteWorldBtn" hidden title="删除当前世界观（旗下有子数据时会被拒绝）">🗑️ 删除</button>
                 <button class="btn-secondary" id="localizeNamesBtn"
-                        title="把本世界含罗马音/英文的角色名批量改为汉字名，并把存档引用迁移到角色卡 ID">
+                        title="把本世界含罗马音/英文的角色名（含存档里无角色卡的临时 NPC 拼音名）批量改为汉字名，并把存档引用迁移到角色卡 ID 或汉字名">
                     一键中文化改名
                 </button>
             </div>
             <div class="llm-input" id="worldLlmInput" hidden>
-                <input type="text" id="worldKeywords" placeholder="输入关键词，如：蒸汽朋克 失落的魔法 钟表城"/>
-                <button class="btn-primary" id="confirmGenerateWorldBtn">生成</button>
+                <textarea id="worldKeywords" rows="6" placeholder="输入关键词，如：蒸汽朋克 失落的魔法 钟表城" autocomplete="off"></textarea>
+                <button type="button" class="btn-primary" id="confirmGenerateWorldBtn">生成</button>
             </div>
         </div>
     </section>
@@ -76,48 +100,45 @@
         <div class="editor-section">
             <h2>角色卡</h2>
             <div class="form-row">
-                <label>角色类型</label>
-                <select id="charType">
-                    <option value="player">玩家角色</option>
-                    <option value="npc">NPC</option>
+                <label>已保存角色</label>
+                <select id="charSelect">
+                    <option value="">（新建）</option>
                 </select>
             </div>
             <div class="form-row">
                 <label>名称</label>
-                <input type="text" id="charNameInput" placeholder="角色名称"/>
+                <input type="text" id="charNameInput" placeholder="角色名称" autocomplete="off"/>
             </div>
             <div class="form-row">
                 <label>身份</label>
-                <input type="text" id="charIdentityInput" placeholder="如：流浪剑客"/>
+                <input type="text" id="charIdentityInput" placeholder="如：流浪剑客" autocomplete="off"/>
             </div>
             <div class="form-row">
                 <label>性格</label>
-                <textarea id="charPersonalityInput" rows="2" placeholder="性格描述..."></textarea>
+                <textarea id="charPersonalityInput" rows="10" placeholder="性格描述..." autocomplete="off"></textarea>
             </div>
             <div class="form-row">
                 <label>背景</label>
-                <textarea id="charBackgroundInput" rows="3" placeholder="背景故事..."></textarea>
+                <textarea id="charBackgroundInput" rows="10" placeholder="背景故事..." autocomplete="off"></textarea>
             </div>
             <div class="form-row">
                 <label>动机</label>
-                <input type="text" id="charMotivationInput" placeholder="如：贪财、好奇"/>
+                <input type="text" id="charMotivationInput" placeholder="如：贪财、好奇" autocomplete="off"/>
             </div>
             <div class="form-row">
                 <label>说话风格</label>
-                <input type="text" id="charSpeechStyleInput" placeholder="如：粗犷"/>
+                <input type="text" id="charSpeechStyleInput" placeholder="如：粗犷" autocomplete="off"/>
             </div>
             <div class="form-actions">
+                <button class="btn-secondary" id="newCharBtn" title="清空表单，准备新建角色">➕ 新建</button>
                 <button class="btn-secondary" id="generateCharBtn">✨ LLM 生成</button>
                 <button class="btn-primary" id="saveCharBtn">保存角色卡</button>
+                <button class="btn-danger" id="deleteCharBtn" hidden title="删除当前角色（被关系/触发器/存档引用时会被拒绝）">🗑️ 删除</button>
             </div>
             <div class="llm-input" id="charLlmInput" hidden>
-                <input type="text" id="charDesc" placeholder="简述角色，如：盗贼，贪财，出身贫苦"/>
-                <button class="btn-primary" id="confirmGenerateCharBtn">生成</button>
+                <textarea id="charDesc" rows="6" placeholder="简述角色，如：盗贼，贪财，出身贫苦" autocomplete="off"></textarea>
+                <button type="button" class="btn-primary" id="confirmGenerateCharBtn">生成</button>
             </div>
-        </div>
-        <div class="saved-list" id="charList">
-            <h3>已保存角色</h3>
-            <div class="list-items" id="charListItems"></div>
         </div>
     </section>
 
@@ -131,7 +152,7 @@
             </div>
             <div class="form-row">
                 <label>描述</label>
-                <textarea id="locDescInput" rows="3" placeholder="地点描述..."></textarea>
+                <textarea id="locDescInput" rows="10" placeholder="地点描述..."></textarea>
             </div>
             <div class="form-actions">
                 <button class="btn-primary" id="saveLocBtn">保存地点</button>
@@ -156,7 +177,7 @@
             </div>
             <div class="form-row">
                 <label>硬条件 (JSON)</label>
-                <textarea id="triggerHardConditions" rows="3" placeholder='[{"field":"player.location","op":"==","value":"路上"}]'></textarea>
+                <textarea id="triggerHardConditions" rows="10" placeholder='[{"field":"player.location","op":"==","value":"路上"}]'></textarea>
             </div>
             <div class="form-row">
                 <label>软条件</label>
@@ -206,15 +227,6 @@
         </div>
     </section>
 
-    <!-- 开始冒险按钮 -->
-    <div class="start-adventure">
-        <button class="btn-start" id="startAdventureBtn">⚔️ 开始冒险</button>
-        <div class="start-options" id="startOptions" hidden>
-            <select id="selectWorld"><option value="">选择世界观...</option></select>
-            <select id="selectPlayer"><option value="">选择玩家角色...</option></select>
-            <button class="btn-primary" id="confirmStartBtn">确认开始</button>
-        </div>
-    </div>
 </main>
 
 <!-- ========== 游戏模式 ========== -->
@@ -230,6 +242,15 @@
         <div class="status-item"><label>位置</label><span id="statusLocation">-</span></div>
         <div class="status-item"><label>轮次</label><span id="statusTurn">0</span></div>
         <div class="status-item"><label>NPC</label><span id="statusNpcs">-</span></div>
+        <!-- 全量花名册（rpg-scene-cast）：NPC 行只显示当前场景班底，此处折叠展示已结识的全部 NPC -->
+        <details id="statusRoster" class="status-roster" hidden>
+            <summary id="statusRosterSummary">已结识 (0)</summary>
+            <span id="statusRosterList" class="status-roster-list"></span>
+        </details>
+        <div class="status-subheader">玩家</div>
+        <div class="status-item"><label>金钱</label><span id="statusMoney">-</span></div>
+        <div class="status-item"><label>称号</label><span id="statusTitles">-</span></div>
+        <div class="status-item"><label>能力</label><span id="statusAbilities">-</span></div>
     </aside>
 
     <!-- 输入区域 -->
@@ -262,15 +283,6 @@
         </form>
     </div>
 </main>
-
-<!-- ========== 读档列表 ========== -->
-<div class="load-overlay" id="loadOverlay" hidden>
-    <div class="load-dialog">
-        <h3>选择存档</h3>
-        <div id="saveList" class="save-list"></div>
-        <button class="btn-secondary" id="closeLoadBtn">关闭</button>
-    </div>
-</div>
 
 <!-- ========== 存档记忆管理弹窗（当前存档的 GM 笔记本） ========== -->
 <div class="load-overlay" id="memoryOverlay" hidden>
@@ -352,6 +364,16 @@
 <script th:inline="javascript">
     window.__SESSION_ID__ = /*[[${sessionId}]]*/ null;
 </script>
-<script th:src="@{/js/rpg.js(v=${#dates.createNow().time})}"></script>
+<!-- rpg-js-split：按依赖顺序加载，state.js 必须最先、init.js 必须最后 -->
+<script th:src="@{/js/auth-redirect.js(v=${#dates.createNow().time})}"></script>
+<script th:src="@{/js/rpg/state.js(v=${#dates.createNow().time})}"></script>
+<script th:src="@{/js/rpg/markdown.js(v=${#dates.createNow().time})}"></script>
+<script th:src="@{/js/rpg/messages.js(v=${#dates.createNow().time})}"></script>
+<script th:src="@{/js/rpg/backtrack.js(v=${#dates.createNow().time})}"></script>
+<script th:src="@{/js/rpg/workshop.js(v=${#dates.createNow().time})}"></script>
+<script th:src="@{/js/rpg/game.js(v=${#dates.createNow().time})}"></script>
+<script th:src="@{/js/rpg/saves.js(v=${#dates.createNow().time})}"></script>
+<script th:src="@{/js/rpg/memory-dialog.js(v=${#dates.createNow().time})}"></script>
+<script th:src="@{/js/rpg/init.js(v=${#dates.createNow().time})}"></script>
 </body>
 </html>

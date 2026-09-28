@@ -47,14 +47,14 @@ public class RpgToolConfiguration {
     private static final Logger log = LoggerFactory.getLogger(RpgToolConfiguration.class);
 
     /**
-     * RPG 存档记忆根目录。每个存档占一个子目录 {@code <gameStateId>/}，
-     * 与主聊天的 {@code ~/.agent/memories} 完全隔离。
+     * RPG 存档记忆工具底座的固定构建期根：租户总根 {@code ~/.agent/tenants}（design D6 / tasks 4.4）。
      * <p>
-     * 路径字面量收拢到 {@link RpgSavePaths}（工坊改名的笔记本跟随、存档记忆 REST 端点共用）。
-     * 子目录前缀由 {@link SaveScopedMemoryCallback} 在调用期注入，
-     * 因为 {@code AutoMemoryTools} 的 root 在构建期就固定、无法随存档变化。
+     * {@code <tenantId>/rpg-saves/<gameStateId>/} 双重路径段由 {@link SaveScopedMemoryCallback}
+     * 在调用期从 ToolContext 注入（tenantId 来自验签后的 JWT），
+     * 因为 {@code AutoMemoryTools} 的 root 在构建期就固定、无法随租户/存档变化。
+     * 路径字面量收拢到 {@link RpgSavePaths}（快照 / 删档 / 存档记忆 REST 端点共用）。
      */
-    private static final String RPG_SAVES_DIR = RpgSavePaths.ROOT;
+    private static final String RPG_SAVES_DIR = RpgSavePaths.TOOL_ROOT;
 
     /**
      * 底层 AutoMemoryTools 工具名 → 对外暴露的 GM 工具名（保序，仅用于装配与日志）。
@@ -86,7 +86,7 @@ public class RpgToolConfiguration {
         Map<String, String> d = new LinkedHashMap<>();
         d.put("GmMemoryView",
                 "读取当前存档的记忆文件。path 为相对当前存档根目录的路径，"
-                        + "如 MEMORY.md（索引）或 npc_<npcId>.md；lineRange 可选，格式为\"起始行-结束行\"。");
+                        + "如 MEMORY.md（索引）、npc_<npcId>.md 或 player.md（PC 叙事档案）；lineRange 可选，格式为\"起始行-结束行\"。");
         d.put("GmMemoryCreate",
                 "在当前存档新建记忆文件。path 为相对存档根的文件名，fileText 为完整文件内容"
                         + "（须以 YAML frontmatter 开头）。新建后必须用 GmMemoryInsert 向 MEMORY.md 追加一行索引。");
@@ -123,8 +123,8 @@ public class RpgToolConfiguration {
      * 三层结构（由外到内）：
      * <pre>
      * ResilientToolCallback      容错 + toolcall.log 可观测性
-     *   └ SaveScopedMemoryCallback  改名 + 按 ToolContext 注入 &lt;gameStateId&gt;/ 前缀
-     *       └ AutoMemoryTools        文件操作底座，root = ~/.agent/rpg-saves
+     *   └ SaveScopedMemoryCallback  改名 + 按 ToolContext 注入 &lt;tid&gt;/rpg-saves/&lt;gsId&gt;/ 双重前缀
+     *       └ AutoMemoryTools        文件操作底座，root = ~/.agent/tenants（租户总根）
      * </pre>
      * <p>
      * {@code AutoMemoryTools} 实例在此就地构建，<b>不注册为 Spring bean</b>，

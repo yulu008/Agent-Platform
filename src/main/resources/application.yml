@@ -12,6 +12,10 @@ spring:
   thymeleaf:
     cache: false
 
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
   # H2 内嵌数据库配置（文件模式，持久化到本地）
   datasource:
     url: jdbc:h2:file:./data/agent-platform
@@ -75,6 +79,49 @@ agent:
       timeout: 300s
       roles: [chat]
 
+
+  # 租户级 token 计量与配额（tenant-token-metering）——绑定 MeteringProperties（前缀 agent.metering）
+  metering:
+    # 计量总开关（tasks 9.1）：false 时 MeteringAdvisor 完全旁路（不写库、不计费），一键回滚
+    enabled: true
+    # 明细 token_usage_log 保留天数（tasks 9.3），超期由 UsageLogCleanupTask 每日清理
+    detail-retention-days: 90
+    quota:
+      # 配额硬拒开关（tasks 9.2）：迁移期默认关（仅计量不拦截），观察数据完整后再开
+      enabled: false
+      # 平台默认预算（元/账号，tasks 9.3）：滚动窗口内累计消费 >= 预算即硬拒
+      default-budget-yuan: 20.0
+      # 滚动窗口天数（非自然月）
+      window-days: 30
+    pricing:
+      # 档位单价（元/百万 token；数值上等于 微元/token）。DB(pricing_policy) 覆盖优先，管理端可改即时生效
+      flash:
+        input-yuan-per-million: 3
+        output-yuan-per-million: 10
+        cache-yuan-per-million: 2
+      standard:
+        input-yuan-per-million: 8
+        output-yuan-per-million: 24
+        cache-yuan-per-million: 2
+
+
+# 认证与租户（JWT 签发配置；HS256 密钥生产环境必须经环境变量覆盖）
+auth:
+  jwt:
+    secret: ${AUTH_JWT_SECRET:dev-only-secret-change-me-in-production-0123456789abcdef}
+    # token 有效期，默认 7 天
+    ttl: 7d
+
+# 内容审查（输入侧闸门，input-content-moderation）
+# 仅审用户输入、本地敏感词库匹配（脏话/歧视/色情）；命中即整条拒答 + 中止流，被拒输入不落库
+moderation:
+  # 总开关：false 时闸门整体旁路（一键回滚到无审查旧行为）
+  enabled: true
+  # 敏感词库资源位置，支持 classpath: 与 file: 前缀（加载失败/空词库等价于无命中放行，不阻断启动）
+  wordlist-location: classpath:moderation/sensitive-words.txt
+  # 命中拒答时返回给用户的统一话术（不透露具体命中类别）
+  refusal-message: 抱歉，您的输入包含不适宜的内容，我无法处理。请调整后重试。
+
 # 天气功能配置（WeatherService 读取）
 weather:
   # wttr.in format=j1 查询地址，~lat,lon 指定坐标
@@ -93,6 +140,10 @@ rpg:
     # 每 N 轮由引擎向 GM 追加一次「整理笔记」提醒；<= 0 表示完全关闭（GM 仍可自主写入）
     # 调大→提醒更稀、token 更省但 GM 容易忘记落笔；调小→反之
     remind-every-turns: 5
+    # 每 N 轮向 GM 重注入一次「世界背景回顾」（精简世界观 + 笔记本索引）。
+    # 世界观只渲染进首轮 system prompt 且不落库，长对话后会漂移；重注入块随 user 消息落库、
+    # 旧副本随 30 事件滑窗自然滑出不会累积；<= 0 表示完全关闭
+    world-refresh-every-turns: 10
 
 # Actuator 端点：暴露 metrics 供可观测性验证
 # /actuator/metrics/gen_ai_client_token_usage_total 查看 token 用量

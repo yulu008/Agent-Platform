@@ -38,6 +38,8 @@ class GmMemoryReminderTest {
         assertThat(reminderIdx).isGreaterThan(prompt.indexOf("## 玩家行动"));
         assertThat(reminderIdx).isGreaterThan(prompt.indexOf("## 触发器命中"));
         assertThat(reminderIdx).isGreaterThan(prompt.indexOf("## GM 任务指令"));
+        // rpg-player-memory：提醒文案覆盖 PC 叙事场景（秘密/旅途节点/背景展开 → player.md）
+        assertThat(prompt).contains("player.md");
         // 玩家行动原文未被污染
         assertThat(prompt).contains(PLAYER_ACTION);
     }

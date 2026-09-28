@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Agent Platform · 选择入口</title>
+    <link rel="stylesheet" th:href="@{/css/home.css(v=${#dates.createNow().time})}"/>
+</head>
+<body>
+
+    <div class="home-card">
+        <h1 class="home-title"><span class="logo-dot"></span>Agent Platform</h1>
+        <p class="home-subtitle">选择要进入的功能</p>
+
+        <div class="home-entries">
+            <a class="home-entry" th:href="@{/chat}">
+                <span class="home-entry-icon">💬</span>
+                <span class="home-entry-text">
+                    <span class="home-entry-name">主会话</span>
+                    <span class="home-entry-desc">与智能代理对话</span>
+                </span>
+            </a>
+            <a class="home-entry" th:href="@{/rpg}">
+                <span class="home-entry-icon">🎲</span>
+                <span class="home-entry-text">
+                    <span class="home-entry-name">RPG 首页</span>
+                    <span class="home-entry-desc">沙盒角色扮演冒险</span>
+                </span>
+            </a>
+            <a class="home-entry" th:href="@{/admin}" th:if="${isPlatformAdmin}">
+                <span class="home-entry-icon">📊</span>
+                <span class="home-entry-text">
+                    <span class="home-entry-name">管理端</span>
+                    <span class="home-entry-desc">用量看板 · 预算 · 单价</span>
+                </span>
+            </a>
+        </div>
+    </div>
+
+</body>
+</html>

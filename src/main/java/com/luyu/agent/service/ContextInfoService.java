@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.session.EventFilter;
 import org.springframework.ai.session.SessionEvent;
 import org.springframework.ai.session.SessionService;
 import org.springframework.stereotype.Service;
@@ -34,12 +35,16 @@ public class ContextInfoService {
 
     /**
      * 获取指定会话的上下文计量信息
+     * <p>
+     * 口径对齐模型真实上下文：使用 {@link EventFilter#active()} 只统计未归档事件。
+     * compact() 仅将旧事件标记为 archived（行仍保留在 AI_SESSION_EVENT），
+     * SessionMemoryAdvisor 加载上下文时排除归档事件，若不过滤则进度条压缩后不下降。
      *
      * @param sessionId 会话 ID
      * @return 上下文计量信息（totalTokens、usagePercent 等）
      */
     public ContextInfo getContextInfo(String sessionId) {
-        List<SessionEvent> events = sessionService.getEvents(sessionId);
+        List<SessionEvent> events = sessionService.getEvents(sessionId, EventFilter.active());
 
         int toolTokens = chatClientRegistry.getCachedToolTokens();
         int messageTotal = 0;

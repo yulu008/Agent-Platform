@@ -3,6 +3,7 @@ package com.luyu.agent.config;
 import com.luyu.agent.governance.GovernedTaskRepository;
 import com.luyu.agent.governance.RateLimitingSubagentExecutor;
 import com.luyu.agent.logger.SubagentAuditLogger;
+import com.luyu.agent.tenancy.TenantScopedTaskCallback;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -101,7 +102,9 @@ public class SubagentConfiguration {
                     .taskRepository(repo)
                     .build();
             log.info("TaskTool 装配成功，主Agent可通过 task 工具委派子Agent");
-            return callback;
+            // 跳1（tasks 6.4 / design D5）：包装 task 回调，调用期从 toolContext 恢复租户上下文，
+            // 供跳2（RateLimitingSubagentExecutor）跨虚拟线程透传，最终子代理用量归账到发起租户。
+            return new TenantScopedTaskCallback(callback);
         } catch (Exception e) {
             log.warn("TaskTool 装配失败，跳过", e);
             return null;

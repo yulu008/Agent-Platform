@@ -74,10 +74,15 @@ public class WorkshopService {
     // ==================== 世界观 CRUD ====================
 
     public WorldSetting saveWorld(WorldSetting world) {
-        if (world.getId() == null || world.getId().isBlank()) {
+        boolean isNew = world.getId() == null || world.getId().isBlank();
+        if (isNew) {
             world.setId(UUID.randomUUID().toString());
         }
-        worldRepo.save(world);
+        if (!isNew && worldRepo.findById(world.getId()) != null) {
+            worldRepo.update(world);
+        } else {
+            worldRepo.save(world);
+        }
         log.info("世界观已保存: id={}, name={}", world.getId(), world.getName());
         return world;
     }
@@ -94,13 +99,55 @@ public class WorkshopService {
         worldRepo.updateOpeningTemplate(worldId, template);
     }
 
+    /**
+     * 阻塞式删除世界观：旗下仍有地点/角色/触发器/存档任一类子数据时拒绝。
+     *
+     * @throws IllegalArgumentException 世界不存在
+     * @throws IllegalStateException    存在子数据引用，拒绝删除（消息指明具体类别）
+     */
+    public void deleteWorld(String id) {
+        if (worldRepo.findById(id) == null) {
+            throw new IllegalArgumentException("世界不存在: " + id);
+        }
+        if (charRepo.countByWorldId(id) > 0) {
+            throw new IllegalStateException("该世界下仍有角色，请先删除角色");
+        }
+        if (locationRepo.countByWorldId(id) > 0) {
+            throw new IllegalStateException("该世界下仍有地点，请先删除地点");
+        }
+        if (triggerRepo.countByWorldId(id) > 0) {
+            throw new IllegalStateException("该世界下仍有触发器，请先删除触发器");
+        }
+        if (stateRepo.countByWorldId(id) > 0) {
+            throw new IllegalStateException("该世界下仍有存档，请先删除存档");
+        }
+        worldRepo.deleteById(id);
+        log.info("世界观已删除: id={}", id);
+    }
+
     // ==================== 角色卡 CRUD ====================
 
     public CharacterCard saveCharacter(CharacterCard card) {
-        if (card.getId() == null || card.getId().isBlank()) {
+        boolean isNew = card.getId() == null || card.getId().isBlank();
+        if (isNew) {
             card.setId(UUID.randomUUID().toString());
         }
-        charRepo.save(card);
+        CharacterCard existing = isNew ? null : charRepo.findById(card.getId());
+        // 类型不在创建表单中声明：新建兜底 npc；编辑时表单不传 type，保留库内现值
+        // （避免把已被开始冒险升级为 player 的角色降级）。
+        if (card.getType() == null || card.getType().isBlank()) {
+            card.setType(existing != null && existing.getType() != null ? existing.getType() : "npc");
+        }
+        // knowledge 不在表单中编辑：传入为空时保留库内现值，避免编辑时误清空
+        if (existing != null && (card.getKnowledge() == null || card.getKnowledge().isBlank()
+                || "[]".equals(card.getKnowledge().trim()))) {
+            card.setKnowledge(existing.getKnowledge());
+        }
+        if (existing != null) {
+            charRepo.update(card);
+        } else {
+            charRepo.save(card);
+        }
         log.info("角色卡已保存: id={}, name={}, type={}", card.getId(), card.getName(), card.getType());
         return card;
     }
@@ -115,6 +162,29 @@ public class WorkshopService {
 
     public List<CharacterCard> listAllCharacters(String worldId) {
         return charRepo.findByWorldId(worldId);
+    }
+
+    /**
+     * 阻塞式删除角色：被关系（任一端）/触发器/存档（作为玩家）引用时拒绝。
+     *
+     * @throws IllegalArgumentException 角色不存在
+     * @throws IllegalStateException    存在引用，拒绝删除（消息指明具体原因）
+     */
+    public void deleteCharacter(String id) {
+        if (charRepo.findById(id) == null) {
+            throw new IllegalArgumentException("角色不存在: " + id);
+        }
+        if (relRepo.countByCharId(id) > 0) {
+            throw new IllegalStateException("该角色存在角色间关系，请先删除相关关系");
+        }
+        if (triggerRepo.countByNpcId(id) > 0) {
+            throw new IllegalStateException("该角色被触发器引用，请先删除相关触发器");
+        }
+        if (stateRepo.countByPlayerCharId(id) > 0) {
+            throw new IllegalStateException("该角色是某存档的玩家角色，请先删除对应存档");
+        }
+        charRepo.deleteById(id);
+        log.info("角色卡已删除: id={}", id);
     }
 
     // ==================== 地点 CRUD ====================
@@ -180,6 +250,13 @@ public class WorkshopService {
      * @return 创建的 GameState
      */
     public GameState startGame(String worldId, String playerCharId, String sessionId) {
+        // 验证玩家角色存在且属于该世界；"谁是玩家"在此运行时确定，被选角色升级为 player
+        CharacterCard player = charRepo.findById(playerCharId);
+        if (player == null || !worldId.equals(player.getWorldId())) {
+            throw new IllegalArgumentException("玩家角色不存在或不属于该世界: " + playerCharId);
+        }
+        charRepo.updateType(playerCharId, "player");
+
         GameState gs = new GameState();
         gs.setId(UUID.randomUUID().toString());
         gs.setSessionId(sessionId);
@@ -212,12 +289,48 @@ public class WorkshopService {
         return stateRepo.findById(gameStateId);
     }
 
+    /**
+     * 按会话 ID查游戏状态（回溯前端近似置灰所需的 currentTurn 来源）。
+     */
+    public GameState getGameStateBySessionId(String sessionId) {
+        return stateRepo.findLatestBySessionId(sessionId);
+    }
+
     public void updateGameSession(String gameStateId, String sessionId) {
         stateRepo.updateSessionId(gameStateId, sessionId);
     }
 
     public List<GameState> listGameStates() {
         return stateRepo.findAll();
+    }
+
+    /**
+     * 存档卡片列表（GET /rpg/game/saves 数据源）。
+     * <p>
+     * 在 {@link #listGameStates()} 基础上 join 世界名与玩家角色名：
+     * 引用的世界/角色卡已被删除（或防御性缺失）时回退占位符 "-"，列表不中断。
+     * {@code stateRepo.findAll()} 已按 updated_at 倒序。
+     */
+    public List<SaveCard> listSaveCards() {
+        List<SaveCard> cards = new ArrayList<>();
+        for (GameState gs : stateRepo.findAll()) {
+            String worldName = "-";
+            WorldSetting world = gs.getWorldId() != null ? worldRepo.findById(gs.getWorldId()) : null;
+            if (world != null && world.getName() != null && !world.getName().isBlank()) {
+                worldName = world.getName();
+            }
+            String playerCharName = "-";
+            CharacterCard player = gs.getPlayerCharId() != null
+                    ? charRepo.findById(gs.getPlayerCharId()) : null;
+            if (player != null && player.getName() != null && !player.getName().isBlank()) {
+                playerCharName = player.getName();
+            }
+            String location = gs.getCurrentLocation() != null && !gs.getCurrentLocation().isBlank()
+                    ? gs.getCurrentLocation() : "-";
+            cards.add(new SaveCard(gs.getId(), gs.getSessionId(), gs.getWorldId(), worldName,
+                    playerCharName, location, gs.getTurnCount(), gs.getUpdatedAt()));
+        }
+        return cards;
     }
 
     // ==================== 一键中文化改名 ====================
@@ -230,13 +343,18 @@ public class WorkshopService {
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
-    /** 单条改名记录（旧名 → 新汉字名，卡 ID 不变） */
+    /**
+     * 单条改名记录（旧名 → 新汉字名）。
+     * <p>
+     * {@code cardId} 为 {@code null} 表示无角色卡的剧情临时 NPC（只迁移引用 key，不写卡表）。
+     */
     public record RenamedCharacter(String cardId, String oldName, String newName) {}
 
     /**
      * 改名摘要：改名清单 + 各表/文件的迁移计数。
      * <p>
-     * 引用重写后 key 一律为角色卡 ID，故后续再改名只动 {@code character_card.name} 一列。
+     * 引用重写后：角色卡引用 key 一律为卡 ID（后续再改名只动 {@code character_card.name} 一列），
+     * 无卡临时 NPC 的 key 为其新汉字名。
      */
     public record NameLocalizeSummary(List<RenamedCharacter> renames,
                                       int gameStateCount,
@@ -252,10 +370,13 @@ public class WorkshopService {
     private record NpcStateMigration(String json, int migratedKeys) {}
 
     /**
-     * 一键中文化改名：把世界内含拉丁字母的角色名改为汉字名，并把所有引用 key 迁移到角色卡 ID。
+     * 一键中文化改名：把世界内含拉丁字母的角色名改为汉字名，并把所有引用 key 迁移——
+     * 角色卡引用迁移到卡 ID；无角色卡的剧情临时 NPC（GM 临时创造、在存档 npc_states 里
+     * 以拼音/罗马音名作 key 的 NPC）迁移到其新汉字名。
      * <p>
-     * 流程：筛选待改名 → 单次 LLM 映射（事务外）→ 校验矩阵 → 事务内重写四张表
-     * → 笔记本 best-effort 跟随。校验任一不满足抛 {@link IllegalStateException}，此时尚未写库。
+     * 流程：筛选待改名（卡名 + 存档 npc_states 中的无卡拼音 key）→ 单次 LLM 映射（事务外）
+     * → 校验矩阵 → 事务内重写四张表 → 笔记本 best-effort 跟随。
+     * 校验任一不满足抛 {@link IllegalStateException}，此时尚未写库。
      *
      * @param worldId 世界观 ID
      * @return 改名摘要（无待改名时清单为空且不调 LLM）
@@ -271,24 +392,27 @@ public class WorkshopService {
         List<CharacterCard> targets = cards.stream()
                 .filter(c -> c.getName() != null && LATIN_LETTER.matcher(c.getName()).find())
                 .toList();
-        if (targets.isEmpty()) {
+        List<GameState> saves = stateRepo.findByWorldId(worldId);
+        List<WorkshopLlmGenerator.OrphanNpcName> orphans = collectOrphanNpcNames(cards, saves);
+        if (targets.isEmpty() && orphans.isEmpty()) {
             log.info("一键中文化改名: 世界 {} 无罗马音/英文名字，不调 LLM", worldId);
             return new NameLocalizeSummary(List.of(), 0, 0, 0, 0, 0);
         }
 
-        Map<String, String> mapping = llmGenerator.renameToChinese(targets, world);
-        Map<String, String> oldNameToCardId = validateMapping(cards, targets, mapping);
-        List<GameState> saves = stateRepo.findByWorldId(worldId);
+        Map<String, String> mapping = llmGenerator.renameToChinese(targets, orphans, world);
+        Map<String, String> keyRewrites = validateMapping(cards, targets, orphans, mapping);
 
         Migration migration = Objects.requireNonNull(
-                txTemplate.execute(status -> rewriteReferences(worldId, targets, mapping, oldNameToCardId, saves)),
+                txTemplate.execute(status -> rewriteReferences(worldId, targets, mapping, keyRewrites, saves)),
                 "改名事务未返回计数");
         // 笔记本跟随刻意放在事务提交之后：DB 已生效，IO 失败不应连带回滚
-        int notebookFiles = followNotebooks(saves, oldNameToCardId);
+        int notebookFiles = followNotebooks(saves, keyRewrites);
 
-        List<RenamedCharacter> renames = targets.stream()
+        List<RenamedCharacter> renames = new ArrayList<>(targets.stream()
                 .map(c -> new RenamedCharacter(c.getId(), c.getName(), mapping.get(c.getName())))
-                .toList();
+                .toList());
+        orphans.forEach(o -> renames.add(
+                new RenamedCharacter(null, o.name(), mapping.get(o.name()))));
         NameLocalizeSummary summary = new NameLocalizeSummary(renames,
                 migration.gameStates(), migration.npcStateKeys(),
                 migration.triggers(), migration.relationships(), notebookFiles);
@@ -299,13 +423,79 @@ public class WorkshopService {
     }
 
     /**
+     * 收集无卡临时 NPC 的拼音/罗马音 key：遍历存档 npcStates，取既非卡 ID 也非卡名、
+     * 且含拉丁字母的 key（GM 对无卡 NPC 常把名字转成拼音当 key 用）。
+     * <p>
+     * 同名 key 跨存档只保留一份，附上首个非空状态摘要（status/location）供 LLM 推断身份。
+     */
+    private List<WorkshopLlmGenerator.OrphanNpcName> collectOrphanNpcNames(List<CharacterCard> cards,
+                                                                          List<GameState> saves) {
+        Set<String> cardIds = cards.stream()
+                .map(CharacterCard::getId)
+                .filter(id -> id != null && !id.isBlank())
+                .collect(Collectors.toSet());
+        Set<String> cardNames = cards.stream()
+                .map(CharacterCard::getName)
+                .filter(name -> name != null && !name.isBlank())
+                .collect(Collectors.toSet());
+
+        Map<String, String> orphanContexts = new LinkedHashMap<>();
+        for (GameState gs : saves) {
+            if (gs.getNpcStates() == null || gs.getNpcStates().isBlank()) {
+                continue;
+            }
+            JsonNode root;
+            try {
+                root = JSON.readTree(gs.getNpcStates());
+            } catch (IOException e) {
+                log.warn("npcStates 不是合法 JSON，跳过 orphan key 收集: {}", e.getMessage());
+                continue;
+            }
+            if (!root.isObject()) {
+                continue;
+            }
+            Iterator<Map.Entry<String, JsonNode>> fields = root.fields();
+            while (fields.hasNext()) {
+                Map.Entry<String, JsonNode> entry = fields.next();
+                String key = entry.getKey();
+                if (cardIds.contains(key) || cardNames.contains(key)
+                        || !LATIN_LETTER.matcher(key).find()) {
+                    continue;
+                }
+                orphanContexts.computeIfAbsent(key, k -> npcContext(entry.getValue()));
+            }
+        }
+        return orphanContexts.entrySet().stream()
+                .map(e -> new WorkshopLlmGenerator.OrphanNpcName(e.getKey(), e.getValue()))
+                .toList();
+    }
+
+    /** 从 npcStates value 提取状态摘要（status/location），供 LLM 改名时推断身份 */
+    private static String npcContext(JsonNode state) {
+        if (state == null || !state.isObject()) {
+            return "未知";
+        }
+        List<String> parts = new ArrayList<>();
+        String status = state.path("status").asText(null);
+        if (status != null && !status.isBlank()) {
+            parts.add("状态:" + status);
+        }
+        String location = state.path("location").asText(null);
+        if (location != null && !location.isBlank()) {
+            parts.add("位置:" + location);
+        }
+        return parts.isEmpty() ? "未知" : String.join("，", parts);
+    }
+
+    /**
      * 校验矩阵：覆盖全部旧名、新名含汉字、新名不含拉丁字母、互不重复、不与现存名冲突。
      * 任一不满足即抛异常（调用方此时尚未写库，故天然原子）。
      *
-     * @return 旧名 → 角色卡 ID 映射（引用重写用）
+     * @return 引用重写映射（旧名 → 新 key）：角色卡旧名 → 卡 ID；无卡临时 NPC 拼音名 → 新汉字名
      */
     private Map<String, String> validateMapping(List<CharacterCard> allCards,
                                                 List<CharacterCard> targets,
+                                                List<WorkshopLlmGenerator.OrphanNpcName> orphans,
                                                 Map<String, String> mapping) {
         Set<String> targetNames = targets.stream()
                 .map(CharacterCard::getName)
@@ -315,7 +505,7 @@ public class WorkshopService {
                 .filter(name -> name != null && !targetNames.contains(name))
                 .collect(Collectors.toSet());
 
-        Map<String, String> oldNameToCardId = new LinkedHashMap<>();
+        Map<String, String> keyRewrites = new LinkedHashMap<>();
         Set<String> newNames = new HashSet<>();
         for (CharacterCard card : targets) {
             String oldName = card.getName();
@@ -335,22 +525,46 @@ public class WorkshopService {
             if (keptNames.contains(newName)) {
                 throw new IllegalStateException("新名与现存角色名冲突: " + newName);
             }
-            String previous = oldNameToCardId.put(oldName, card.getId());
+            String previous = keyRewrites.put(oldName, card.getId());
             if (previous != null && !previous.equals(card.getId())) {
                 throw new IllegalStateException("存在同名角色卡，无法按名字定位引用: " + oldName);
             }
         }
-        return oldNameToCardId;
+        for (WorkshopLlmGenerator.OrphanNpcName orphan : orphans) {
+            String oldName = orphan.name();
+            String newName = mapping.get(oldName);
+            if (newName == null || newName.isBlank()) {
+                throw new IllegalStateException("改名映射缺少旧名: " + oldName);
+            }
+            if (!CJK_LETTER.matcher(newName).find()) {
+                throw new IllegalStateException("新名不含汉字: " + oldName + " → " + newName);
+            }
+            if (LATIN_LETTER.matcher(newName).find()) {
+                throw new IllegalStateException("新名仍含拉丁字母: " + oldName + " → " + newName);
+            }
+            if (!newNames.add(newName)) {
+                throw new IllegalStateException("新名重复: " + newName);
+            }
+            if (keptNames.contains(newName)) {
+                throw new IllegalStateException("新名与现存角色名冲突: " + newName);
+            }
+            String previous = keyRewrites.put(oldName, newName);
+            if (previous != null) {
+                throw new IllegalStateException("旧名与角色卡名冲突，无法按名字定位引用: " + oldName);
+            }
+        }
+        return keyRewrites;
     }
 
     /**
      * 事务内重写：角色卡名字列 + 三处引用（npcStates key、trigger.npcId、relationship 两端）。
-     * 已是卡 ID 或不在映射内的值一律不动。
+     * 引用一律改写为新 key（卡旧名 → 卡 ID；无卡拼音名 → 新汉字名）；
+     * 已是新 key 或不在映射内的值一律不动。
      */
     private Migration rewriteReferences(String worldId,
                                         List<CharacterCard> targets,
                                         Map<String, String> mapping,
-                                        Map<String, String> oldNameToCardId,
+                                        Map<String, String> keyRewrites,
                                         List<GameState> saves) {
         for (CharacterCard card : targets) {
             charRepo.updateName(card.getId(), mapping.get(card.getName()));
@@ -359,7 +573,7 @@ public class WorkshopService {
         int gameStates = 0;
         int npcStateKeys = 0;
         for (GameState gs : saves) {
-            NpcStateMigration migrated = migrateNpcStateKeys(gs.getNpcStates(), oldNameToCardId);
+            NpcStateMigration migrated = migrateNpcStateKeys(gs.getNpcStates(), keyRewrites);
             if (migrated.migratedKeys() > 0) {
                 stateRepo.updateNpcStates(gs.getId(), migrated.json());
                 gameStates++;
@@ -369,17 +583,17 @@ public class WorkshopService {
 
         int triggers = 0;
         for (Trigger trigger : triggerRepo.findByWorldId(worldId)) {
-            String cardId = trigger.getNpcId() == null ? null : oldNameToCardId.get(trigger.getNpcId());
-            if (cardId != null) {
-                triggerRepo.updateNpcId(trigger.getId(), cardId);
+            String newRef = trigger.getNpcId() == null ? null : keyRewrites.get(trigger.getNpcId());
+            if (newRef != null) {
+                triggerRepo.updateNpcId(trigger.getId(), newRef);
                 triggers++;
             }
         }
 
         int relationships = 0;
         for (Relationship rel : relRepo.findAll()) {
-            String charAId = remapRef(rel.getCharAId(), oldNameToCardId);
-            String charBId = remapRef(rel.getCharBId(), oldNameToCardId);
+            String charAId = remapRef(rel.getCharAId(), keyRewrites);
+            String charBId = remapRef(rel.getCharBId(), keyRewrites);
             if (!Objects.equals(charAId, rel.getCharAId()) || !Objects.equals(charBId, rel.getCharBId())) {
                 relRepo.updateCharRefs(rel.getId(), charAId, charBId);
                 relationships++;
@@ -388,16 +602,16 @@ public class WorkshopService {
         return new Migration(gameStates, npcStateKeys, triggers, relationships);
     }
 
-    private static String remapRef(String ref, Map<String, String> oldNameToCardId) {
-        return ref == null ? null : oldNameToCardId.getOrDefault(ref, ref);
+    private static String remapRef(String ref, Map<String, String> keyRewrites) {
+        return ref == null ? null : keyRewrites.getOrDefault(ref, ref);
     }
 
     /**
-     * 把 npcStates JSON 中等于旧名的 key 改写为角色卡 ID（保序、value 原样保留）。
+     * 把 npcStates JSON 中命中映射的 key 改写为新 key（卡 ID 或新汉字名；保序、value 原样保留）。
      * <p>
-     * 若卡 ID key 已先出现（GM 已按新规范写过），则保留既有值并丢弃旧名条目。
+     * 若新 key 已先出现（GM 已按新规范写过），则保留既有值并丢弃旧名条目。
      */
-    private NpcStateMigration migrateNpcStateKeys(String npcStatesJson, Map<String, String> oldNameToCardId) {
+    private NpcStateMigration migrateNpcStateKeys(String npcStatesJson, Map<String, String> keyRewrites) {
         if (npcStatesJson == null || npcStatesJson.isBlank()) {
             return new NpcStateMigration(null, 0);
         }
@@ -417,17 +631,17 @@ public class WorkshopService {
         Iterator<Map.Entry<String, JsonNode>> fields = root.fields();
         while (fields.hasNext()) {
             Map.Entry<String, JsonNode> entry = fields.next();
-            String cardId = oldNameToCardId.get(entry.getKey());
-            if (cardId == null) {
+            String newKey = keyRewrites.get(entry.getKey());
+            if (newKey == null) {
                 migrated.set(entry.getKey(), entry.getValue());
                 continue;
             }
             count++;
-            if (migrated.has(cardId)) {
-                log.warn("npcStates 已存在卡 ID key，保留既有值并丢弃旧名条目: {} → {}", entry.getKey(), cardId);
+            if (migrated.has(newKey)) {
+                log.warn("npcStates 已存在新 key，保留既有值并丢弃旧名条目: {} → {}", entry.getKey(), newKey);
                 continue;
             }
-            migrated.set(cardId, entry.getValue());
+            migrated.set(newKey, entry.getValue());
         }
         if (count == 0) {
             return new NpcStateMigration(null, 0);
@@ -441,12 +655,12 @@ public class WorkshopService {
     }
 
     /**
-     * 笔记本 best-effort 跟随：每个存档目录下 {@code npc_<旧名>.md} → {@code npc_<卡ID>.md}，
-     * 并把 {@code MEMORY.md} 索引行里的旧文件名替换为新文件名。IO 异常只记 warn。
+     * 笔记本 best-effort 跟随：每个存档目录下 {@code npc_<旧名>.md} → {@code npc_<新key>.md}
+     * （卡 ID 或新汉字名），并把 {@code MEMORY.md} 索引行里的旧文件名替换为新文件名。IO 异常只记 warn。
      *
      * @return 成功重命名的文件数
      */
-    private int followNotebooks(List<GameState> saves, Map<String, String> oldNameToCardId) {
+    private int followNotebooks(List<GameState> saves, Map<String, String> keyRewrites) {
         int renamed = 0;
         for (GameState gs : saves) {
             Path dir = RpgSavePaths.saveDir(gs.getId());
@@ -454,7 +668,7 @@ public class WorkshopService {
                 continue;
             }
             List<String[]> fileRenames = new ArrayList<>();
-            for (Map.Entry<String, String> entry : oldNameToCardId.entrySet()) {
+            for (Map.Entry<String, String> entry : keyRewrites.entrySet()) {
                 String oldName = entry.getKey();
                 if (!isSafeFileSegment(oldName)) {
                     // 名字含路径分隔符等非法字符时不猜文件名，跳过

@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>登录 · Agent Platform</title>
+    <link rel="stylesheet" th:href="@{/css/login.css(v=${#dates.createNow().time})}"/>
+</head>
+<body>
+
+    <div class="auth-card">
+        <h1 class="auth-title"><span class="logo-dot"></span>Agent Platform</h1>
+        <p class="auth-subtitle">登录或注册，开始你的智能代理之旅</p>
+
+        <!-- 模式切换 -->
+        <div class="auth-tabs" role="tablist">
+            <button type="button" class="auth-tab active" id="tabLogin" role="tab">登录</button>
+            <button type="button" class="auth-tab" id="tabRegister" role="tab">注册</button>
+        </div>
+
+        <!-- 表单 -->
+        <form id="authForm" novalidate>
+            <label class="auth-field">
+                <span class="auth-label">邮箱</span>
+                <input type="email" id="email" name="email" autocomplete="email"
+                       placeholder="you@example.com" required/>
+            </label>
+            <label class="auth-field">
+                <span class="auth-label">密码</span>
+                <input type="password" id="password" name="password"
+                       autocomplete="current-password" placeholder="至少 8 位" required/>
+            </label>
+            <button type="submit" class="auth-submit" id="submitBtn">登录</button>
+        </form>
+
+        <!-- 登录后进入：目的地选择（记忆到 localStorage） -->
+        <div class="auth-dest">
+            <span class="auth-dest-label">登录后进入</span>
+            <div class="auth-dest-options" id="destOptions" role="group">
+                <button type="button" class="auth-dest-option active" data-dest="/" id="destChat">💬 主会话</button>
+                <button type="button" class="auth-dest-option" data-dest="/rpg" id="destRpg">🎲 RPG 首页</button>
+            </div>
+        </div>
+
+        <!-- 错误提示 -->
+        <div class="auth-error" id="authError" hidden></div>
+    </div>
+
+    <script th:src="@{/js/login.js(v=${#dates.createNow().time})}"></script>
+</body>
+</html>

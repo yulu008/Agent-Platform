@@ -7,6 +7,7 @@ import org.springaicommunity.agent.common.task.subagent.SubagentType;
 import org.springaicommunity.agent.common.task.subagent.TaskCall;
 
 import com.luyu.agent.logger.SubagentAuditLogger;
+import com.luyu.agent.tenancy.TenantContext;
 
 import java.time.Duration;
 import java.util.List;
@@ -81,8 +82,25 @@ public class RateLimitingSubagentExecutor implements SubagentExecutor {
         // 2. 审计开始 + 执行 + 存活时长限流
         auditLogger.logStart(subagentType, taskId, parentId, description, prompt);
         long start = System.currentTimeMillis();
+        // 跳2（tasks 6.5 / design D5）：submit() 前在工具线程（跳1 已恢复租户）捕获发起租户，
+        // 虚拟线程内重新 set，使子代理 client 上的 MeteringAdvisor 经 ThreadLocal 归账到发起租户；
+        // 虚拟线程结束 finally 清理，防线程复用串号。
+        final String capturedTenantId = TenantContext.getTenantId();
+        final String capturedUserId = TenantContext.getUserId();
+        final boolean propagateTenant = capturedTenantId != null && !capturedTenantId.isBlank();
         try {
-            Future<String> future = worker.submit(() -> delegate.execute(call, definition));
+            Future<String> future = worker.submit(() -> {
+                if (propagateTenant) {
+                    TenantContext.set(capturedUserId, capturedTenantId);
+                }
+                try {
+                    return delegate.execute(call, definition);
+                } finally {
+                    if (propagateTenant) {
+                        TenantContext.clear();
+                    }
+                }
+            });
             try {
                 String result = future.get(lifespan.toMillis(), TimeUnit.MILLISECONDS);
                 long duration = System.currentTimeMillis() - start;

@@ -52,6 +52,14 @@
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
 
+        <!-- Jackson 2 JSR-310：Boot 4 自动配置的 ObjectMapper 已切 Jackson 3（tools.jackson），
+             com.fasterxml 的 ObjectMapper 无 Bean，需自行注册 JavaTimeModule 序列化 LocalDateTime；
+             默认 scope 为 runtime，显式声明为 compile 供代码引用 -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.datatype</groupId>
+            <artifactId>jackson-datatype-jsr310</artifactId>
+        </dependency>
+
         <!-- Spring AI OpenAI 适配（兼容 OpenAI 接口的大模型） -->
         <dependency>
             <groupId>org.springframework.ai</groupId>
@@ -91,10 +99,30 @@
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
 
+        <!-- Spring Security Crypto：仅取 BCryptPasswordEncoder（密码哈希），
+             不引入整个 Security 框架，认证由自研 JWT + Cookie 实现 -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-crypto</artifactId>
+        </dependency>
+
         <!-- 测试：JUnit 5 + AssertJ（test 作用域，不进入生产构件） -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Boot 4 测试切片模块化：WebMvc/Jdbc 切片注解拆分到独立 starter，
+             需显式引入才能使用 @WebMvcTest / @JdbcTest -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webmvc-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-jdbc-test</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>

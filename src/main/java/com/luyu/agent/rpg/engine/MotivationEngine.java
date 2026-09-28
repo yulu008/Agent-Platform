@@ -128,7 +128,12 @@ public class MotivationEngine {
         if (stateDelta == null || stateDelta.isMissingNode()) {
             return;
         }
-        JsonNode npcDelta = stateDelta.path("npc_states").path(npcId).path("motives");
+        // GM 有时模仿 get_game_state 返回值写驼峰 npcStates，两种 key 均接受
+        JsonNode npcDelta = stateDelta.path("npc_states");
+        if (npcDelta.isMissingNode()) {
+            npcDelta = stateDelta.path("npcStates");
+        }
+        npcDelta = npcDelta.path(npcId).path("motives");
         if (npcDelta.isMissingNode()) {
             return;
         }

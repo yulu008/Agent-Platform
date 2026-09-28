@@ -1165,6 +1165,11 @@ body::after {
     transform: scale(0.92);
 }
 
+/* RPG 首页入口：a 标签复用 .header-btn，补去下划线 */
+.rpg-link {
+    text-decoration: none;
+}
+
 /* 清空会话按钮（输入框内，压缩按钮左侧） */
 .clear-session-btn {
     width: 38px;

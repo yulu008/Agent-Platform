@@ -1,6 +1,8 @@
 package com.luyu.agent.rpg.tools;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.luyu.agent.rpg.model.*;
 import com.luyu.agent.rpg.repository.*;
 import org.slf4j.Logger;
@@ -10,6 +12,7 @@ import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.ai.chat.model.ToolContext;
 import org.springframework.stereotype.Component;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -23,7 +26,12 @@ import java.util.Map;
 public class RpgGmTools {
 
     private static final Logger log = LoggerFactory.getLogger(RpgGmTools.class);
-    private static final ObjectMapper mapper = new ObjectMapper();
+    /** 序列化含 LocalDateTime 的实体（GameState/WorldSetting 等）：必须注册 JSR-310 模块，
+     * 否则 writeValueAsString 报 "Java 8 date/time type not supported"，GM 工具全部返回序列化失败。
+     * 注：Boot 4 自动配置的 ObjectMapper 已切 Jackson 3（tools.jackson），com.fasterxml 无 Bean，故自建 */
+    private static final ObjectMapper mapper = new ObjectMapper()
+            .registerModule(new JavaTimeModule())
+            .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
 
     private final RpgWorldSettingRepository worldRepo;
     private final RpgCharacterCardRepository charRepo;
@@ -72,13 +80,16 @@ public class RpgGmTools {
 
     // ==================== 角色级工具 ====================
 
-    @Tool(description = "查询玩家角色状态，返回玩家角色卡和当前游戏状态中的玩家信息。")
+    @Tool(description = "查询玩家角色状态，返回玩家角色卡与 player_states（金钱、能力、称号等结构化玩家状态）。")
     public String get_player_state(ToolContext toolContext) {
         GameState gs = resolveGameState(toolContext);
         if (gs == null) return error("游戏状态未找到");
         CharacterCard player = charRepo.findById(gs.getPlayerCharId());
         if (player == null) return error("玩家角色未找到");
-        return toJson(player);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("characterCard", player);
+        result.put("playerStates", gs.getPlayerStates());
+        return toJson(result);
     }
 
     @Tool(description = "查询指定 NPC 的状态，返回 NPC 角色卡信息和游戏状态中的动态状态。")

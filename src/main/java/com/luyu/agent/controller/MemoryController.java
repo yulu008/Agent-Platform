@@ -47,10 +47,14 @@ public class MemoryController {
      * 查看指定记忆文件的完整内容
      *
      * @param file 文件相对路径（如 user/user-background.md）
-     * @return 记忆详情 {name, description, type, content}，不存在返回 404
+     * @return 400=路径非法（穿越/绝对路径），404=文件不存在，200=记忆详情
      */
     @GetMapping("/detail")
     public ResponseEntity<Map<String, String>> getMemoryDetail(@RequestParam String file) {
+        if (!memoryService.isValidPath(file)) {
+            log.warn("非法的记忆文件路径被拒绝: {}", file);
+            return ResponseEntity.badRequest().build();
+        }
         Map<String, String> detail = memoryService.readMemory(file);
         if (detail == null) {
             return ResponseEntity.notFound().build();
@@ -62,10 +66,14 @@ public class MemoryController {
      * 删除指定记忆文件
      *
      * @param file 文件相对路径
-     * @return 204 成功，404 文件不存在
+     * @return 400=路径非法，204 成功，404 文件不存在
      */
     @DeleteMapping
     public ResponseEntity<Void> deleteMemory(@RequestParam String file) {
+        if (!memoryService.isValidPath(file)) {
+            log.warn("非法的记忆文件路径被拒绝: {}", file);
+            return ResponseEntity.badRequest().build();
+        }
         boolean deleted = memoryService.deleteMemory(file);
         if (deleted) {
             return ResponseEntity.noContent().build();
