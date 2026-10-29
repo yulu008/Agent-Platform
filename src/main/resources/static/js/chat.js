@@ -1392,7 +1392,7 @@ function formatTime(isoStr) {
     return d.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
 }
 
-// ===== header 天气簇与天气主题 =====
+// ===== 工具行天气簇与天气主题（unified-global-topbar D4：自绿 header 迁至 .chat-toolbar） =====
 const weatherCluster = document.getElementById('weatherCluster');
 
 /**
@@ -1409,7 +1409,7 @@ function mapWeatherTheme(code) {
 }
 
 /**
- * 拉取天气并渲染 header 天气簇 + 设置 header 天气主题（非阻塞，失败静默隐藏）
+ * 拉取天气并渲染工具行天气簇 + 设置工具行天气主题（非阻塞，失败静默隐藏）
  */
 async function loadWeather() {
     try {
@@ -1423,7 +1423,7 @@ async function loadWeather() {
             <span class="weather-humidity">💧 ${data.humidity}%</span>
         `;
         weatherCluster.hidden = false;
-        document.querySelector('.chat-header').dataset.weather = mapWeatherTheme(data.weatherCode);
+        document.querySelector('.chat-toolbar').dataset.weather = mapWeatherTheme(data.weatherCode);
     } catch (e) {
         console.warn('天气加载失败:', e);
     }

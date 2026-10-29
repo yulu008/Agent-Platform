@@ -228,6 +228,7 @@ public class SessionConfiguration {
         Map<String, ChatClient> rpgByName = new LinkedHashMap<>();
         Map<String, ChatClient> byRole = new HashMap<>();
         Map<String, ChatClient.Builder> byRoleBuilder = new HashMap<>();
+        Map<String, String> byRoleModel = new HashMap<>();
         String defaultName = null;
 
         for (Map.Entry<String, ChatModel> entry : chatModels.entrySet()) {
@@ -272,6 +273,8 @@ public class SessionConfiguration {
                 if (!"chat".equals(role)) {
                     // 辅助 client 也挂计量 advisor（tasks 5.3 / design D2）：compaction/workshop/title 内部调用同样计费
                     byRole.putIfAbsent(role, ChatClient.builder(model).defaultAdvisors(meteringAdvisor).build());
+                    // 角色到模型名索引（与 byRole.putIfAbsent 同步，装配序首个）——eval judge 指纹等场景用
+                    byRoleModel.putIfAbsent(role, name);
                     // subagent 复用 subagentBuilder bean（与 SubagentConfiguration @Lazy 注入一致）
                     if ("subagent".equals(role)) {
                         byRoleBuilder.putIfAbsent(role, subagentBuilder);
@@ -297,7 +300,7 @@ public class SessionConfiguration {
         //    并存，否则记忆会被加载/写入两次（双写陷阱）。
 
         // 一次性计算工具定义 token 开销（名称 + 描述 + inputSchema）
-        ChatClientRegistry registry = new ChatClientRegistry(byName, rpgByName, byRole, byRoleBuilder, defaultName);
+        ChatClientRegistry registry = new ChatClientRegistry(byName, rpgByName, byRole, byRoleBuilder, byRoleModel, defaultName);
         int toolTokens = resilientTools.stream()
                 .mapToInt(tc -> {
                     var def = tc.getToolDefinition();

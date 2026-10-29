@@ -1,0 +1,129 @@
+runId: 5ffd6d5b-1c82-45f8-8a10-0a5058557d7f
+name: 天下霸图
+sourceMode: ip_name
+styleMode: faithful
+sourceFile: source.md
+sourcePages: [page-01, page-02]
+currentStage: S3
+status: FAILED
+createdAt: '2026-10-27T20:11:19.699719800'
+updatedAt: '2026-10-28T13:34:48.345090800'
+stages:
+  S1:
+    status: CONFIRMED
+    version: 5
+    summary: 明代中叶背景下，玩家扮演武林门派掌门，在奸臣严嵩挑起的江湖动荡中，通过资源经营、武学相克与外交博弈，以武力剿灭或声望归顺的方式一统武林的门派争霸模拟。
+    rounds:
+    - {round: 1, feedback: 人物不全, at: '2026-10-27T22:57:56.431141400'}
+    - round: 2
+      feedback: |-
+        | 三阴夺元掌 | "早年曾以一套三阴夺元掌一举铲平云南哀牢派" |
+        | 降龙十八掌失传 | "意不及得传降龙十八掌及打狗棒法" |
+        这两段貌似缺了点东西
+      at: '2026-10-27T23:22:12.936965100'
+    confirmedVersion: 5
+    candidates: []
+  S2:
+    status: CONFIRMED
+    version: 3
+    summary: 大明武林争霸录
+    rounds: []
+    confirmedVersion: 3
+    candidates: []
+  S3:
+    status: FAILED
+    version: 7
+    summary: 20 个候选：人物 1：严嵩、人物 2：冷傲天、人物 3：东方狂、人物 4：上官疑、人物 5：司徒媚、人物 6：呼延霸、人物 7：张伦伟、人物
+      8：空问神僧、人物 9：清虚道长、人物 10：欧阳轩、人物 11：乌彩衣、人物 12：无相禅师、…
+    rounds:
+    - {round: 1, feedback: 缺少人物, at: '2026-10-28T00:14:48.927923900'}
+    - {round: 2, feedback: 人物应该不止8个, at: '2026-10-28T00:47:23.648824700'}
+    - {round: 3, feedback: 人物不止14个, at: '2026-10-28T07:40:42.100596400'}
+    - {round: 4, feedback: 人还是不全, at: '2026-10-28T13:09:02.780636'}
+    confirmedVersion: null
+    upstreamVersion: 3
+    candidates:
+    - {id: candidate-01, title: 人物 1：严嵩, status: PENDING}
+    - {id: candidate-02, title: 人物 2：冷傲天, status: PENDING}
+    - {id: candidate-03, title: 人物 3：东方狂, status: PENDING}
+    - {id: candidate-04, title: 人物 4：上官疑, status: PENDING}
+    - {id: candidate-05, title: 人物 5：司徒媚, status: PENDING}
+    - {id: candidate-06, title: 人物 6：呼延霸, status: PENDING}
+    - {id: candidate-07, title: 人物 7：张伦伟, status: PENDING}
+    - {id: candidate-08, title: 人物 8：空问神僧, status: PENDING}
+    - {id: candidate-09, title: 人物 9：清虚道长, status: PENDING}
+    - {id: candidate-10, title: 人物 10：欧阳轩, status: PENDING}
+    - {id: candidate-11, title: 人物 11：乌彩衣, status: PENDING}
+    - {id: candidate-12, title: 人物 12：无相禅师, status: PENDING}
+    - {id: candidate-13, title: 人物 13：独孤鸿, status: PENDING}
+    - {id: candidate-14, title: 人物 14：楚莫愁, status: PENDING}
+    - {id: candidate-15, title: 人物 15：公冶一, status: PENDING}
+    - {id: candidate-16, title: 人物 16：凌遥仙, status: PENDING}
+    - {id: candidate-17, title: 人物 17：赤松子, status: PENDING}
+    - {id: candidate-18, title: 人物 18：吴不归, status: PENDING}
+    - {id: candidate-19, title: 人物 19：空闻, status: PENDING}
+    - {id: candidate-20, title: 人物 20：阴步云, status: PENDING}
+    - {id: candidate-21, title: 乌元敬：巫山派第十三任掌门, status: PENDING}
+    - {id: candidate-22, title: 乌彩蝶：乌彩衣大姊, status: PENDING}
+    - {id: candidate-23, title: 乌彩凤：巫山派洞庭分舵舵主, status: PENDING}
+    - {id: candidate-24, title: 黑霓裳：巫山派执法长老, status: PENDING}
+    - {id: candidate-25, title: 华吟月：巫山派刀法奇术传人, status: PENDING}
+    - {id: candidate-26, title: 无我：宝相寺高僧（俗名"八面猴"程剧）, status: PENDING}
+    - {id: candidate-27, title: 不忧：无相禅师大弟子, status: PENDING}
+    - {id: candidate-28, title: 了因大师：宝相寺第五任方丈, status: PENDING}
+    - {id: candidate-29, title: 圣因禅师：无我之师, status: PENDING}
+    - {id: candidate-30, title: 张跃岸：丐帮长老, status: PENDING}
+    - {id: candidate-31, title: 张跃昆：丐帮传功长老, status: PENDING}
+    - {id: candidate-32, title: 皇甫渊：丐帮掌钵长老, status: PENDING}
+    - {id: candidate-33, title: 林长昊：丐帮执法长老, status: PENDING}
+    - {id: candidate-34, title: 王威魏：丐帮净衣派首席长老, status: PENDING}
+    - {id: candidate-35, title: 颜云展：丐帮前帮主, status: PENDING}
+    - {id: candidate-36, title: 王镇东：应天府豪杰, status: PENDING}
+    - {id: candidate-37, title: 空见：少林般若堂首座, status: PENDING}
+    - {id: candidate-38, title: 空性：少林罗汉堂首座, status: PENDING}
+    - {id: candidate-39, title: 智嗔：空问神僧二弟子, status: PENDING}
+    - {id: candidate-40, title: 苦石禅师：空见之师, status: PENDING}
+    batches:
+    - index: 1
+      names: [乌元敬, 乌彩蝶, 乌彩凤, 黑霓裳, 华吟月, 无我, 不忧, 了因大师, 圣因禅师, 张跃岸, 张跃昆, 皇甫渊, 林长昊, 王威魏,
+        颜云展, 王镇东, 空见, 空性, 智嗔, 苦石禅师]
+      status: DONE
+    - index: 2
+      names: [清门, 清灵, 清风, 司徒玄, 宇文邪, 林振翼, 傅见智, 李袭奇, 逍遥子, 赤华子, 赤峰子, 赤练子, 赤桐子, 赤星子, 展云白,
+        许芊卉, 许芊芷, 许星辰, 余鸣弦, 凌遥仙（凌瑶仙）]
+      status: FAILED
+    - index: 3
+      names: [晓净师太, 许嘉妤, 程薏蕙, 汤绘如, 李玥, 端木寿, 轩辕止, 阳羲和, 阴波寒, 洞石和尚, 阎添寿, 谢茗茹, 谢三川, 万震,
+        梅笔, 兰墨, 竹纸, 菊砚, 黄一丰, 严婆婆]
+      status: FAILED
+    - index: 4
+      names: [萨闻博, 冉琼梅, 冉仝, 龙振岗, 熊霸天, 钱广进, 黑旋风]
+      status: PENDING
+  S4:
+    status: NOT_STARTED
+    version: 0
+    summary: null
+    rounds: []
+    confirmedVersion: null
+    candidates: []
+  S4.5:
+    status: NOT_STARTED
+    version: 0
+    summary: null
+    rounds: []
+    confirmedVersion: null
+    candidates: []
+  S5:
+    status: NOT_STARTED
+    version: 0
+    summary: null
+    rounds: []
+    confirmedVersion: null
+    candidates: []
+  S6:
+    status: NOT_STARTED
+    version: 0
+    summary: null
+    rounds: []
+    confirmedVersion: null
+    candidates: []

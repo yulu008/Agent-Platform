@@ -1,0 +1,1006 @@
+=== StageGateServiceTest.java  size=45814
+  @1668 L42: E3 80 3F
+    m-gates「L1 编辑门草稿编辑�?「确认稿幂等锁定�?「�
+  @1695 L42: E3 80 3F
+    �编辑�?「确认稿幂等锁定�?「返工动作」）�?
+ * <p>
+  @1719 L42: E3 80 3F
+    �等锁定�?「返工动作」）�?
+ * <p>
+ * repository mock + �
+  @1778 L44: EF BC 3F
+     mock + 真实工作区（@TempDir�? 真实 {@link PipelineRunServic
+  @1835 L45: EF BC 3F
+    ineRunService}
+ * ——守卫链�?04 / 锁定�?/ 非当前阶�?/
+  @1849 L45: E6 80 3F
+    
+ * ——守卫链�?04 / 锁定�?/ 非当前阶�?/ S6 只读 / L
+  @1866 L45: E6 AE 3F
+    链�?04 / 锁定�?/ 非当前阶�?/ S6 只读 / L2 逐卡）、编
+  @1907 L45: E5 AD 3F
+     只读 / L2 逐卡）、编辑保�?
+ * 产物与版本快照落盘�
+  @2311 L50: E5 9B 3F
+    �言：候选解析→拼接→全�?JSON 落盘）�?
+ */
+class Sta
+  @2328 L50: E3 80 3F
+    ��→拼接→全�?JSON 落盘）�?
+ */
+class StageGateServiceTest
+  @2693 L63: E4 B8 3F
+    ;
+
+    /** 单幕候选夹具（�?S4.5 生成链落盘形态一致
+  @2751 L63: E5 B9 3F
+    ��态一致：<story_graph> 块单�?JSON�?*/
+    private static fi
+  @2758 L63: EF BC 3F
+    �致：<story_graph> 块单�?JSON�?*/
+    private static final Str
+  @2908 L67: E8 AF 3F
+    d": "act1", "theme": "潜入与结�?,
+              "state_schema":
+  @3079 L70: E9 82 3F
+    e": "scene", "beat": "夜探织田�?},
+                {"id": "n1_0
+  @3478 L81: E6 8A 3F
+    d": "act2", "theme": "分裂与択�?,
+              "nodes": [
+   
+  @4517 L103: E3 80 3F
+     + source 落盘），返回 runId�?*/
+    private String newRun() 
+  @4787 L110: E6 8A 3F
+    rn run.getId();
+    }
+
+    /** �?run 摆到指定阶段待确认�
+  @4839 L110: E6 80 3F
+    �阶段待确认门（manifest 状�?+ 库表�?stub）�?*/
+    pri
+  @4850 L110: E8 A1 3F
+    ��认门（manifest 状�?+ 库表�?stub）�?*/
+    private void s
+  @4860 L110: E3 80 3F
+    �manifest 状�?+ 库表�?stub）�?*/
+    private void stageAwaiti
+  @5602 L125: E8 A1 3F
+    (id);
+        run.setName("库表�?);
+        run.setSourceMode("t
+  @5932 L135: EF BC 3F
+     L1 草稿编辑保存（tasks 4.2�?=====
+
+    @Test
+    void L1�
+  @6310 L144: E5 AE 3F
+    ge.S2_WORLD_SETTING, "编辑后内�?);
+
+        assertEquals("S2",
+  @6475 L148: E3 80 3F
+    �后的版本覆盖工作区文件�?
+        assertEquals("编辑后
+  @6513 L149: E5 AE 3F
+            assertEquals("编辑后内�?,
+                workspaceStor
+  @6651 L151: E7 A8 3F
+     // 同版本号快照落盘（原�?v1 经版本历史回看由生�
+  @6741 L152: E5 AE 3F
+            assertEquals("编辑后内�?,
+                workspaceStor
+  @6941 L154: EF BC 3F
+    �认，可再编辑或整稿通过�?
+        PipelineManifest manife
+  @8918 L196: E5 86 3F
+    �集目录，不允许全稿覆盖�?
+        assertThat(workspaceSto
+  @9090 L201: E4 BD 3F
+    �移防御非当前阶段拒绝操�?) {
+        String runId = newR
+  @9183 L204: E8 84 3F
+    ting(runId, "S3", 1);
+        // �?manifest：S2 手工�?AWAITING_
+  @9206 L204: E7 BD 3F
+            // �?manifest：S2 手工�?AWAITING_CONFIRM �?currentStage
+  @9226 L204: E4 BD 3F
+    st：S2 手工�?AWAITING_CONFIRM �?currentStage=S3
+        // （�
+  @9317 L205: EF BC 3F
+    �，防御性复核钉住不越权�?
+        PipelineManifest manife
+  @9741 L212: E6 AE 3F
+    tMessage()).contains("非当前阶�?);
+    }
+
+    @Test
+    void
+  @9798 L216: E5 AD 3F
+    st
+    void run不存在编辑保�?04() {
+        when(runReposito
+  @10051 L220: E7 A8 3F
+     PipelineStage.S2_WORLD_SETTING, "�?));
+        assertThat(e.getMes
+  @10110 L221: E5 9C 3F
+    t(e.getMessage()).contains("不存�?);
+    }
+
+    // ===== 整稿
+  @10270 L227: E6 AE 3F
+    �过锁定阶段并推进当前阶�?) {
+        String runId = newR
+  @10922 L240: EF BC 3F
+           // 库表同步（D3 后写�?
+        verify(runRepository).u
+  @11170 L248: E3 80 3F
+    
+        // 3 候选：1 已确认�? 已毙�? 待定（spec「整�
+  @11180 L248: E3 80 3F
+    / 3 候选：1 已确认�? 已毙�? 待定（spec「整稿通过前
+  @13151 L284: E7 BB 3F
+    �稿通过走安装端点语义拒�?) {
+        String runId = newR
+  @13609 L294: EF BC 3F
+    （story-graph-authoring tasks 2.5�?=====
+
+    /** �?S4.5 待确�
+  @13629 L296: E6 91 3F
+    ring tasks 2.5�?=====
+
+    /** �?S4.5 待确认门 + 两幕候选
+  @13702 L296: E3 80 3F
+    ��态可配）+ 候选文件落盘�?*/
+    private void stageWithGr
+  @14045 L301: E7 AC 3F
+    t.CandidateState("candidate-01", "�?1 幕「潜入与结识�?, act1
+  @14071 L301: E3 80 3F
+    e-01", "�?1 幕「潜入与结识�?, act1Status),
+                
+  @14159 L302: E7 AC 3F
+    t.CandidateState("candidate-02", "�?2 幕「分裂与択択�?, act2
+  @14185 L302: E3 80 3F
+    e-02", "�?2 幕「分裂与択択�?, act2Status)));
+        worksp
+  @14561 L309: E5 9B 3F
+    �过执行跨幕拼接并落盘全�?) {
+        String runId = newR
+  @15064 L318: E8 BE 3F
+    �议包裹 + 两幕 + 引擎拼接�?+ 词汇�?
+        String graph
+  @15075 L318: E8 A1 3F
+    + 两幕 + 引擎拼接�?+ 词汇�?
+        String graph = workspac
+  @15384 L323: E9 94 3F
+    " : \"act2\"");
+        // 出口�?n1_05 �?下幕入口 n2_01 的�
+  @15393 L323: E2 86 3F
+    2\"");
+        // 出口�?n1_05 �?下幕入口 n2_01 的引擎拼�
+  @15442 L323: E6 80 3F
+     n2_01 的引擎拼接边（确定�?ID�?
+        assertThat(graph).
+  @15447 L323: EF BC 3F
+    1 的引擎拼接边（确定�?ID�?
+        assertThat(graph).conta
+  @15603 L326: E7 AC 3F
+    \"to\" : \"n2_01\"");
+        // �?1 幕产出的词汇表随全图
+  @15753 L328: E7 95 3F
+    ");
+        // 幕内模型边保�?
+        assertThat(graph).conta
+  @16006 L336: E5 B9 3F
+    IRMED", "CONFIRMED");
+        // �?1 候选被手工改坏（后续
+  @16211 L338: E5 9D 3F
+       "candidate-01", "<story_graph>{�?JSON");
+
+        IllegalArgume
+  @17262 L357: E9 80 3F
+    ssage()).contains("无可用幕候�?).contains("返工重生�?);
+ 
+  @17289 L357: E6 88 3F
+    �幕候�?).contains("返工重生�?);
+        assertEquals("AWAITI
+  @17548 L364: E6 8E 3F
+    
+    void 被毙幕候选不进拼�?) {
+        String runId = newR
+  @17601 L366: E5 B9 3F
+    ing runId = newRun();
+        // �?1 被毙：拼接只含幕 2（�
+  @17668 L366: EF BC 3F
+    �单幕无跨幕对，无拼接边�?
+        stageWithGraphCandidate
+  @17994 L372: EF BC 3F
+    聚合（幕 1 节点/边不出现�?
+        assertThat(graph).doesN
+  @18176 L375: E8 BE 3F
+    �幕无跨幕对：无引擎拼接�?
+        assertThat(graph).doesN
+  @18478 L384: E4 BD 3F
+    ")));
+        // currentStage=S2 �?S2 尚在生成中（RUNNING 态
+  @19070 L396: EF BC 3F
+    === L2 门逐卡操作（tasks 4.3�?=====
+
+    /**
+     * S3 待�
+  @19173 L399: E8 B0 3F
+    �齐真实链路：生成完成回�?
+     * initStageCandidates �?P
+  @19204 L400: E5 85 3F
+    回�?
+     * initStageCandidates �?PENDING + 候选文件落盘；t
+  @19269 L400: E3 80 3F
+    ；title 取首行去 ## 前缀）�?
+     */
+    private void stage
+  @20885 L432: E5 8F 3F
+    �再点一次零异常、状态不�?
+        service.rejectCandidate
+  @21181 L439: E6 AF 3F
+    �认置CONFIRMED且确认后可改�?) {
+        String runId = newR
+  @21570 L447: EF BC 3F
+    �毙（毙掉优先于早前确认�?
+        service.rejectCandidate
+  @23250 L484: E9 97 3F
+    .getMessage()).contains("L1 编辑�?);
+    }
+
+    @Test
+    void
+  @23337 L488: E7 85 3F
+    �单卡并递增版本落语义快�?) {
+        String runId = newR
+  @23530 L491: E5 AE 3F
+    �已毙：语义快照不应包含�?
+        service.rejectCandidate
+  @23781 L495: E5 90 3F
+    te-01", "## 人物 1：甲\n编辑�?);
+
+        assertEquals(2, re
+  @23935 L499: E5 90 3F
+    tEquals("## 人物 1：甲\n编辑�?,
+                workspaceStor
+  @24253 L503: E7 9A 3F
+    �照：非毙候选聚合（被毙�?candidate-02 不进，口径同�
+  @24299 L503: EF BC 3F
+    -02 不进，口径同语义全稿�?
+        assertEquals("## 人物
+  @24350 L504: E5 90 3F
+    tEquals("## 人物 1：甲\n编辑�?,
+                workspaceStor
+  @24499 L506: E5 8F 3F
+    est 版本递增、候选状态不�?
+        assertEquals(2, workspa
+  @24774 L513: E8 BE 3F
+    st
+    void 已毙候选不可编�?) {
+        String runId = newR
+  @26298 L542: EF BC 3F
+        // ===== L2 返工（tasks 4.4�?=====
+
+    @Test
+    void 返
+  @26787 L554: E8 90 3F
+    �家");
+
+        // 反馈记账�?manifest（rounds 真源：反�
+  @26826 L554: E5 8F 3F
+    nifest（rounds 真源：反馈历�?+ 版本树跨天回看）
+    
+  @27203 L560: E5 B7 3F
+     // 委托生成流（v N+1 与返�?prompt 注入�?StageGenerationS
+  @27219 L560: E7 94 3F
+    流（v N+1 与返�?prompt 注入�?StageGenerationService 承担�?
+  @27251 L560: EF BC 3F
+    ���?StageGenerationService 承担�?
+        List<ServerSentEvent<Ob
+  @27898 L574: E9 A6 3F
+    Stage.S3_CHARACTERS, "第一轮反�?);
+        service.reworkStage(
+  @27982 L575: E9 A6 3F
+    Stage.S3_CHARACTERS, "第二轮反�?);
+
+        List<PipelineManif
+  @28244 L581: E9 A6 3F
+            assertEquals("第二轮反�?, rounds.get(1).getFeedback());
+  @28341 L585: E5 AD 3F
+    d L1阶段返工拒绝走编辑保�?) {
+        String runId = newR
+  @28650 L591: E9 97 3F
+    .getMessage()).contains("L1 编辑�?).contains("无返工动�?);
+ 
+  @28677 L591: E4 BD 3F
+     编辑�?).contains("无返工动�?);
+        // 零副作用：�
+  @29814 L615: E9 A6 3F
+    Stage.S3_CHARACTERS, "锁定后反�?));
+        assertThat(e.getMes
+  @30212 L623: E7 BB 3F
+    st
+    void run不存在返工拒�?) {
+        when(runRepository.
+  @30526 L628: E5 9C 3F
+    getMessage()).contains("run 不存�?);
+        verify(generationSer
+  @30683 L633: E7 94 3F
+    �当前阶段返工拒绝零副作�?) {
+        String runId = newR
+  @30776 L636: E8 84 3F
+    ting(runId, "S3", 1);
+        // �?manifest：S5 手工�?AWAITING_
+  @30799 L636: E7 BD 3F
+            // �?manifest：S5 手工�?AWAITING_CONFIRM �?currentStage
+  @30819 L636: E4 BD 3F
+    st：S5 手工�?AWAITING_CONFIRM �?currentStage=S3
+        Pipelin
+  @31265 L643: E6 AE 3F
+    tMessage()).contains("非当前阶�?);
+        assertThat(workspace
+  @31523 L648: EF BC 3F
+    （story-graph-authoring tasks 2.6�?=====
+
+    @Test
+    void S4_
+  @31595 L651: E6 8E 3F
+    �轮返工路由到幕级生成编�?) {
+        String runId = newR
+  @31968 L659: E8 90 3F
+    �馈");
+
+        // 反馈记账�?manifest + 路由幕级编排（
+  @32495 L668: E5 B9 3F
+    �单幕返工不波及他幕」：�?2 被毙返工，幕 1 确认状
+  @32536 L668: E5 8F 3F
+    �毙返工，幕 1 确认状态不�?
+        stageWithGraphCandidate
+  @32838 L673: E5 B9 3F
+    reworkAct(runId, "candidate-02", "�?2 节奏太拖");
+
+        // 
+  @32938 L675: E5 B9 3F
+    �回通道的单幕具体化）；�?1 状态不�?
+        List<Pipe
+  @32952 L675: E5 8A 3F
+    ��幕具体化）；�?1 状态不�?
+        List<PipelineManifest.C
+  @33254 L680: E8 B4 3F
+    tatus());
+        // 返工轮记�?+ 委托单幕生成（幕号从
+  @33292 L680: E9 80 3F
+     委托单幕生成（幕号从候�?ID 尾部数字解析�?
+       
+  @33316 L680: EF BC 3F
+    �号从候�?ID 尾部数字解析�?
+        assertThat(workspaceSto
+  @33472 L682: E5 B9 3F
+    hGeneration).generateActs(runId, "�?2 节奏太拖", 2);
+    }
+
+ 
+  @34348 L701: E7 BB 3F
+    oid 幕级返工未知幕候选拒�?) {
+        String runId = newR
+  @35138 L716: E5 B9 3F
+    �解锁回 AWAITING_CONFIRM 后，�?1 解锁且拼接图失效待重
+  @35173 L716: E6 8B 3F
+    �?1 解锁且拼接图失效待重�?
+        stageWithGraphCandidate
+  @35965 L729: E5 B9 3F
+    ORY_GRAPH)).isNull();
+        // �?1 解锁复位 PENDING；幕 2 �
+  @36368 L737: E7 BB 3F
+    oid 幕级解锁非已确认幕拒�?) {
+        String runId = newR
+  @36680 L743: E9 80 3F
+    ssage()).contains("仅已确认候�?);
+        // 零副作用：�
+  @36728 L744: E5 8A 3F
+     // 零副作用：候选状态不�?
+        assertEquals("PENDING",
+  @36927 L750: E7 BB 3F
+    oid 幕级解锁未知幕候选拒�?) {
+        String runId = newR
+  @37302 L759: EF BC 3F
+     // ===== 回退解锁（tasks 4.5�?=====
+
+    @Test
+    void 解
+  @37382 L762: E7 95 3F
+    �态回退currentStage且存档保�?) {
+        String runId = newR
+  @38397 L779: E8 BD 3F
+    �锁本身不递增版本（新一�?v(N+1) 由解锁后的编�?生�
+  @38425 L779: E8 BE 3F
+    新一�?v(N+1) 由解锁后的编�?生成承担�?
+        assertEq
+  @38440 L779: EF BC 3F
+     由解锁后的编�?生成承担�?
+        assertEquals(1, manifes
+  @39098 L793: E7 A8 3F
+    ge.S2_WORLD_SETTING, "解锁后新�?);
+
+        // spec「解锁�
+  @39203 L795: E6 8B 3F
+    �由解锁后的第一次编辑承�?
+        assertEquals(2, result.
+  @39290 L797: E7 A8 3F
+            assertEquals("解锁后新�?,
+                workspaceStor
+  @39729 L806: E2 86 3F
+    S3_CHARACTERS);   // currentStage �?S4
+
+        Map<String, Object
+  @40198 L814: EF BC 3F
+    �毙，锁定语义只在阶段级�?
+        assertEquals("CONFIRMED
+  @40348 L819: E7 BB 3F
+    
+    void 未锁定阶段解锁拒�?) {
+        String runId = newR
+  @40650 L825: E6 AE 3F
+    tMessage()).contains("仅锁定阶�?);
+        // 零副作用：�
+  @41081 L834: E6 B8 3F
+    �级解锁拒绝提示先解锁下�?) {
+        String runId = newR
+  @41201 L837: E4 B8 3F
+        // 合法不变式摆位：S2 �?S3 均已确认，currentStage �
+  @41815 L847: E4 BD 3F
+    ：跨级回退会造成 S2 解锁�?S3 �?CONFIRMED 的脏 manifest
+  @41821 L847: E4 BB 3F
+    级回退会造成 S2 解锁�?S3 �?CONFIRMED 的脏 manifest
+     
+  @42171 L855: E8 AF 3F
+    
+    void S6解锁拒绝终态只�?) {
+        String runId = newR
+  @42418 L860: E6 80 3F
+    That(e.getMessage()).contains("终�?).contains("不可回退解锁")
+  @42583 L865: E7 BB 3F
+    st
+    void run不存在解锁拒�?) {
+        when(runRepository.
+  @42890 L870: E5 9C 3F
+    getMessage()).contains("run 不存�?);
+    }
+
+    @Test
+    void
+  @43135 L877: E2 86 3F
+    WORLD_SETTING);   // currentStage �?S3
+        // 下游 S3 生成�
+  @43700 L886: E4 BB 3F
+    用：S2 仍锁定、currentStage �?S3
+        PipelineManifest aft
+  @44037 L895: E5 85 3F
+    �后重复整稿通过拒绝防重�?) {
+        String runId = newR
+  @44342 L901: EF BC 3F
+           // 提示须先回退解锁�?
+        IllegalStateException e
+  @44970 L913: E5 86 3F
+    �确认候选再确认幂等零重�?) {
+        String runId = newR
+  @45441 L921: EF BC 3F
+    ifest 未落盘，updatedAt 不变�?
+        PipelineManifest manife
+  total issues: 153
+=== PlannerWorldInstallerTest.java  size=20317
+  @2301 L50: E3 80 3F
+    .1，spec planner-world-install）�?
+ * <p>
+ * 钉住：守卫链�
+  @2358 L52: E8 AE 3F
+    �守卫链（前置阶段未全确�?/ 终态不可装 / run 不存�
+  @2391 L52: E5 9C 3F
+    ��?/ 终态不可装 / run 不存�?/ manifest 缺失 /
+ * 世界�
+  @2515 L53: E3 80 3F
+    选隔离、narrative_rules 落列�?
+ * 命定档案全量重写）�
+  @2619 L54: E5 81 3F
+    败事务回滚、不收口、run �?
+ * AWAITING 可重试）；重�
+  @2689 L55: E6 96 3F
+    �安装产出独立世界（每次�?world_id）；故事图物�?
+ *
+  @2718 L55: E5 8C 3F
+    ��次�?world_id）；故事图物�?
+ * （story-graph-authoring tas
+  @2780 L56: E2 86 3F
+    ing tasks 5.2：S4.5 拼接产物 �?模板层图行，产物
+ * 缺
+  @2819 L57: E5 9D 3F
+    �板层图行，产物
+ * 缺失/�?JSON 拒绝零写入）�?
+ * <p
+  @2845 L57: E3 80 3F
+     缺失/�?JSON 拒绝零写入）�?
+ * <p>
+ * 装配惯例对齐 {
+  @2917 L59: E5 85 3F
+    de PipelineRunServiceTest}：repo �?mock、工作区走真�?
+ * 文
+  @2942 L59: E5 AE 3F
+    }：repo �?mock、工作区走真�?
+ * 文件（@TempDir）；run �
+  @2982 L60: E8 B5 3F
+     文件（@TempDir）；run 收口�?b>真实</b> PipelineRunService�
+  @3193 L62: E6 9E 3F
+    �非空转回调）；故事图解�?校验走真实纯组件
+ * （
+  @3280 L63: E3 80 3F
+    toryGraphValidator 同链语义）�?
+ */
+class PlannerWorldInstalle
+  @3424 L69: E5 BD 3F
+    # 名称
+            冥星武将�?
+            ## 时代
+        
+  @3645 L77: E3 80 3F
+    
+            冥星升起的世界�?
+            ## 开场白模板
+  @3720 L79: E3 80 3F
+           你在烽烟中睁开双眼�?
+            ## 世界书条�?
+
+  @3751 L80: E7 9B 3F
+    眼�?
+            ## 世界书条�?
+            ### 冥星
+       
+  @3878 L83: E3 80 3F
+    �每隔四十九年现世的灾星�?
+            """;
+
+    private
+  @4020 L88: E3 80 3F
+           主线从甲的复仇开始�?
+            ## 叙事规则
+  
+  @4088 L90: E5 B0 3F
+               - 每章聚焦一名武�?
+            """;
+
+    private
+  @4232 L95: E5 B8 3F
+    ：甲
+            - 身份：军�?
+            - 性格：狡�?
+ 
+  @4262 L96: E9 BB 3F
+    �军�?
+            - 性格：狡�?
+            - 背景：没落�
+  @4304 L97: E5 90 3F
+            - 背景：没落贵族之�?
+            - 动机：复�?
+ 
+  @4334 L98: E4 BB 3F
+    �之�?
+            - 动机：复�?
+            - 说话风格：�
+  @4379 L99: E8 88 3F
+         - 说话风格：文雅而毒�?
+            - 知识：星象�
+  @4558 L104: E6 98 3F
+    �星
+            - starRank：主�?
+            - eraNote：战国�
+  @4595 L105: E6 9C 3F
+    
+            - eraNote：战国末�?
+            """;
+
+    private
+  @4731 L110: E4 BA 3F
+    ：乙
+            - 身份：浪�?
+            - 性格：沉�?
+ 
+  @4761 L111: E9 BB 3F
+    �浪�?
+            - 性格：沉�?
+            - 背景：来历�
+  @4797 L112: E6 98 3F
+    ?
+            - 背景：来历不�?
+            - 动机：寻刀
+
+  @4895 L115: E6 9C 3F
+    寡言
+            - 知识：剑�?
+            """;
+
+    private
+  @5002 L119: E7 BA 3F
+    
+            ## 分支 1：暗杀�?
+            触发词：暗杀,
+  @5163 L123: E3 80 3F
+    �魁星的光芒会先一步黯淡�?
+            """;
+
+    /** S4.
+  @5272 L126: E8 A3 3F
+    ��盘形态：<story_graph> 块包�?+ acts + state_schema�?*/
+    
+  @5296 L126: EF BC 3F
+    ph> 块包�?+ acts + state_schema�?*/
+    private static final Str
+  @5531 L132: E7 BA 3F
+     "converge_to": [{"orbit": "信任�?, "guard": {"key": "trust_信长
+  @5700 L134: E9 82 3F
+    e": "scene", "beat": "夜探织田�?,
+                    "on_enter
+  @7943 L180: E5 B0 3F
+     // ===== 安装成功：物化映�?+ 收口 =====
+
+    @Test
+   
+  @8272 L189: E5 BD 3F
+    rldName()).isEqualTo("冥星武将�?);
+        // 1 世界书条�?
+  @8304 L190: E7 9B 3F
+    ���?);
+        // 1 世界书条�?+ 1 人物卡（乙被毙）+ 1 
+  @8757 L197: E5 BD 3F
+    getName()).isEqualTo("冥星武将�?);
+        assertThat(world.get
+  @8900 L199: E5 B0 3F
+    )).contains("每章聚焦一名武�?);
+        // 覆盖/主题令�
+  @8987 L200: EF BC 3F
+    ��渐变兜底 + 默认 HUD 主题�?
+        assertThat(world.getCov
+  @9415 L207: E7 94 3F
+    .getValue().getName()).isEqualTo("�?);
+
+        ArgumentCaptor<Lis
+  @9750 L212: E7 94 3F
+    get(0).getFigureKey()).isEqualTo("�?);
+
+        // 1 世界书条�
+  @9784 L214: E7 9B 3F
+    �?);
+
+        // 1 世界书条�?+ 1 分支条目 = 2 次模板�
+  @9967 L217: E2 86 3F
+    �tasks 5.2）：S4.5 拼接产物 �?模板层图行（bounded 缺省
+  @10023 L218: E5 90 3F
+    ounded 缺省 +
+        // 修复�?acts + 词汇表），名 = 世�
+  @10092 L218: EF BC 3F
+    ��名·主线（工坊下拉可辨�?
+        assertThat(result.story
+  @10643 L226: E7 BA 3F
+    )).isEqualTo("冥星武将录·主�?);
+        assertThat(savedGrap
+  @10919 L231: E6 80 3F
+           // 收口：manifest 双状�?+ 库表同步（D3 写序�?
+  
+  @10948 L231: EF BC 3F
+    ��状�?+ 库表同步（D3 写序�?
+        PipelineManifest manife
+  @11761 L247: E5 B7 3F
+            // 第一次安装后 run �?COMPLETED——重装守卫放�
+  @12813 L266: E6 8B 3F
+       // 回退 S4 为未确认（模�?S5 确认前的中间态）
+   
+  @13297 L274: E8 AE 3F
+    ntaining("前置阶段未全部确�?)
+                .hasMessageCo
+  @13420 L280: E5 9B 3F
+       @Test
+    void run不存在返�?04语义() {
+        when(runRe
+  @15083 L324: EF BC 3F
+    （story-graph-authoring tasks 5.2�?=====
+
+    @Test
+    void S45
+  @15154 L327: E5 85 3F
+    �接产物缺失拒绝安装零写�?) {
+        String runId = read
+  @15565 L338: E5 85 3F
+    接产物坏JSON拒绝安装零写�?) {
+        String runId = read
+  @15999 L349: E6 80 3F
+        }
+
+    // ===== 安装原子�?=====
+
+    @Test
+    void 物
+  @16067 L352: E5 8F 3F
+    �化写入失败整体回滚不收�?) {
+        String runId = read
+  @16822 L366: E6 96 3F
+     AWAITING 可重试（重试产出�?world_id�?
+        verify(runRe
+  @16833 L366: EF BC 3F
+    ��重试（重试产出�?world_id�?
+        verify(runRepository, n
+  @17367 L377: E7 9A 3F
+    ====
+
+    /** 造一个可安装�?run：S1-S5 �?CONFIRMED、run A
+  @17382 L377: E5 85 3F
+     造一个可安装�?run：S1-S5 �?CONFIRMED、run AWAITING、产�
+  @17445 L377: E3 80 3F
+    �产物落盘、S3 候选乙被毙�?*/
+    private String readyRun(
+  @19026 L402: E7 BA 3F
+    e("candidate-01", "分支：暗杀�?, "CONFIRMED"));
+        manife
+  @19449 L412: E4 BE 3F
+    rn runId;
+    }
+
+    /** 库表�?run 行（守卫只读 id 与存
+  @19493 L412: E3 80 3F
+    （守卫只读 id 与存在性）�?*/
+    private static PipelineR
+  total issues: 71
+=== PlannerInstallEndToEndTest.java  size=15968
+  @2388 L48: E3 80 3F
+    �add-planner-pipeline tasks 5.3）�?
+ * <p>
+ * 参照 {@code Worksh
+  @2566 L51: E3 80 3F
+    ��拟 JwtTenantFilter 生命周期�?
+ * workspace 系（Store/RunSer
+  @2633 L52: E5 85 3F
+    ervice/Installer）手工构造注�?@TempDir（@Import
+ * 会走 {@
+  @2747 L53: E5 8A 3F
+    �家目录）；事务走切片自�?
+ * 装配�?TransactionManager�
+  @2760 L54: E7 9A 3F
+    ；事务走切片自�?
+ * 装配�?TransactionManager�?
+ * <p>
+ *
+  @2781 L54: E3 80 3F
+    �?
+ * 装配�?TransactionManager�?
+ * <p>
+ * 钉住安装世界�
+  @2853 L56: E6 94 3F
+    �有消费链路的<b>无特殊分�?/b>（spec planner-world-install
+  @2997 L57: EF BC 3F
+    �择器数据源可见（沙盒行�?
+ * �?preset- 前缀不被作�
+  @3004 L58: E9 9D 3F
+    数据源可见（沙盒行�?
+ * �?preset- 前缀不被作品墙剔
+  @3182 L59: EF BC 3F
+     不含该列，保留安装值）�?
+ * lorebook set 开局 fork 照
+  @3271 L60: E5 8C 3F
+    �的通用轨条目；故事图物�?
+ * （story-graph-authoring tas
+  @3336 L61: E2 86 3F
+     tasks 5.2）：S4.5 拼接产物 �?模板层图行，
+ * findByWor
+  @3424 L62: E3 80 3F
+    �可见（开局选图数据源）�?
+ */
+@JdbcTest
+@Import({Tenant
+  @3991 L74: E5 B1 3F
+    oEndTest {
+
+    /** 档案物化�?LLM/外部边界（materializeAr
+  @4099 L74: EF BC 3F
+    同 WorkshopSoftDeleteEndToEndTest�?*/
+    @MockitoBean
+    privat
+  @5963 L134: EF BC 3F
+    ��选择器数据源均为 findAll�?
+        WorldSetting world = wo
+  @6134 L137: E5 BD 3F
+    getName()).isEqualTo("冥星武将�?);
+        assertThat(world.get
+  @6218 L138: E5 B0 3F
+    )).contains("每章聚焦一名武�?);
+        assertThat(worldRepo
+  @6355 L140: E9 9D 3F
+    ));
+        // 沙盒行语义：�?preset- 确定性前�?�?不被
+  @6378 L140: E9 94 3F
+    ��语义：�?preset- 确定性前�?�?不被作品�?scope=works �
+  @6381 L140: E2 86 3F
+    ��义：�?preset- 确定性前�?�?不被作品�?scope=works 剔�
+  @6396 L140: E5 A2 3F
+    et- 确定性前�?�?不被作品�?scope=works 剔除
+        asse
+  @6550 L143: E7 94 3F
+    �候选隔离，常规查询只剩�?
+        assertThat(charRepo.fin
+  @6751 L146: E7 94 3F
+    .assertj.core.groups.Tuple.tuple("�?, "npc"));
+
+        // 命定�
+  @6872 L148: EF BC 3F
+    �份」下拉数据源同族端点�?
+        assertThat(destinedFigu
+  @7097 L151: E7 94 3F
+    .assertj.core.groups.Tuple.tuple("�?, "天魁�?));
+
+        // �
+  @7109 L151: E6 98 3F
+    e.groups.Tuple.tuple("�?, "天魁�?));
+
+        // 世界书模�
+  @7214 L153: E8 BD 3F
+    L）命中安装条目（S2 通用�?+ S5 分支�?
+        assertTha
+  @7228 L153: EF BC 3F
+    ��条目（S2 通用�?+ S5 分支�?
+        assertThat(worldbookRep
+  @7414 L156: E7 BA 3F
+    xactlyInAnyOrder("冥星", "暗杀�?);
+
+        // 故事图物化
+  @7485 L158: E2 86 3F
+    �tasks 5.2）：S4.5 拼接产物 �?模板层图行，常规读路�
+  @7518 L158: E5 BE 3F
+     �?模板层图行，常规读路�?
+        // （findByWorldId：�
+  @8043 L165: E7 BA 3F
+    ryGraphId(), "冥星武将录·主�?, "bounded"));
+        StoryGra
+  @8989 L183: EF BC 3F
+    ry.update 全量重写可编辑列�?
+        WorldSetting edited = w
+  @9176 L186: E3 80 3F
+    tingDesc("编辑后的世界描述�?);
+        worldRepo.update(edi
+  @9474 L191: EF BC 3F
+    �留（编辑不改写、不清空�?
+        assertThat(reloaded.get
+  @9558 L192: E5 B0 3F
+    )).contains("每章聚焦一名武�?);
+    }
+
+    @Test
+    void
+  @9991 L203: EF BC 3F
+    �行（S2 条目 + S5 分支条目�?
+        assertThat(worldbookRep
+  @10170 L206: E7 BA 3F
+    xactlyInAnyOrder("冥星", "暗杀�?);
+    }
+
+    @Test
+    void
+  @10251 L210: E8 A1 3F
+    �不落冥星轨表set复制零星�?) {
+        String runId = read
+  @10640 L217: EF BC 3F
+    �无特殊分支，不炸不报错�?
+        com.luyu.agent.rpg.mode
+  @10940 L225: E7 9A 3F
+    ====
+
+    /** 造一个可安装�?run：S1-S5 �?CONFIRMED、run A
+  @10955 L225: E5 85 3F
+     造一个可安装�?run：S1-S5 �?CONFIRMED、run AWAITING、产�
+  @11018 L225: E3 80 3F
+    �产物落盘、S3 候选乙被毙�?*/
+    private String readyRun(
+  @12601 L250: E7 BA 3F
+    "candidate-01", "分支 1：暗杀�?, "CONFIRMED"));
+        manife
+  @13022 L260: E5 BD 3F
+    # 名称
+            冥星武将�?
+            ## 时代
+        
+  @13243 L268: E3 80 3F
+    
+            冥星升起的世界�?
+            ## 开场白模板
+  @13318 L270: E3 80 3F
+           你在烽烟中睁开双眼�?
+            ## 世界书条�?
+
+  @13349 L271: E7 9B 3F
+    眼�?
+            ## 世界书条�?
+            ### 冥星
+       
+  @13476 L274: E3 80 3F
+    �每隔四十九年现世的灾星�?
+            """;
+
+    private
+  @13618 L279: E3 80 3F
+           主线从甲的复仇开始�?
+            ## 叙事规则
+  
+  @13686 L281: E5 B0 3F
+               - 每章聚焦一名武�?
+            """;
+
+    private
+  @13830 L286: E5 B8 3F
+    ：甲
+            - 身份：军�?
+            - 性格：狡�?
+ 
+  @13860 L287: E9 BB 3F
+    �军�?
+            - 性格：狡�?
+            - 背景：没落�
+  @13902 L288: E5 90 3F
+            - 背景：没落贵族之�?
+            - 动机：复�?
+ 
+  @13932 L289: E4 BB 3F
+    �之�?
+            - 动机：复�?
+            - 说话风格：�
+  @13977 L290: E8 88 3F
+         - 说话风格：文雅而毒�?
+            - 知识：星象�
+  @14156 L295: E6 98 3F
+    �星
+            - starRank：主�?
+            - eraNote：战国�
+  @14193 L296: E6 9C 3F
+    
+            - eraNote：战国末�?
+            """;
+
+    private
+  @14329 L301: E4 BA 3F
+    ：乙
+            - 身份：浪�?
+            - 性格：沉�?
+ 
+  @14359 L302: E9 BB 3F
+    �浪�?
+            - 性格：沉�?
+            - 背景：来历�
+  @14395 L303: E6 98 3F
+    ?
+            - 背景：来历不�?
+            - 动机：寻刀
+
+  @14493 L306: E6 9C 3F
+    寡言
+            - 知识：剑�?
+            """;
+
+    private
+  @14600 L310: E7 BA 3F
+    
+            ## 分支 1：暗杀�?
+            触发词：暗杀,
+  @14761 L314: E3 80 3F
+    �魁星的光芒会先一步黯淡�?
+            """;
+
+    /** S4.
+  @14870 L317: E8 A3 3F
+    ��盘形态：<story_graph> 块包�?+ acts + state_schema�?*/
+    
+  @14894 L317: EF BC 3F
+    ph> 块包�?+ acts + state_schema�?*/
+    private static final Str
+  @15129 L323: E7 BA 3F
+     "converge_to": [{"orbit": "信任�?, "guard": {"key": "trust_信长
+  @15298 L325: E9 82 3F
+    e": "scene", "beat": "夜探织田�?,
+                    "on_enter
+  total issues: 69

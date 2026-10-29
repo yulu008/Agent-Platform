@@ -6,8 +6,13 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.luyu.agent.rpg.config.RpgSavePaths;
 import com.luyu.agent.rpg.model.*;
 import com.luyu.agent.rpg.repository.*;
+import com.luyu.agent.tenancy.TenantContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.ai.session.CreateSessionRequest;
+import org.springframework.ai.session.Session;
+import org.springframework.ai.session.SessionRepository;
+import org.springframework.ai.session.SessionService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -16,6 +21,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -45,8 +51,17 @@ public class WorkshopService {
     private final RpgTriggerRepository triggerRepo;
     private final RpgGameStateRepository stateRepo;
     private final RpgTriggerRuntimeRepository runtimeRepo;
+    private final RpgStarIncarnationRepository starIncarnationRepo;
+    private final RpgStarIncarnationRuntimeRepository starRuntimeRepo;
     private final WorkshopLlmGenerator llmGenerator;
+    private final CharacterOriginService originService;
+    private final WorldCoverStorageService coverStorage;
+    private final RpgWorldbookEntryRepository worldbookRepo;
     private final TransactionTemplate txTemplate;
+    private final LorebookSetService lorebookSetService;
+    private final LoreArchiveService loreArchiveService;
+    private final SessionService sessionService;
+    private final SessionRepository sessionRepository;
 
     public WorkshopService(RpgWorldSettingRepository worldRepo,
                            RpgCharacterCardRepository charRepo,
@@ -55,8 +70,17 @@ public class WorkshopService {
                            RpgTriggerRepository triggerRepo,
                            RpgGameStateRepository stateRepo,
                            RpgTriggerRuntimeRepository runtimeRepo,
+                           RpgStarIncarnationRepository starIncarnationRepo,
+                           RpgStarIncarnationRuntimeRepository starRuntimeRepo,
                            WorkshopLlmGenerator llmGenerator,
-                           PlatformTransactionManager transactionManager) {
+                           CharacterOriginService originService,
+                           WorldCoverStorageService coverStorage,
+                           PlatformTransactionManager transactionManager,
+                           RpgWorldbookEntryRepository worldbookRepo,
+                           LorebookSetService lorebookSetService,
+                           LoreArchiveService loreArchiveService,
+                           SessionService sessionService,
+                           SessionRepository sessionRepository) {
         this.worldRepo = worldRepo;
         this.charRepo = charRepo;
         this.locationRepo = locationRepo;
@@ -64,11 +88,20 @@ public class WorkshopService {
         this.triggerRepo = triggerRepo;
         this.stateRepo = stateRepo;
         this.runtimeRepo = runtimeRepo;
+        this.starIncarnationRepo = starIncarnationRepo;
+        this.starRuntimeRepo = starRuntimeRepo;
         this.llmGenerator = llmGenerator;
+        this.originService = originService;
+        this.coverStorage = coverStorage;
+        this.worldbookRepo = worldbookRepo;
         // 用 TransactionTemplate 而非 @Transactional：localizeNames 先做 LLM 调用与校验（耗时、失败无需回滚），
         // 只把四张表的 DB 重写包进事务；若给同类的私有重写方法标 @Transactional，
         // 自调用会绕过代理而静默失效。
         this.txTemplate = new TransactionTemplate(transactionManager);
+        this.lorebookSetService = lorebookSetService;
+        this.loreArchiveService = loreArchiveService;
+        this.sessionService = sessionService;
+        this.sessionRepository = sessionRepository;
     }
 
     // ==================== 世界观 CRUD ====================
@@ -100,29 +133,35 @@ public class WorkshopService {
     }
 
     /**
-     * 阻塞式删除世界观：旗下仍有地点/角色/触发器/存档任一类子数据时拒绝。
+     * 条件级联软删除世界观（workshop-soft-delete-cascade D3）：
+     * 世界下有存档 → 409 阻塞（提示先删存档）；无存档 → 单事务内级联软删
+     * 世界、全部角色、地点、关系、触发器与冥星模板行。
+     * 通用世界书模板行与封面文件不参与级联、原样保留（软删是数据安全网）。
      *
      * @throws IllegalArgumentException 世界不存在
-     * @throws IllegalStateException    存在子数据引用，拒绝删除（消息指明具体类别）
+     * @throws IllegalStateException    世界下仍有存档，拒绝删除
      */
     public void deleteWorld(String id) {
-        if (worldRepo.findById(id) == null) {
+        WorldSetting world = worldRepo.findById(id);
+        if (world == null) {
             throw new IllegalArgumentException("世界不存在: " + id);
-        }
-        if (charRepo.countByWorldId(id) > 0) {
-            throw new IllegalStateException("该世界下仍有角色，请先删除角色");
-        }
-        if (locationRepo.countByWorldId(id) > 0) {
-            throw new IllegalStateException("该世界下仍有地点，请先删除地点");
-        }
-        if (triggerRepo.countByWorldId(id) > 0) {
-            throw new IllegalStateException("该世界下仍有触发器，请先删除触发器");
         }
         if (stateRepo.countByWorldId(id) > 0) {
             throw new IllegalStateException("该世界下仍有存档，请先删除存档");
         }
-        worldRepo.deleteById(id);
-        log.info("世界观已删除: id={}", id);
+        txTemplate.executeWithoutResult(status -> {
+            // 关系表无 world_id 列：经该世界每个角色双向软删（另一端在他世界的行随端点失效一并软删）
+            for (CharacterCard card : charRepo.findByWorldId(id)) {
+                relRepo.softDeleteByCharId(card.getId());
+            }
+            charRepo.softDeleteByWorldId(id);
+            locationRepo.softDeleteByWorldId(id);
+            triggerRepo.softDeleteByWorldId(id);
+            starIncarnationRepo.softDeleteTemplatesByWorldId(id);
+            worldRepo.softDeleteById(id);
+        });
+        // 封面文件刻意保留（design D3）：物理行与资产都不动，对齐软删安全网定位
+        log.info("世界观已级联软删除: id={}, name={}", id, world.getName());
     }
 
     // ==================== 角色卡 CRUD ====================
@@ -165,35 +204,42 @@ public class WorkshopService {
     }
 
     /**
-     * 阻塞式删除角色：被关系（任一端）/触发器/存档（作为玩家）引用时拒绝。
+     * 条件级联软删除角色（workshop-soft-delete-cascade D4）：
+     * 被存档引用为玩家 → 409；否则级联软删其两端关系与 npc_id 指向它的全部触发器。
+     * 被关系/触发器引用不构成拒绝理由（推翻 workshop-form-delete 阻塞式）；
+     * NPC 侧存档 npc_states 悬空 key 走兜底渲染，无需迁移。
      *
      * @throws IllegalArgumentException 角色不存在
-     * @throws IllegalStateException    存在引用，拒绝删除（消息指明具体原因）
+     * @throws IllegalStateException    该角色是某存档的玩家角色，拒绝删除
      */
     public void deleteCharacter(String id) {
         if (charRepo.findById(id) == null) {
             throw new IllegalArgumentException("角色不存在: " + id);
         }
-        if (relRepo.countByCharId(id) > 0) {
-            throw new IllegalStateException("该角色存在角色间关系，请先删除相关关系");
-        }
-        if (triggerRepo.countByNpcId(id) > 0) {
-            throw new IllegalStateException("该角色被触发器引用，请先删除相关触发器");
-        }
         if (stateRepo.countByPlayerCharId(id) > 0) {
             throw new IllegalStateException("该角色是某存档的玩家角色，请先删除对应存档");
         }
-        charRepo.deleteById(id);
-        log.info("角色卡已删除: id={}", id);
+        txTemplate.executeWithoutResult(status -> {
+            relRepo.softDeleteByCharId(id);
+            triggerRepo.softDeleteByNpcId(id);
+            charRepo.softDeleteById(id);
+        });
+        log.info("角色卡已级联软删除: id={}", id);
     }
 
     // ==================== 地点 CRUD ====================
 
     public Location saveLocation(Location location) {
-        if (location.getId() == null || location.getId().isBlank()) {
+        boolean isNew = location.getId() == null || location.getId().isBlank();
+        if (isNew) {
             location.setId(UUID.randomUUID().toString());
         }
-        locationRepo.save(location);
+        if (!isNew && locationRepo.findById(location.getId()) != null) {
+            locationRepo.update(location.getId(), location.getName(), location.getDescription(),
+                    location.getNpcIds(), location.getTriggerIds());
+        } else {
+            locationRepo.save(location);
+        }
         log.info("地点已保存: id={}, name={}", location.getId(), location.getName());
         return location;
     }
@@ -206,13 +252,43 @@ public class WorkshopService {
         return locationRepo.findByWorldId(worldId);
     }
 
+    /**
+     * 无条件软删除地点（workshop-soft-delete-cascade D5：三件套无对话挂靠，不设阻塞）。
+     *
+     * @return true = 删除成功；false = 不存在或已删（供控制层判 404）
+     */
+    public boolean deleteLocation(String id) {
+        boolean deleted = locationRepo.softDeleteById(id) > 0;
+        if (deleted) {
+            log.info("地点已软删除: id={}", id);
+        }
+        return deleted;
+    }
+
     // ==================== 关系 CRUD ====================
 
+    /**
+     * 保存关系（workshop-soft-delete-cascade D6 复活语义）：
+     * 含 id 且未软删 → 常规编辑；同对角色（任一方向）存在软删行 → 复活原行
+     * （清 deleted_at、覆写字段、复用其 id），绕开 uk_relationship 唯一约束，
+     * 对齐共享包"撤回后重发布复活"惯例；否则新建。
+     */
     public Relationship saveRelationship(Relationship rel) {
-        if (rel.getId() == null || rel.getId().isBlank()) {
+        boolean isNew = rel.getId() == null || rel.getId().isBlank();
+        if (isNew) {
             rel.setId(UUID.randomUUID().toString());
         }
-        relRepo.save(rel);
+        if (!isNew && relRepo.findById(rel.getId()) != null) {
+            relRepo.update(rel);
+        } else {
+            Relationship softDeleted = relRepo.findSoftDeletedByPair(rel.getCharAId(), rel.getCharBId());
+            if (softDeleted != null) {
+                rel.setId(softDeleted.getId());
+                relRepo.revive(rel);
+            } else {
+                relRepo.save(rel);
+            }
+        }
         log.info("关系已保存: id={}, {} <-> {}", rel.getId(), rel.getCharAId(), rel.getCharBId());
         return rel;
     }
@@ -221,19 +297,184 @@ public class WorkshopService {
         return relRepo.findByCharId(charId);
     }
 
+    /**
+     * 某世界的全部关系（关系表无 world_id 列，经该世界角色双向收集后按 id 去重；
+     * 三件套列表用，前端富化两端角色名）。
+     */
+    public List<Relationship> listRelationshipsByWorld(String worldId) {
+        Map<String, Relationship> byId = new LinkedHashMap<>();
+        for (CharacterCard card : charRepo.findByWorldId(worldId)) {
+            for (Relationship rel : relRepo.findByCharId(card.getId())) {
+                byId.putIfAbsent(rel.getId(), rel);
+            }
+        }
+        return new ArrayList<>(byId.values());
+    }
+
+    /**
+     * 无条件软删除关系（D5：三件套无对话挂靠，不设阻塞）。
+     *
+     * @return true = 删除成功；false = 不存在或已删（供控制层判 404）
+     */
+    public boolean deleteRelationship(String id) {
+        boolean deleted = relRepo.softDeleteById(id) > 0;
+        if (deleted) {
+            log.info("关系已软删除: id={}", id);
+        }
+        return deleted;
+    }
+
     // ==================== 触发器 CRUD ====================
 
     public Trigger saveTrigger(Trigger trigger) {
-        if (trigger.getId() == null || trigger.getId().isBlank()) {
+        // 前端留空的 npcId 以空串提交，空串不是合法角色 id（FK 允许 NULL），归一化后落库
+        if (trigger.getNpcId() != null && trigger.getNpcId().isBlank()) {
+            trigger.setNpcId(null);
+        }
+        boolean isNew = trigger.getId() == null || trigger.getId().isBlank();
+        if (isNew) {
             trigger.setId(UUID.randomUUID().toString());
         }
-        triggerRepo.save(trigger);
+        if (!isNew && triggerRepo.findById(trigger.getId()) != null) {
+            triggerRepo.update(trigger);
+        } else {
+            triggerRepo.save(trigger);
+        }
         log.info("触发器已保存: id={}, type={}, action={}", trigger.getId(), trigger.getType(), trigger.getAction());
         return trigger;
     }
 
     public List<Trigger> listTriggers(String worldId) {
         return triggerRepo.findByWorldId(worldId);
+    }
+
+    /**
+     * 无条件软删除触发器（D5）。软删后触发引擎扫描（findByWorldId 已过滤）
+     * 即时排除，进行中存档本局不再触发；runtime 行不动（随存档生命周期）。
+     *
+     * @return true = 删除成功；false = 不存在或已删（供控制层判 404）
+     */
+    public boolean deleteTrigger(String id) {
+        boolean deleted = triggerRepo.softDeleteById(id) > 0;
+        if (deleted) {
+            log.info("触发器已软删除: id={}", id);
+        }
+        return deleted;
+    }
+
+    // ==================== 世界书条目 CRUD ====================
+
+    /**
+     * 保存世界书条目（含 id 且库内存在则 update，否则新建 UUID 后 insert）。
+     * <p>
+     * enabled/sortOrder 缺省补齐（新建默认启用、排序 0）；worldId 由前端随选中世界带入。
+     */
+    public WorldbookEntry saveWorldbookEntry(WorldbookEntry entry) {
+        boolean isNew = entry.getId() == null || entry.getId().isBlank();
+        if (isNew) {
+            entry.setId(UUID.randomUUID().toString());
+        }
+        if (entry.getEnabled() == null) {
+            entry.setEnabled(Boolean.TRUE);
+        }
+        if (entry.getSortOrder() == null) {
+            entry.setSortOrder(0);
+        }
+        if (!isNew && worldbookRepo.findById(entry.getId()) != null) {
+            worldbookRepo.update(entry);
+        } else {
+            worldbookRepo.save(entry);
+        }
+        log.info("世界书条目已保存: id={}, worldId={}, title={}",
+                entry.getId(), entry.getWorldId(), entry.getTitle());
+        return entry;
+    }
+
+    /** 列某世界的全部世界书条目（含停用，供工坊编辑）；无条目时为空列表 */
+    public List<WorldbookEntry> listWorldbookEntries(String worldId) {
+        return worldbookRepo.findByWorldId(worldId);
+    }
+
+    /**
+     * 软删除世界书模板行（workshop-soft-delete-cascade D1：工坊删除统一软删基线；
+     * 限模板层 set_id IS NULL，set 层游戏内删除维持硬删路径不受影响）。
+     *
+     * @return true = 删除成功；false = 条目不存在/set 行/已删（供控制层判 404）
+     */
+    public boolean deleteWorldbookEntry(String id) {
+        boolean deleted = worldbookRepo.softDeleteTemplateById(id) > 0;
+        if (deleted) {
+            log.info("世界书条目已软删除: id={}", id);
+        }
+        return deleted;
+    }
+
+    // ==================== 冥星模板（工坊冥星轨） ====================
+
+    /**
+     * 保存冥星模板行（workshop-soft-delete-cascade D8：非预设世界的冥星轨 CRUD）。
+     * <p>
+     * 预设世界（preset- 前缀）的设定集由 md 物化维护，工坊写操作拒绝（400）。
+     * 条目定位一律限模板层（set_id IS NULL）：set 行是存档快照，绝不触碰。
+     *
+     * @throws IllegalArgumentException 世界不存在或目标世界为预设世界
+     */
+    public StarIncarnation saveStarIncarnation(StarIncarnation incarnation) {
+        WorldSetting world = worldRepo.findById(incarnation.getWorldId());
+        if (world == null) {
+            throw new IllegalArgumentException("世界不存在: " + incarnation.getWorldId());
+        }
+        if (world.getId().startsWith(PresetWorldService.WORLD_ID_PREFIX)) {
+            throw new IllegalArgumentException("预设世界的设定集由 md 物化维护，不可在工坊编辑");
+        }
+        boolean isNew = incarnation.getId() == null || incarnation.getId().isBlank();
+        if (isNew) {
+            incarnation.setId(UUID.randomUUID().toString());
+        }
+        // 模板层锚定：工坊保存绝不写 set 行；缺省补齐（新建默认可推演、排序 0）
+        incarnation.setSetId(null);
+        if (incarnation.getRollable() == null) {
+            incarnation.setRollable(Boolean.TRUE);
+        }
+        if (incarnation.getSortOrder() == null) {
+            incarnation.setSortOrder(0);
+        }
+        // 分类规范化（add-star-lorebook-category D5）：trim/空白置 NULL/超长抛出→控制层 400
+        incarnation.normalizeCategory();
+        if (!isNew && starIncarnationRepo.findTemplateById(incarnation.getId()) != null) {
+            starIncarnationRepo.updateTemplate(incarnation);
+        } else {
+            starIncarnationRepo.save(incarnation);
+        }
+        log.info("冥星模板已保存: id={}, worldId={}, star={}, warlord={}",
+                incarnation.getId(), incarnation.getWorldId(), incarnation.getStarName(), incarnation.getWarlordName());
+        return incarnation;
+    }
+
+    /** 工坊冥星轨列表：某世界的模板行（预设世界同样只读展示，读端点不门控） */
+    public List<StarIncarnation> listStarIncarnations(String worldId) {
+        return starIncarnationRepo.findByWorldId(worldId);
+    }
+
+    /**
+     * 软删除冥星模板行（预设世界 400；存档 set 副本快照不受影响）。
+     *
+     * @return true = 删除成功；false = 模板行不存在（供控制层判 404）
+     * @throws IllegalArgumentException 目标行为预设世界的模板行
+     */
+    public boolean deleteStarIncarnation(String id) {
+        StarIncarnation row = starIncarnationRepo.findTemplateById(id);
+        if (row == null) {
+            return false;
+        }
+        if (row.getWorldId().startsWith(PresetWorldService.WORLD_ID_PREFIX)) {
+            throw new IllegalArgumentException("预设世界的设定集由 md 物化维护，不可在工坊删除");
+        }
+        boolean deleted = starIncarnationRepo.softDeleteTemplateById(id) > 0;
+        if (deleted) {
+            log.info("冥星模板已软删除: id={}, worldId={}", id, row.getWorldId());
+        }
+        return deleted;
     }
 
     // ==================== 游戏状态初始化 ====================
@@ -243,6 +484,7 @@ public class WorkshopService {
      * <p>
      * 根据世界观 ID 和玩家角色 ID 创建 GameState，
      * 并为所有触发器初始化运行时状态。
+     * 若提供 originResult，则注入星命数据到 playerStates。
      *
      * @param worldId      世界观 ID
      * @param playerCharId 玩家角色卡 ID
@@ -250,12 +492,42 @@ public class WorkshopService {
      * @return 创建的 GameState
      */
     public GameState startGame(String worldId, String playerCharId, String sessionId) {
+        return startGame(worldId, playerCharId, sessionId, null);
+    }
+
+    /**
+     * 创建游戏状态，开始冒险（带星命注入）。
+     * <p>
+     * 若 originResult 非空，将星座/星阶/阵营/特质/属性加成注入 playerStates JSON。
+     *
+     * @param worldId       世界观 ID
+     * @param playerCharId  玩家角色卡 ID
+     * @param sessionId     会话 ID
+     * @param originResult  星命计算结果（可为 null）
+     * @return 创建的 GameState
+     */
+    public GameState startGame(String worldId, String playerCharId, String sessionId,
+                               OriginResult originResult) {
+        return startGame(worldId, playerCharId, sessionId, originResult, null);
+    }
+
+    /**
+     * 开始冒险（add-rpg-lorebook-sets D4）：inheritSetId 缺省 = 世界默认模板；
+     * 非空 = 继承指定 set。世界书副本在开局事务内同步复制，
+     * 抢星判定随即对新局 set 名录执行。
+     */
+    public GameState startGame(String worldId, String playerCharId, String sessionId,
+                               OriginResult originResult, String inheritSetId) {
         // 验证玩家角色存在且属于该世界；"谁是玩家"在此运行时确定，被选角色升级为 player
         CharacterCard player = charRepo.findById(playerCharId);
         if (player == null || !worldId.equals(player.getWorldId())) {
             throw new IllegalArgumentException("玩家角色不存在或不属于该世界: " + playerCharId);
         }
         charRepo.updateType(playerCharId, "player");
+
+        // RPG 会话打标（separate-rpg-chat-sessions D2）：开局即建壳/补标，壳先于首回合
+        // 存在，rpgSessionMemoryAdvisor 后续 appendEvent 直接向已存在会话追加
+        tagRpgSession(sessionId);
 
         GameState gs = new GameState();
         gs.setId(UUID.randomUUID().toString());
@@ -265,6 +537,13 @@ public class WorkshopService {
         gs.setTurnCount(0);
         gs.setFlags("{}");
         gs.setNpcStates("{}");
+
+        // 星命注入：若有 OriginResult，注入 playerStates JSON
+        if (originResult != null) {
+            gs.setPlayerStates(buildPlayerStatesJson(originResult));
+        } else {
+            gs.setPlayerStates("{}");
+        }
 
         stateRepo.save(gs);
 
@@ -280,9 +559,195 @@ public class WorkshopService {
             runtimeRepo.save(rt);
         }
 
-        log.info("游戏状态已创建: gameStateId={}, worldId={}, triggers={}",
-                gs.getId(), worldId, triggers.size());
+        // 世界书副本（add-rpg-lorebook-sets D4）：开局同步复制模板/源 set 为新局 set，
+        // 首轮扫描与抢星判定立刻读到新 set 名录；揭示/抢星 runtime 不继承。
+        // 档案物化（rpg-lore-archival-loading D1）：与 set 落库同点快照预设人物为记忆档案；
+        // 冥斗士开局传主命星名（物化侧按抢星命中条件写变体段）。
+        // figureKey 透传（preset-destined-figures D3）：人物扮演局撞星的变体段/索引标记
+        // 切换为「人即玩家」双语义；无名新人/信胜为 null（旧「星归玩家」语义零改动）。
+        LorebookSet lorebookSet = lorebookSetService.copyForNewGame(worldId, inheritSetId, gs.getId(),
+                claimCandidateStar(originResult), claimFigureKey(originResult));
+
+        // 抢星判定（star-lorebook）：命中的条目写 runtime 行 claimed_by_player=true、
+        // activated_turn=0，该行同时是 sticky 起点（抢星条目本局恒亮）；命中同时向
+        // MEMORY.md 追加带【星归玩家】标记的索引行（rpg-lore-archival-loading D4：
+        // GM 必须知道玩家持有什么星，否则抢星叙事崩坏）。
+        claimStarIncarnationIfHit(gs, lorebookSet.getId(), originResult);
+
+        log.info("游戏状态已创建: gameStateId={}, worldId={}, triggers={}, hasOrigin={}"
+                + (originResult != null && "specter".equals(originResult.getFaction())
+                ? ", starClaimed=" + originResult.getConstellation() : ""),
+                gs.getId(), worldId, triggers.size(), originResult != null);
         return gs;
+    }
+
+    /**
+     * RPG 会话打标（separate-rpg-chat-sessions D2）：开局即为 sessionId 幂等建壳并写
+     * {@code metadata.kind="rpg"}——壳先于首回合存在，消灭「rpgSessionMemoryAdvisor
+     * 首轮自动建壳（无标记）」的时序窗口，主会话列表/读路径按 kind 隔离才有可靠真源。
+     * <ul>
+     *   <li>壳不存在 → 以请求租户为 userId 显式建壳（sessionId 为前端生成，须指定 id）</li>
+     *   <li>壳已存在（重开局/异常重复）→ merge 补写 kind，保留既有键（幂等）</li>
+     *   <li>打标失败 WARN 降级不阻断开局：后续回合 advisor 仍会自动建壳，
+     *       失标会话由 AiSessionKindBackfill 启动回填按 GameState 引用自愈</li>
+     * </ul>
+     */
+    private void tagRpgSession(String sessionId) {
+        if (sessionId == null || sessionId.isBlank()) {
+            return;
+        }
+        try {
+            // 租户上下文缺失（非请求线程等）与仓储异常同降级：打标失败不阻断开局，回填自愈
+            String tenantId = TenantContext.requireTenantId();
+            Session existing = sessionRepository.findById(sessionId);
+            if (existing == null) {
+                sessionService.create(CreateSessionRequest.builder()
+                        .id(sessionId)
+                        .userId(tenantId)
+                        .metadata("kind", "rpg")
+                        .build());
+                log.info("RPG 会话壳已创建并打标: sessionId={}", sessionId);
+            } else {
+                Map<String, Object> meta = existing.metadata();
+                if (meta != null && "rpg".equals(meta.get("kind"))) {
+                    return;
+                }
+                Map<String, Object> newMeta = new HashMap<>(meta != null ? meta : Map.of());
+                newMeta.put("kind", "rpg");
+                sessionRepository.save(Session.builder()
+                        .id(existing.id())
+                        .userId(existing.userId())
+                        .createdAt(existing.createdAt())
+                        .expiresAt(existing.expiresAt())
+                        .metadata(newMeta)
+                        .build());
+                log.info("RPG 会话壳已补打标: sessionId={}", sessionId);
+            }
+        } catch (Exception e) {
+            log.warn("RPG 会话打标失败（降级不阻断开局，回填可自愈）: sessionId={}", sessionId, e);
+        }
+    }
+
+    /**
+     * 抢星判定：冥斗士开局且主命星（天罡，即 constellation）命中名录可推演条目时，
+     * 写 runtime 行 claimed_by_player=true、activated_turn=0（对玩家恒亮）。
+     * <p>
+     * 刻意不判定的三类（spec「副星不触发抢星」）：非 specter 阵营；副星（地煞，
+     * 仅存在于 zodiacTraits 文本，不反解析）；rollable=false 的 NPC 专属星
+     * （天兽/天魔不入可推演池，constellation 也推不到，此处双重保险）。
+     * 名录未物化/未命中时零写入，不阻断开局。
+     */
+    private void claimStarIncarnationIfHit(GameState gs, String setId, OriginResult origin) {
+        if (origin == null || !"specter".equals(origin.getFaction())) {
+            return;
+        }
+        String constellation = origin.getConstellation();
+        if (constellation == null || constellation.isBlank()) {
+            return;
+        }
+        for (StarIncarnation incarnation : starIncarnationRepo.findBySetId(setId)) {
+            if (!Boolean.TRUE.equals(incarnation.getRollable())) {
+                continue;
+            }
+            if (!constellation.equals(incarnation.getStarName())) {
+                continue;
+            }
+            StarIncarnationRuntime rt = new StarIncarnationRuntime();
+            rt.setId(UUID.randomUUID().toString());
+            rt.setGameStateId(gs.getId());
+            rt.setIncarnationId(incarnation.getId());
+            rt.setStarName(incarnation.getStarName());
+            rt.setActivatedTurn(0);
+            rt.setClaimedByPlayer(true);
+            starRuntimeRepo.save(rt);
+            // 索引行随命中追加（rpg-lore-archival-loading D4）：带【星归玩家】标记；
+            // 人物局撞星（figureKey 非空，preset-destined-figures D3）切换为【人即玩家】。
+            // IO 失败由服务内部降级告警，不阻断开局。
+            loreArchiveService.appendRevealedIndexLine(gs.getId(),
+                    incarnation.getStarName(), incarnation.getWarlordName(), true,
+                    origin.getFigureKey());
+            log.info("抢星判定命中: gameStateId={}, star={}, warlord={}",
+                    gs.getId(), incarnation.getStarName(), incarnation.getWarlordName());
+            return;
+        }
+    }
+
+    /**
+     * 档案变体段的候选星名（rpg-lore-archival-loading D2）：冥斗士开局取主命星名，
+     * 其余为 null——物化侧按「rollable + 星名相等」复刻抢星命中条件，未命中即无变体段。
+     */
+    private static String claimCandidateStar(OriginResult origin) {
+        if (origin == null || !"specter".equals(origin.getFaction())) {
+            return null;
+        }
+        return origin.getConstellation() == null || origin.getConstellation().isBlank()
+                ? null : origin.getConstellation();
+    }
+
+    /**
+     * 变体段的人物信号（preset-destined-figures D3）：人物扮演局（figureKey 非空）时
+     * 随开局透传给档案物化链路，命中档案的变体段与索引标记切换为「人即玩家」；
+     * 其余为 null（旧语义零改动）。claimStarIncarnationIfHit 判定本身零改动——
+     * 预绑冥衣（信长→天魁星）即一次被人物钉死的推演结果，自动命中。
+     */
+    private static String claimFigureKey(OriginResult origin) {
+        return origin == null ? null : origin.getFigureKey();
+    }
+
+    /**
+     * 构建 playerStates JSON，注入星命数据。
+     * <p>
+     * 字段：constellation, star_rank, faction, zodiac_traits, star_bonus（嵌套对象）。
+     * <p>包内可见：纯函数（仅依赖 OriginResult），供单测直接注入验证 cosmo 键注入与缺省跳过。
+     */
+    String buildPlayerStatesJson(OriginResult origin) {
+        try {
+            ObjectMapper mapper = new ObjectMapper();
+            ObjectNode root = mapper.createObjectNode();
+            root.put("constellation", origin.getConstellation());
+            root.put("star_rank", origin.getStarRank());
+            root.put("faction", origin.getFaction());
+            root.put("zodiac_traits", origin.getZodiacTraits());
+            // 小宇宙初值注入（rpg-cosmo-sense）：仅星命路径（origin 非空）有值，
+            // 非星命开局不写 cosmo 键，回合结算与展示分支据此跳过（零影响）。
+            if (origin.getCosmoIntensity() != null) {
+                root.put("cosmo", origin.getCosmoIntensity());
+            }
+            if (origin.getStarBonus() != null) {
+                ObjectNode bonusNode = mapper.createObjectNode();
+                origin.getStarBonus().forEach(bonusNode::put);
+                root.set("star_bonus", bonusNode);
+            }
+            // 命定人物三键（preset-destined-figures D2）：仅人物模式写入（无名新人/旧档
+            // 不含 figure 键），GM 上下文星命行与索引/变体段链路据此感知「玩家是谁」。
+            if (origin.getFigureKey() != null && !origin.getFigureKey().isBlank()) {
+                root.put("figure_key", origin.getFigureKey());
+                root.put("figure_display_name", origin.getFigureDisplayName());
+                root.put("figure_era_note", origin.getFigureEraNote());
+            }
+            // 招式列表注入（rpg-technique-tree-data D6：七字段全写，供 GM 叙事与门禁判定）
+            if (origin.getTechniques() != null && !origin.getTechniques().isEmpty()) {
+                com.fasterxml.jackson.databind.node.ArrayNode techArray = mapper.createArrayNode();
+                origin.getTechniques().forEach(t -> {
+                    ObjectNode techNode = mapper.createObjectNode();
+                    techNode.put("name", t.name());
+                    techNode.put("description", t.description());
+                    techNode.put("source", t.source());
+                    techNode.put("tier", t.tier());
+                    com.fasterxml.jackson.databind.node.ArrayNode prereqNode = mapper.createArrayNode();
+                    t.prerequisites().forEach(prereqNode::add);
+                    techNode.set("prerequisites", prereqNode);
+                    techNode.put("learned", t.learned());
+                    techNode.put("proficiency", t.proficiency());
+                    techArray.add(techNode);
+                });
+                root.set("techniques", techArray);
+            }
+            return mapper.writeValueAsString(root);
+        } catch (Exception e) {
+            log.warn("构建 playerStates JSON 失败，降级为空 JSON: {}", e.getMessage());
+            return "{}";
+        }
     }
 
     public GameState getGameState(String gameStateId) {

@@ -15,6 +15,7 @@ public class EventLog {
     private String eventType;      // player_action / npc_action / state_change / trigger_fired
     private String content;
     private String stateDelta;    // JSON: 该轮的状态变更快照
+    private String sessionEventId; // rpg-hud-bubble-components：与本局 assistant 消息的 session eventId 精确对齐键（尾包时回填；NULL = 旧行/中止无对齐）
     private LocalDateTime createdAt;
 
     public EventLog() {
@@ -32,6 +33,8 @@ public class EventLog {
     public void setContent(String content) { this.content = content; }
     public String getStateDelta() { return stateDelta; }
     public void setStateDelta(String stateDelta) { this.stateDelta = stateDelta; }
+    public String getSessionEventId() { return sessionEventId; }
+    public void setSessionEventId(String sessionEventId) { this.sessionEventId = sessionEventId; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
 }

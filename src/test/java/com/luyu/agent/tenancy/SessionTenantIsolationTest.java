@@ -15,7 +15,10 @@ import com.luyu.agent.rpg.engine.RpgHistoryCleaner;
 import com.luyu.agent.rpg.engine.SaveDeletionService;
 import com.luyu.agent.rpg.engine.StateDeltaSanitizer;
 import com.luyu.agent.rpg.engine.TurnGuardService;
+import com.luyu.agent.rpg.eval.service.PromptHashService;
+import com.luyu.agent.rpg.repository.RpgEventLogRepository;
 import com.luyu.agent.rpg.service.WorkshopService;
+import com.luyu.agent.rpg.story.engine.StoryRunEngine;
 import com.luyu.agent.service.ContextInfoService;
 import com.luyu.agent.service.ImageUploadService;
 import com.luyu.agent.service.SessionTitleGenerator;
@@ -85,6 +88,14 @@ class SessionTenantIsolationTest {
         return session;
     }
 
+    /** 带自定义 id 与 metadata 的壳 mock（kind 隔离断言用） */
+    private Session sessionOf(String id, String userId, Map<String, Object> metadata) {
+        Session session = sessionOf(userId);
+        when(session.id()).thenReturn(id);
+        when(session.metadata()).thenReturn(metadata);
+        return session;
+    }
+
     // ==================== Requirement 1: 会话归属租户 ====================
 
     @Test
@@ -114,6 +125,22 @@ class SessionTenantIsolationTest {
         verify(sessionRepository).findByUserId("t-a");
         verify(sessionRepository, never()).findByUserId("t-b");
         assertThat(result).hasSize(1);
+    }
+
+    @Test
+    void 会话列表过滤kindRpg的RPG会话() {
+        Session chat = sessionOf("sess-chat", "t-a", Map.of("title", "新对话"));
+        Session rpg = sessionOf("sess-rpg", "t-a", Map.of("kind", "rpg"));
+        // metadata 为 null 的存量理论态：不属于 RPG，照常返回
+        Session legacy = sessionOf("sess-legacy", "t-a", null);
+        when(sessionRepository.findByUserId("t-a")).thenReturn(List.of(chat, rpg, legacy));
+        SessionController controller = new SessionController(mock(SessionService.class), sessionRepository, guard);
+
+        List<Map<String, Object>> result = controller.listSessions();
+
+        // kind=rpg 被滤除；chat 与无 metadata 会话照常返回（title 逻辑不变）
+        assertThat(result).extracting(m -> m.get("id"))
+                .containsExactlyInAnyOrder("sess-chat", "sess-legacy");
     }
 
     // ==================== Requirement 2: 跨租户会话访问不可达 ====================
@@ -199,7 +226,8 @@ class SessionTenantIsolationTest {
                 gameLoop, mock(OpeningNarrationService.class), mock(StateDeltaSanitizer.class),
                 mock(WorkshopService.class), mock(SessionService.class), mock(RpgHistoryCleaner.class),
                 mock(RollbackService.class), new TurnGuardService(),
-                mock(SaveDeletionService.class), guard, moderationGate, mock(QuotaGuard.class));
+                mock(SaveDeletionService.class), guard, moderationGate, mock(QuotaGuard.class),
+                mock(RpgEventLogRepository.class), mock(StoryRunEngine.class), mock(PromptHashService.class));
 
         ServerSentEvent<Object> event = controller.gameTurn(Map.of(
                 "gameStateId", "gs-1", "sessionId", SESSION_ID, "message", "我走进客栈")).blockFirst();
@@ -223,6 +251,55 @@ class SessionTenantIsolationTest {
 
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
         verify(sessionService, never()).compact(anyString(), any(), any());
+    }
+
+    @Test
+    void 本租户RPG会话历史查询返回404且零副作用() {
+        Session rpg = sessionOf(SESSION_ID, "t-a", Map.of("kind", "rpg"));
+        when(sessionRepository.findById(SESSION_ID)).thenReturn(rpg);
+        ChatControllerHolder holder = newChatController();
+
+        try {
+            holder.controller().getHistory(SESSION_ID);
+            throw new AssertionError("RPG 会话历史访问必须抛 404");
+        } catch (ResponseStatusException e) {
+            assertThat(e.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        }
+        // 原始事件流（工具调用、state_delta）绝不从主会话端点暴露
+        verify(holder.sessionService(), never()).getEvents(anyString());
+    }
+
+    @Test
+    void 本租户RPG会话压缩返回404且零副作用() {
+        Session rpg = sessionOf(SESSION_ID, "t-a", Map.of("kind", "rpg"));
+        when(sessionRepository.findById(SESSION_ID)).thenReturn(rpg);
+        ChatClientRegistry registry = mock(ChatClientRegistry.class);
+        when(registry.forRole("compaction")).thenReturn(mock(org.springframework.ai.chat.client.ChatClient.class));
+        SessionService compactionSessionService = mock(SessionService.class);
+        CompactionController controller = new CompactionController(compactionSessionService, registry, guard);
+
+        ResponseEntity<Map<String, Object>> resp = controller.compactSession(SESSION_ID);
+
+        // chat 递归摘要会向 RPG 会话写 synthetic 事件，破坏其零合成事件契约 → 拒绝
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        verify(compactionSessionService, never()).compact(anyString(), any(), any());
+    }
+
+    @Test
+    void RPG会话的contextInfo走白名单放行() {
+        Session rpg = sessionOf(SESSION_ID, "t-a", Map.of("kind", "rpg"));
+        when(sessionRepository.findById(SESSION_ID)).thenReturn(rpg);
+        ContextInfoService contextInfoService = mock(ContextInfoService.class);
+        ChatStreamController controller = new ChatStreamController(
+                mock(ChatClientRegistry.class), mock(SessionService.class),
+                mock(SessionTitleGenerator.class), contextInfoService,
+                mock(ImageUploadService.class), guard,
+                mock(ContentModerationGate.class), mock(QuotaGuard.class));
+
+        controller.getContextInfo(SESSION_ID);
+
+        // 白名单（rpg/game.js 上下文条依赖 /chat/context-info）：isRpg 不拦截
+        verify(contextInfoService).getContextInfo(SESSION_ID);
     }
 
     // ==================== Requirement 3: 存量会话归入保留租户 ====================
@@ -289,6 +366,31 @@ class SessionTenantIsolationTest {
         assertThat(guard.isForeign(SESSION_ID)).isFalse();
     }
 
+    @Test
+    void isRpg按metadataKind判定且容错() {
+        // mock 构造与 when 语句分离：thenReturn 参数位内嵌套 when 会触发 UnfinishedStubbing
+        Session rpg = sessionOf(SESSION_ID, "t-a", Map.of("kind", "rpg"));
+        Session chat = sessionOf(SESSION_ID, "t-a", Map.of("kind", "chat"));
+        Session untagged = sessionOf(SESSION_ID, "t-a", null);
+
+        when(sessionRepository.findById(SESSION_ID)).thenReturn(rpg);
+        assertThat(guard.isRpg(SESSION_ID)).isTrue();
+
+        when(sessionRepository.findById(SESSION_ID)).thenReturn(chat);
+        assertThat(guard.isRpg(SESSION_ID)).isFalse();
+
+        // metadata null（老壳未打标）不拦截，由回填治理
+        when(sessionRepository.findById(SESSION_ID)).thenReturn(untagged);
+        assertThat(guard.isRpg(SESSION_ID)).isFalse();
+
+        when(sessionRepository.findById(SESSION_ID)).thenReturn(null);
+        assertThat(guard.isRpg(SESSION_ID)).isFalse();
+
+        // 查询失败按非 RPG 容错降级不阻断
+        when(sessionRepository.findById(SESSION_ID)).thenThrow(new RuntimeException("db down"));
+        assertThat(guard.isRpg(SESSION_ID)).isFalse();
+    }
+
     // ==================== 构造辅助 ====================
 
     /** 持有 mock sessionService 的 ChatStreamController（供 verify 零副作用断言复用）。 */
@@ -314,6 +416,7 @@ class SessionTenantIsolationTest {
                 mock(StateDeltaSanitizer.class), mock(WorkshopService.class),
                 mock(SessionService.class), mock(RpgHistoryCleaner.class),
                 rollbackService, new TurnGuardService(), mock(SaveDeletionService.class), guard,
-                moderationGate, mock(QuotaGuard.class));
+                moderationGate, mock(QuotaGuard.class), mock(RpgEventLogRepository.class),
+                mock(StoryRunEngine.class), mock(PromptHashService.class));
     }
 }

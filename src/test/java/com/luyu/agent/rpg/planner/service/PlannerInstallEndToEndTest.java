@@ -1,0 +1,342 @@
+package com.luyu.agent.rpg.planner.service;
+
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.jdbc.test.autoconfigure.JdbcTest;
+import org.springframework.context.annotation.Import;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
+
+import com.luyu.agent.rpg.config.RpgSchemaInitializer;
+import com.luyu.agent.rpg.model.WorldSetting;
+import com.luyu.agent.rpg.model.WorldbookEntry;
+import com.luyu.agent.rpg.planner.config.RpgPlannerProperties;
+import com.luyu.agent.rpg.planner.engine.PlannerGenerationGuard;
+import com.luyu.agent.rpg.planner.engine.PlannerGenerationGuard;
+import com.luyu.agent.rpg.planner.model.PipelineManifest;
+import com.luyu.agent.rpg.planner.model.PipelineRun;
+import com.luyu.agent.rpg.planner.model.PipelineRunStatus;
+import com.luyu.agent.rpg.planner.model.PipelineStage;
+import com.luyu.agent.rpg.planner.model.PipelineStageStatus;
+import com.luyu.agent.rpg.planner.repository.PipelineRunRepository;
+import com.luyu.agent.rpg.repository.RpgCharacterCardRepository;
+import com.luyu.agent.rpg.repository.RpgDestinedFigureRepository;
+import com.luyu.agent.rpg.repository.RpgGameStateRepository;
+import com.luyu.agent.rpg.repository.RpgLorebookSetRepository;
+import com.luyu.agent.rpg.repository.RpgStarIncarnationRepository;
+import com.luyu.agent.rpg.repository.RpgStarIncarnationRuntimeRepository;
+import com.luyu.agent.rpg.repository.RpgWorldSettingRepository;
+import com.luyu.agent.rpg.repository.RpgWorldbookEntryRepository;
+import com.luyu.agent.rpg.service.LoreArchiveService;
+import com.luyu.agent.rpg.service.LorebookSetService;
+import com.luyu.agent.rpg.story.engine.StoryGraphParser;
+import com.luyu.agent.rpg.story.engine.StoryGraphValidator;
+import com.luyu.agent.rpg.story.model.StoryGraph;
+import com.luyu.agent.rpg.story.repository.RpgStoryGraphRepository;
+import com.luyu.agent.tenancy.TenantContext;
+import com.luyu.agent.tenancy.TenantGuardConfiguration;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+/**
+ * 成稿安装端到端测试（add-planner-pipeline tasks 5.3）。
+ * <p>
+ * 参照 {@code WorkshopSoftDeleteEndToEndTest}：@JdbcTest + 真实 H2 + 真实
+ * Repository/Service，以 TenantContext 直设模拟 JwtTenantFilter 生命周期。
+ * workspace 系（Store/RunService/Installer）手工构造注入 @TempDir（@Import
+ * 会走 {@code PlannerWorkspaceStore} 默认构造写真家目录）；事务走切片自动
+ * 装配的 TransactionManager。
+ * <p>
+ * 钉住安装世界与既有消费链路的<b>无特殊分支</b>（spec planner-world-install
+ * 「安装结果与工坊/预设体系互通」）：卡片墙/工坊选择器数据源可见（沙盒行，
+ * 非 preset- 前缀不被作品墙剔除）；worldbook 模板行查询命中安装条目；
+ * 工坊编辑保存不丢 narrative_rules（update 不含该列，保留安装值）；
+ * lorebook set 开局 fork 照常复制安装世界的通用轨条目；故事图物化
+ * （story-graph-authoring tasks 5.2）：S4.5 拼接产物 → 模板层图行，
+ * findByWorldId 常规读路径可见（开局选图数据源）。
+ */
+@JdbcTest
+@Import({TenantGuardConfiguration.class, RpgSchemaInitializer.class,
+        RpgWorldSettingRepository.class, RpgCharacterCardRepository.class,
+        RpgDestinedFigureRepository.class, RpgWorldbookEntryRepository.class,
+        RpgStarIncarnationRepository.class, RpgStarIncarnationRuntimeRepository.class,
+        RpgLorebookSetRepository.class, RpgGameStateRepository.class,
+        PipelineRunRepository.class, LorebookSetService.class,
+        RpgStoryGraphRepository.class})
+class PlannerInstallEndToEndTest {
+
+    /** 档案物化属 LLM/外部边界（materializeArchives 内部容错），mock 隔离（同 WorkshopSoftDeleteEndToEndTest） */
+    @MockitoBean
+    private LoreArchiveService loreArchiveService;
+
+    @Autowired
+    private LorebookSetService lorebookSetService;
+
+    @Autowired
+    private PipelineRunRepository runRepository;
+
+    @Autowired
+    private RpgWorldSettingRepository worldRepo;
+
+    @Autowired
+    private RpgCharacterCardRepository charRepo;
+
+    @Autowired
+    private RpgDestinedFigureRepository destinedFigureRepo;
+
+    @Autowired
+    private RpgStarIncarnationRepository starRepo;
+
+    @Autowired
+    private RpgWorldbookEntryRepository worldbookRepo;
+
+    @Autowired
+    private RpgStoryGraphRepository graphRepo;
+
+    @Autowired
+    private PlatformTransactionManager transactionManager;
+
+    @TempDir
+    Path tempDir;
+
+    private PlannerWorkspaceStore workspaceStore;
+    private PipelineRunService runService;
+    private PlannerWorldInstaller installer;
+
+    @BeforeEach
+    void setUp() {
+        TenantContext.set("u-test", "t-test");
+        workspaceStore = new PlannerWorkspaceStore(() -> tempDir);
+        runService = new PipelineRunService(runRepository, workspaceStore,
+                new RpgPlannerProperties(), new PlannerGenerationGuard());
+        installer = new PlannerWorldInstaller(runRepository, workspaceStore, runService,
+                worldRepo, charRepo, destinedFigureRepo, worldbookRepo,
+                graphRepo, new StoryGraphParser(), new StoryGraphValidator(),
+                new TransactionTemplate(transactionManager));
+    }
+
+    @AfterEach
+    void tearDown() {
+        TenantContext.clear();
+    }
+
+    @Test
+    void 安装世界在卡片墙与模板行读路径可见无特殊分支() {
+        String runId = readyRun();
+
+        PlannerWorldInstaller.InstallResult result = installer.install(runId);
+
+        // 世界行：常规查询路径（卡片墙 gallery / 工坊选择器数据源均为 findAll）
+        WorldSetting world = worldRepo.findById(result.worldId());
+        assertThat(world).isNotNull();
+        assertThat(world.getName()).isEqualTo("冥星武将录");
+        assertThat(world.getNarrativeRules()).contains("每章聚焦一名武将");
+        assertThat(worldRepo.findAll()).extracting(WorldSetting::getId).contains(result.worldId());
+        // 沙盒行语义：非 preset- 确定性前键 → 不被作品墙 scope=works 剔除
+        assertThat(result.worldId()).doesNotStartWith("preset-");
+
+        // 人物卡：被毙候选隔离，常规查询只剩甲
+        assertThat(charRepo.findByWorldId(result.worldId()))
+                .extracting(c -> c.getName(), c -> c.getType())
+                .containsExactly(org.assertj.core.groups.Tuple.tuple("甲", "npc"));
+
+        // 命定档案：常规查询可见（预设向导「命定身份」下拉数据源同族端点）
+        assertThat(destinedFigureRepo.findByWorldId(result.worldId()))
+                .extracting(f -> f.getFigureKey(), f -> f.getConstellation())
+                .containsExactly(org.assertj.core.groups.Tuple.tuple("甲", "天魁星"));
+
+        // 世界书模板行：findByWorldId（set_id IS NULL）命中安装条目（S2 通用轨 + S5 分支）
+        assertThat(worldbookRepo.findByWorldId(result.worldId()))
+                .extracting(WorldbookEntry::getTitle)
+                .containsExactlyInAnyOrder("冥星", "暗杀线");
+
+        // 故事图物化（tasks 5.2）：S4.5 拼接产物 → 模板层图行，常规读路径
+        // （findByWorldId：开局选图下拉/工坊图列表数据源）可见且结构完整
+        assertThat(result.storyGraphId()).isNotBlank();
+        assertThat(result.storyGraphNodeCount()).isEqualTo(3);
+        assertThat(graphRepo.findByWorldId(result.worldId()))
+                .extracting(StoryGraph::getId, StoryGraph::getName, StoryGraph::getImproviseMode)
+                .containsExactly(org.assertj.core.groups.Tuple.tuple(
+                        result.storyGraphId(), "冥星武将录·主线", "bounded"));
+        StoryGraph installedGraph = graphRepo.findById(result.storyGraphId());
+        assertThat(installedGraph.getGraphJson()).contains("n1_01").contains("e1_02");
+        assertThat(installedGraph.getStateSchema()).contains("trust_信长");
+
+        // run 库表收口（跨天恢复列表页数据源）
+        assertThat(runRepository.findById(runId)).isPresent();
+        assertThat(runRepository.findById(runId).get().getStatus())
+                .isEqualTo(PipelineRunStatus.COMPLETED.name());
+        assertThat(runRepository.findById(runId).get().getCurrentStage())
+                .isEqualTo(PipelineStage.S6_INSTALL.code());
+    }
+
+    @Test
+    void 工坊编辑保存不丢叙事规则() {
+        String runId = readyRun();
+        PlannerWorldInstaller.InstallResult result = installer.install(runId);
+
+        // 工坊保存路径（RpgWorldSettingRepository.update 全量重写可编辑列）
+        WorldSetting edited = worldRepo.findById(result.worldId());
+        edited.setName("冥星武将录（修订版）");
+        edited.setSettingDesc("编辑后的世界描述。");
+        worldRepo.update(edited);
+
+        WorldSetting reloaded = worldRepo.findById(result.worldId());
+        assertThat(reloaded.getName()).isEqualTo("冥星武将录（修订版）");
+        // update 不含 narrative_rules 列：安装值原样保留（编辑不改写、不清空）
+        assertThat(reloaded.getNarrativeRules()).contains("每章聚焦一名武将");
+    }
+
+    @Test
+    void lorebook开局fork照常复制安装世界条目() {
+        String runId = readyRun();
+        PlannerWorldInstaller.InstallResult result = installer.install(runId);
+
+        com.luyu.agent.rpg.model.LorebookSet set =
+                lorebookSetService.copyForNewGame(result.worldId(), null, "gs-x");
+
+        // set 副本 = 安装世界的通用轨模板行（S2 条目 + S5 分支条目）
+        assertThat(worldbookRepo.findBySetId(set.getId()))
+                .extracting(WorldbookEntry::getTitle)
+                .containsExactlyInAnyOrder("冥星", "暗杀线");
+    }
+
+    @Test
+    void 安装世界不落冥星轨表set复制零星行() {
+        String runId = readyRun();
+        PlannerWorldInstaller.InstallResult result = installer.install(runId);
+
+        // 物化映射：S5 star 轨分支统一通用轨——冥星轨表对安装世界恒空
+        assertThat(starRepo.findByWorldId(result.worldId())).isEmpty();
+
+        // 开局 fork 的冥星轨副本同样零行（无特殊分支，不炸不报错）
+        com.luyu.agent.rpg.model.LorebookSet set =
+                lorebookSetService.copyForNewGame(result.worldId(), null, "gs-y");
+        assertThat(starRepo.findBySetId(set.getId())).isEmpty();
+    }
+
+    // ==================== 辅助 ====================
+
+    /** 造一个可安装的 run：S1-S5 全 CONFIRMED、run AWAITING、产物落盘、S3 候选乙被毙。 */
+    private String readyRun() {
+        PipelineRun run = runService.createRun("text", "faithful", "原文内容", null, null);
+        String runId = run.getId();
+
+        workspaceStore.writeStageArtifact(runId, PipelineStage.S2_WORLD_SETTING, WORLD_DRAFT);
+        workspaceStore.writeStageArtifact(runId, PipelineStage.S4_PLOT_STRUCTURE, PLOT_DRAFT);
+        workspaceStore.writeStageArtifact(runId, PipelineStage.S4P5_STORY_GRAPH,
+                STORY_GRAPH_ARTIFACT);
+        workspaceStore.writeStageCandidates(runId, PipelineStage.S3_CHARACTERS,
+                List.of(CHARACTER_WITH_DESTINED, CHARACTER_PLAIN));
+        workspaceStore.writeStageCandidates(runId, PipelineStage.S5_BRANCH_DESIGN,
+                List.of(BRANCH_STAR));
+
+        PipelineManifest manifest = workspaceStore.readManifest(runId);
+        for (PipelineStage stage : PipelineStage.values()) {
+            if (stage != PipelineStage.S6_INSTALL) {
+                manifest.stage(stage.code()).setStatus(PipelineStageStatus.CONFIRMED.name());
+            }
+        }
+        List<PipelineManifest.CandidateState> s3 = new ArrayList<>();
+        s3.add(new PipelineManifest.CandidateState("candidate-01", "人物 1：甲", "CONFIRMED"));
+        s3.add(new PipelineManifest.CandidateState("candidate-02", "人物 2：乙", "REJECTED"));
+        manifest.stage(PipelineStage.S3_CHARACTERS.code()).setCandidates(s3);
+        List<PipelineManifest.CandidateState> s5 = new ArrayList<>();
+        s5.add(new PipelineManifest.CandidateState("candidate-01", "分支 1：暗杀线", "CONFIRMED"));
+        manifest.stage(PipelineStage.S5_BRANCH_DESIGN.code()).setCandidates(s5);
+        manifest.setStatus(PipelineRunStatus.AWAITING.name());
+        manifest.setCurrentStage(PipelineStage.S6_INSTALL.code());
+        workspaceStore.writeManifest(runId, manifest);
+        return runId;
+    }
+
+    private static final String WORLD_DRAFT = """
+            ## 名称
+            冥星武将录
+            ## 时代
+            战国末期
+            ## 氛围
+            黑暗幻想
+            ## 规则
+            - 星命决定命运
+            ## 世界描述
+            冥星升起的世界。
+            ## 开场白模板
+            你在烽烟中睁开双眼。
+            ## 世界书条目
+            ### 冥星
+            关键词：冥星,天灾
+            条目正文：每隔四十九年现世的灾星。
+            """;
+
+    private static final String PLOT_DRAFT = """
+            ## 主线大纲
+            主线从甲的复仇开始。
+            ## 叙事规则
+            - 每章聚焦一名武将
+            """;
+
+    private static final String CHARACTER_WITH_DESTINED = """
+            ## 人物 1：甲
+            - 身份：军师
+            - 性格：狡黠
+            - 背景：没落贵族之后
+            - 动机：复仇
+            - 说话风格：文雅而毒舌
+            - 知识：星象学,兵法
+            ### 命定档案
+            - faction：织田家
+            - constellation：天魁星
+            - starRank：主星
+            - eraNote：战国末期
+            """;
+
+    private static final String CHARACTER_PLAIN = """
+            ## 人物 2：乙
+            - 身份：浪人
+            - 性格：沉默
+            - 背景：来历不明
+            - 动机：寻刀
+            - 说话风格：寡言
+            - 知识：剑术
+            """;
+
+    private static final String BRANCH_STAR = """
+            ## 分支 1：暗杀线
+            触发词：暗杀,夜袭
+            优先级：10
+            轨位：star
+            注入内容：天魁星的光芒会先一步黯淡。
+            """;
+
+    /** S4.5 拼接产物（stitchAndPersistGraph 落盘形态：<story_graph> 块包裹 + acts + state_schema） */
+    private static final String STORY_GRAPH_ARTIFACT = """
+            <story_graph>
+            {
+              "acts": [
+                {"id": "act1", "theme": "初遇",
+                 "converge_to": [{"orbit": "信任线", "guard": {"key": "trust_信长", "op": ">=", "value": 30}}],
+                 "nodes": [
+                   {"id": "n1_01", "type": "scene", "beat": "夜探织田邸",
+                    "on_enter": {"trust_信长": 10}},
+                   {"id": "n1_03", "type": "scene", "beat": "密谈"},
+                   {"id": "n1_09", "type": "ending", "beat": "终局"}],
+                 "edges": [
+                   {"id": "e1_01", "from": "n1_01", "to": "n1_03", "label": "示好",
+                    "effects": {"trust_信长": 5}},
+                   {"id": "e1_02", "from": "n1_03", "to": "n1_09", "label": "终局",
+                    "effects": {"trust_信长": 3}}]}
+              ],
+              "state_schema": {"trust_信长": {"type": "number"}}
+            }
+            </story_graph>
+            """;
+}

@@ -106,6 +106,14 @@ class GameLoopServiceSnapshotTest {
                 else if (types[i] == StateDeltaSanitizer.class) args[i] = stateDeltaSanitizer;
                 else if (types[i] == NpcKeyRepairService.class) args[i] = npcKeyRepairService;
                 else if (types[i] == TurnGuardService.class) args[i] = turnGuardService;
+                else if (types[i] == StarLorebookScanner.class) {
+                    // ScanOutcome 为 record，mock 缺省返回 null 会 NPE：统一桩为空结果
+                    // （本测试聚焦快照/事件链，扫描行为由 StarLorebookScannerTest 覆盖）
+                    StarLorebookScanner scanner = mock(StarLorebookScanner.class);
+                    when(scanner.scanAndCollect(anyString(), anyString(), anyInt()))
+                            .thenReturn(StarLorebookScanner.ScanOutcome.empty());
+                    args[i] = scanner;
+                }
                 else args[i] = mock(types[i]);
             }
             return ctor.newInstance(args);

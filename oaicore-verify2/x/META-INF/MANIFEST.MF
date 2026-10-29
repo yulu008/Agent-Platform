@@ -1,0 +1,4 @@
+Manifest-Version: 1.0
+Implementation-Title: openai-java-core
+Implementation-Version: 4.39.1
+

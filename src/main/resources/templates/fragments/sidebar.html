@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org">
+<body>
+
+<!-- 全局侧边栏（global-sidebar-nav，承接 unified-global-topbar 六页单源导航）：三个 fragment 供各页引用——
+     ① sidebar(active, isPlatformAdmin)：侧栏列，桌面为 .app-shell grid 第一列，移动端 ≤768px 转 fixed 左滑抽屉；
+     ② mobileTop：移动端极简顶条（☰ + 品牌，fixed 顶条不占 grid 流，桌面隐藏）；
+     ③ mask：移动端抽屉遮罩（fixed 全屏，桌面隐藏）。
+     参数 active：gallery/planner/rpg/conversations/admin/chat（当前页或当前视图高亮键，gallery=根橱窗页，chat=AI助手）；
+     参数 isPlatformAdmin：📊 管理端入口门控（PlatformAdminGuard，AdminPageController 同款）；
+     参数 currentUserEmail：账号区当前登录邮箱（account-switch-sidebar，AuthService 按 userId 回查，
+     缺省/未注入时 chip 显示「未登录」占位不报错）；已知账号列表由 sidebar.js 从 localStorage 渲染。
+     作品入口带 id 供 rpg 页同页无刷新拦截（原 unified-global-topbar D2/D3 行为原样迁移，
+     rpg/game.js 依赖的 navRpgLink id 与 active 类名均沿用，JS 零改动）。
+     桌面折叠（.app-shell.folded → 56px 图标轨，localStorage 记忆）与移动抽屉开合由 sidebar.js 驱动。
+     布局骨架 .app-shell 与 .app-content 语义见 static/css/sidebar.css；各页 head 需共引该样式。 -->
+
+<!-- ① 侧栏列 -->
+<aside class="global-sidebar" id="globalSidebar" th:fragment="sidebar(active, isPlatformAdmin, currentUserEmail='')">
+    <a class="sidebar-brand" th:href="@{/}" title="返回平台主页" aria-label="Agent Platform，返回平台主页">
+        <span class="logo-dot"></span>
+        <span class="sidebar-brand-text">Agent Platform</span>
+    </a>
+    <nav class="sidebar-nav" aria-label="主导航">
+        <a class="sidebar-item" th:classappend="${active == 'gallery'} ? ' active'"
+           th:href="@{/}" title="首页：世界橱窗" aria-label="首页：世界橱窗">
+            <span class="sidebar-item-icon" aria-hidden="true">🏠</span>
+            <span class="sidebar-item-text">首页</span>
+        </a>
+        <a class="sidebar-item" th:classappend="${active == 'planner'} ? ' active'"
+           th:href="@{/rpg/planner}" title="策划管线：从原文或 IP 名字多阶段生成可开局世界包" aria-label="策划管线：从原文或 IP 名字多阶段生成可开局世界包">
+            <span class="sidebar-item-icon" aria-hidden="true">🧭</span>
+            <span class="sidebar-item-text">策划管线</span>
+        </a>
+        <a class="sidebar-item" id="navRpgLink" th:classappend="${active == 'rpg'} ? ' active'"
+           th:href="@{/rpg}" title="创建作品：编辑世界观与角色、就地开局" aria-label="创建作品：编辑世界观与角色、就地开局">
+            <span class="sidebar-item-icon" aria-hidden="true">🎨</span>
+            <span class="sidebar-item-text">创建作品</span>
+        </a>
+        <a class="sidebar-item" th:classappend="${active == 'conversations'} ? ' active'"
+           th:href="@{/conversations}" title="存档：你的 RPG 存档对话" aria-label="存档：你的 RPG 存档对话">
+            <span class="sidebar-item-icon" aria-hidden="true">📜</span>
+            <span class="sidebar-item-text">存档</span>
+        </a>
+        <a class="sidebar-item" th:classappend="${active == 'admin'} ? ' active'"
+           th:href="@{/admin}" th:if="${isPlatformAdmin}" title="用量看板 · 预算 · 单价" aria-label="管理端：用量看板、预算、单价">
+            <span class="sidebar-item-icon" aria-hidden="true">📊</span>
+            <span class="sidebar-item-text">管理端</span>
+        </a>
+        <a class="sidebar-item" th:classappend="${active == 'chat'} ? ' active'"
+           th:href="@{/chat}" title="AI助手：与智能代理对话" aria-label="AI助手：与智能代理对话">
+            <span class="sidebar-item-icon" aria-hidden="true">💬</span>
+            <span class="sidebar-item-text">AI助手</span>
+        </a>
+    </nav>
+    <!-- 账号区（account-switch-sidebar）：当前登录邮箱 chip + 已知账号列表（sidebar.js 读
+         localStorage agent.knownAccounts 渲染，点击跳 /login?email= 预填切换）+ 退出登录；
+         邮箱一律 th:text / 属性转义输出，禁用 th:utext -->
+    <div class="sidebar-account" id="sidebarAccount" th:with="email=${#strings.isEmpty(currentUserEmail) ? null : currentUserEmail}"
+         th:attr="data-email=${email}">
+        <div class="sidebar-account-chip" th:title="${email}">
+            <span class="sidebar-account-avatar" aria-hidden="true"
+                  th:text="${email == null} ? '?' : ${#strings.substring(email, 0, 1)}">?</span>
+            <span class="sidebar-account-email" th:text="${email == null} ? '未登录' : ${email}">未登录</span>
+        </div>
+        <div class="sidebar-account-list" id="sidebarAccountList"></div>
+        <button class="sidebar-logout-btn" id="sidebarLogoutBtn" type="button"
+                title="退出登录" aria-label="退出登录">
+            <span class="sidebar-logout-icon" aria-hidden="true">⏻</span>
+            <span class="sidebar-logout-text">退出登录</span>
+        </button>
+    </div>
+    <!-- 折叠钮（桌面态显示；移动端抽屉态隐藏） -->
+    <button class="sidebar-fold-btn" id="sidebarFoldBtn" type="button"
+            title="收起侧边栏" aria-label="收起侧边栏" aria-expanded="true">
+        <span class="fold-icon" aria-hidden="true">«</span>
+    </button>
+</aside>
+
+<!-- ② 移动端极简顶条：≤768px 显示，桌面 display:none（fixed 不占 grid 流） -->
+<div class="sidebar-mobile-top" th:fragment="mobileTop">
+    <button class="sidebar-burger" id="sidebarBurger" type="button"
+            title="导航菜单" aria-label="打开导航菜单" aria-expanded="false">☰</button>
+    <a class="sidebar-mobile-brand" th:href="@{/}" title="返回平台主页" aria-label="Agent Platform，返回平台主页">
+        <span class="logo-dot"></span>Agent Platform
+    </a>
+</div>
+
+<!-- ③ 移动端抽屉遮罩：抽屉打开时 .show 显示 -->
+<div class="sidebar-mask" id="sidebarMask" th:fragment="mask"></div>
+
+</body>
+</html>

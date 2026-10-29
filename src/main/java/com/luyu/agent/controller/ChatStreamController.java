@@ -345,6 +345,11 @@ public class ChatStreamController {
         if (sessionTenantGuard.isForeign(sessionId)) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "会话不存在或无权访问");
         }
+        // RPG 会话历史不可达（separate-rpg-chat-sessions spec）：原始事件流
+        // （工具调用、state_delta）不经 RpgHistoryCleaner 清洗，不得从主会话端点暴露
+        if (sessionTenantGuard.isRpg(sessionId)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "会话不存在或无权访问");
+        }
 
         List<SessionEvent> events = sessionService.getEvents(sessionId);
         return java.util.stream.IntStream.range(0, events.size())

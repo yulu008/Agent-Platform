@@ -20,8 +20,10 @@ import java.util.Map;
  *   <li>{@code POST /login} → 200 + token 或 401</li>
  * </ul>
  */
-@RestController
-@RequestMapping("/api/auth")
+// 已禁用：与 controller.AuthController 的 /api/auth/* 路径冲突。
+// 此类保留供参考，认证统一由 controller.AuthController（cookie-based）+ tenancy.JwtTenantFilter 处理。
+// @RestController("jwtAuthController")
+// @RequestMapping("/api/auth")
 public class AuthController {
 
     private static final Logger log = LoggerFactory.getLogger(AuthController.class);

@@ -1,0 +1,16 @@
+﻿D:\Agent-Platform\oai-verify2\x\org\springframework\ai\openai\OpenAiChatModel$1.class
+D:\Agent-Platform\oai-verify2\x\org\springframework\ai\openai\OpenAiChatModel$Builder.class
+D:\Agent-Platform\oai-verify2\x\org\springframework\ai\openai\OpenAiChatModel$ChunkMerger.class
+D:\Agent-Platform\oai-verify2\x\org\springframework\ai\openai\OpenAiChatModel$ResponseFormat$Builder.class
+D:\Agent-Platform\oai-verify2\x\org\springframework\ai\openai\OpenAiChatModel$ResponseFormat$Type.class
+D:\Agent-Platform\oai-verify2\x\org\springframework\ai\openai\OpenAiChatModel$ResponseFormat.class
+D:\Agent-Platform\oai-verify2\x\org\springframework\ai\openai\OpenAiChatModel.class
+D:\Agent-Platform\oai-verify2\x\org\springframework\ai\openai\http\okhttp\OpenAiHttpClientBuilderCustomizer.class
+D:\Agent-Platform\oai-verify2\x\org\springframework\ai\openai\http\okhttp\SpringAiOpenAiHttpClient$1.class
+D:\Agent-Platform\oai-verify2\x\org\springframework\ai\openai\http\okhttp\SpringAiOpenAiHttpClient$2.class
+D:\Agent-Platform\oai-verify2\x\org\springframework\ai\openai\http\okhttp\SpringAiOpenAiHttpClient$3.class
+D:\Agent-Platform\oai-verify2\x\org\springframework\ai\openai\http\okhttp\SpringAiOpenAiHttpClient$4.class
+D:\Agent-Platform\oai-verify2\x\org\springframework\ai\openai\http\okhttp\SpringAiOpenAiHttpClient$Builder.class
+D:\Agent-Platform\oai-verify2\x\org\springframework\ai\openai\http\okhttp\SpringAiOpenAiHttpClient.class
+D:\Agent-Platform\oai-verify2\x\org\springframework\ai\openai\setup\OpenAiSetup$ModelProvider.class
+D:\Agent-Platform\oai-verify2\x\org\springframework\ai\openai\setup\OpenAiSetup.class

@@ -1,0 +1,161 @@
+/* 根首页橱窗样式（world-card-gallery D10：世界墙铺满；
+   global-sidebar-nav：全局导航已迁至 sidebar.css + fragments/sidebar.html）。
+   卡片墙本体样式在 world-wall.css；本文件只管页面骨架。
+   亮色风格与 login.css 统一：#f5f7fa 底、白卡片、红主题 */
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background: #f5f7fa;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Microsoft YaHei", sans-serif;
+    color: #1f2329;
+}
+
+/* 墙铺满主体：宽屏留白收窄，窄屏贴边 */
+.showcase-main {
+    flex: 1;
+    width: min(1280px, 94%); /* 94vw→94%：侧栏占位后改按内容列留边，免 94vw 溢出横向滚动 */
+    margin: 0 auto;
+    padding: 24px 0 40px;
+}
+
+/* ===== 页头（结构对齐 planner.css .planner-head-text / rpg.css .works-select-header）：
+   橱窗是只读页无右侧动作钮，只留标题 + 说明行 ===== */
+.showcase-head {
+    margin-bottom: 16px;
+}
+.showcase-head h1 {
+    margin: 0 0 6px;
+    font-size: 1.3rem;
+    color: #1d2939;
+}
+.showcase-lead {
+    margin: 0;
+    max-width: 640px;
+    font-size: 13px;
+    line-height: 1.6;
+    color: #475467;
+}
+
+/* ===== 导入确认弹窗（works-view-and-world-publish 5.3：橱窗非本人已发布卡点击）=====
+   hidden 属性与 display:flex 冲突，显式 [hidden] 归 none；
+   亮色风格与 login.css 统一（白卡、#e94560 红主题主按钮） */
+.showcase-import-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(16, 24, 40, 0.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 50;
+    padding: 16px;
+}
+
+.showcase-import-overlay[hidden] {
+    display: none;
+}
+
+.showcase-import-dialog {
+    width: min(480px, 92vw);
+    background: #ffffff;
+    border: 1px solid #e4e7ec;
+    border-radius: 10px;
+    padding: 20px 22px;
+    box-shadow: 0 12px 40px rgba(16, 24, 40, 0.22);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.showcase-import-dialog h3 {
+    margin: 0;
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: #1f2329;
+}
+
+.showcase-import-body {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.showcase-import-name {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: #1f2329;
+}
+
+.showcase-import-blurb {
+    margin: 0;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    color: #667085;
+}
+
+.showcase-import-meta {
+    margin: 0;
+    font-size: 0.78rem;
+    color: #98a2b3;
+}
+
+/* 快照语义明示（design D1：与发布者此后的修改互不影响）——浅黄提示条 */
+.showcase-import-hint {
+    margin: 0;
+    font-size: 0.78rem;
+    line-height: 1.55;
+    color: #8a5a00;
+    background: #fff7e6;
+    border: 1px solid #ffe1a8;
+    border-radius: 8px;
+    padding: 8px 10px;
+}
+
+.showcase-import-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    margin-top: 4px;
+}
+
+.btn-import-primary {
+    border: none;
+    border-radius: 8px;
+    padding: 9px 18px;
+    font-size: 0.88rem;
+    font-weight: 600;
+    cursor: pointer;
+    color: #ffffff;
+    background: #e94560;
+}
+
+.btn-import-primary:hover {
+    background: #c73650;
+}
+
+.btn-import-primary:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.btn-import-secondary {
+    border: 1px solid #e4e7ec;
+    border-radius: 8px;
+    padding: 9px 18px;
+    font-size: 0.88rem;
+    cursor: pointer;
+    color: #475467;
+    background: #ffffff;
+}
+
+.btn-import-secondary:hover {
+    background: #f9fafb;
+}

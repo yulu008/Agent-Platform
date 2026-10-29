@@ -4,30 +4,35 @@
     <meta charset="UTF-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
     <title>Agent Platform</title>
+    <link rel="stylesheet" th:href="@{/css/sidebar.css(v=${#dates.createNow().time})}"/>
     <link rel="stylesheet" th:href="@{/css/chat.css(v=${#dates.createNow().time})}"/>
 </head>
 <body>
 
-    <!-- 顶部标题栏 -->
-    <header class="chat-header">
-        <button class="header-btn drawer-toggle" id="drawerToggle" title="会话列表">☰</button>
-        <h1>
-            <span class="logo-dot"></span>
-           Agent Platform
-        </h1>
+    <!-- 全局侧边栏（global-sidebar-nav，承接 unified-global-topbar）：单源 fragment 三件套；
+         💬 AI助手 为当前页高亮（原「原始 DEMO」，separate-rpg-chat-sessions 更名）；原 body 100vh 布局迁至 .app-shell（chat.css 适配） -->
+    <div class="app-shell">
+        <aside th:replace="~{fragments/sidebar :: sidebar('chat', ${isPlatformAdmin}, ${currentUserEmail})}"></aside>
+        <div th:replace="~{fragments/sidebar :: mobileTop}"></div>
+        <div th:replace="~{fragments/sidebar :: mask}"></div>
+        <div class="app-content">
+
+    <!-- 上下文工具行（unified-global-topbar D4）：承继原吉卜力绿 header 的会话抽屉/天气簇+降水 FX/记忆抽屉；
+         降水 FX 被工具行 overflow:hidden 裁剪在行内 -->
+    <div class="chat-toolbar" id="chatToolbar">
+        <button class="toolbar-btn drawer-toggle" id="drawerToggle" title="会话列表">☰</button>
         <!-- 天气簇（JS 拉取成功后填充，默认隐藏） -->
         <div class="weather-cluster" id="weatherCluster" hidden></div>
-        <!-- 天气动画 FX 层（被 header overflow:hidden 裁剪在标题栏内） -->
-        <div class="header-weather-fx" aria-hidden="true">
+        <!-- 天气动画 FX 层（被工具行 overflow:hidden 裁剪在行内） -->
+        <div class="chat-toolbar-weather-fx" aria-hidden="true">
             <div class="fx-rain fx-rain-1"></div>
             <div class="fx-rain fx-rain-2"></div>
             <div class="fx-rain fx-rain-3"></div>
             <div class="fx-snow"></div>
             <div class="fx-flash"></div>
         </div>
-        <button class="header-btn memory-toggle" id="memoryToggle" title="长期记忆">📝</button>
-        <a href="/rpg" class="header-btn rpg-link" title="RPG 首页">🎲</a>
-    </header>
+        <button class="toolbar-btn memory-toggle" id="memoryToggle" title="长期记忆">📝</button>
+    </div>
 
     <!-- 左侧会话抽屉 -->
     <aside class="session-drawer" id="sessionDrawer">
@@ -110,6 +115,9 @@
         </form>
     </footer>
 
+    </div><!-- /.app-content -->
+    </div><!-- /.app-shell -->
+
     <!-- Thymeleaf 注入 sessionId 到 JS 全局变量 -->
     <script th:inline="javascript">
         window.__SESSION_ID__ = /*[[${sessionId}]]*/ null;
@@ -119,5 +127,6 @@
     <script th:src="@{/vendor/purify.min.js(v=${#dates.createNow().time})}"></script>
     <script th:src="@{/js/auth-redirect.js(v=${#dates.createNow().time})}"></script>
     <script th:src="@{/js/chat.js(v=${#dates.createNow().time})}"></script>
+    <script th:src="@{/js/sidebar.js(v=${#dates.createNow().time})}"></script>
 </body>
 </html>

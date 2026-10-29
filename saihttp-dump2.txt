@@ -1,0 +1,638 @@
+﻿Compiled from "SpringAiOpenAiHttpClient.java"
+public final class org.springframework.ai.openai.http.okhttp.SpringAiOpenAiHttpClient implements com.openai.core.http.HttpClient {
+  private final okhttp3.OkHttpClient okHttpClient;
+
+  private final boolean ownsDispatcherExecutor;
+
+  private org.springframework.ai.openai.http.okhttp.SpringAiOpenAiHttpClient(okhttp3.OkHttpClient, boolean);
+    Code:
+       0: aload_0
+       1: invokespecial #1                  // Method java/lang/Object."<init>":()V
+       4: aload_0
+       5: aload_1
+       6: putfield      #7                  // Field okHttpClient:Lokhttp3/OkHttpClient;
+       9: aload_0
+      10: iload_2
+      11: putfield      #13                 // Field ownsDispatcherExecutor:Z
+      14: return
+
+  public okhttp3.OkHttpClient getOkHttpClient();
+    Code:
+       0: aload_0
+       1: getfield      #7                  // Field okHttpClient:Lokhttp3/OkHttpClient;
+       4: areturn
+
+  public static org.springframework.ai.openai.http.okhttp.SpringAiOpenAiHttpClient$Builder builder();
+    Code:
+       0: new           #17                 // class org/springframework/ai/openai/http/okhttp/SpringAiOpenAiHttpClient$Builder
+       3: dup
+       4: invokespecial #19                 // Method org/springframework/ai/openai/http/okhttp/SpringAiOpenAiHttpClient$Builder."<init>":()V
+       7: areturn
+
+  public com.openai.core.http.HttpResponse execute(com.openai.core.http.HttpRequest, com.openai.core.RequestOptions);
+    Code:
+       0: aload_0
+       1: aload_1
+       2: aload_2
+       3: invokevirtual #20                 // Method newCall:(Lcom/openai/core/http/HttpRequest;Lcom/openai/core/RequestOptions;)Lokhttp3/Call;
+       6: astore_3
+       7: aload_3
+       8: invokeinterface #24,  1           // InterfaceMethod okhttp3/Call.execute:()Lokhttp3/Response;
+      13: invokestatic  #30                 // Method toHttpResponse:(Lokhttp3/Response;)Lcom/openai/core/http/HttpResponse;
+      16: astore        4
+      18: aload_1
+      19: invokevirtual #34                 // Method com/openai/core/http/HttpRequest.body:()Lcom/openai/core/http/HttpRequestBody;
+      22: astore        5
+      24: aload         5
+      26: ifnull        36
+      29: aload         5
+      31: invokeinterface #40,  1           // InterfaceMethod com/openai/core/http/HttpRequestBody.close:()V
+      36: aload         4
+      38: areturn
+      39: astore        4
+      41: new           #47                 // class com/openai/errors/OpenAIIoException
+      44: dup
+      45: ldc           #49                 // String Request failed
+      47: aload         4
+      49: invokespecial #51                 // Method com/openai/errors/OpenAIIoException."<init>":(Ljava/lang/String;Ljava/lang/Throwable;)V
+      52: athrow
+      53: astore        6
+      55: aload_1
+      56: invokevirtual #34                 // Method com/openai/core/http/HttpRequest.body:()Lcom/openai/core/http/HttpRequestBody;
+      59: astore        7
+      61: aload         7
+      63: ifnull        73
+      66: aload         7
+      68: invokeinterface #40,  1           // InterfaceMethod com/openai/core/http/HttpRequestBody.close:()V
+      73: aload         6
+      75: athrow
+    Exception table:
+       from    to  target type
+           7    18    39   Class java/io/IOException
+           7    18    53   any
+          39    55    53   any
+
+  public java.util.concurrent.CompletableFuture<com.openai.core.http.HttpResponse> executeAsync(com.openai.core.http.HttpRequest, com.openai.core.RequestOptions);
+    Code:
+       0: new           #54                 // class java/util/concurrent/CompletableFuture
+       3: dup
+       4: invokespecial #56                 // Method java/util/concurrent/CompletableFuture."<init>":()V
+       7: astore_3
+       8: aload_0
+       9: aload_1
+      10: aload_2
+      11: invokevirtual #20                 // Method newCall:(Lcom/openai/core/http/HttpRequest;Lcom/openai/core/RequestOptions;)Lokhttp3/Call;
+      14: astore        4
+      16: aload         4
+      18: new           #57                 // class org/springframework/ai/openai/http/okhttp/SpringAiOpenAiHttpClient$1
+      21: dup
+      22: aload_0
+      23: aload_3
+      24: invokespecial #59                 // Method org/springframework/ai/openai/http/okhttp/SpringAiOpenAiHttpClient$1."<init>":(Lorg/springframework/ai/openai/http/okhttp/SpringAiOpenAiHttpClient;Ljava/util/concurrent/CompletableFuture;)V
+      27: invokeinterface #62,  2           // InterfaceMethod okhttp3/Call.enqueue:(Lokhttp3/Callback;)V
+      32: aload_3
+      33: aload         4
+      35: aload_1
+      36: invokedynamic #66,  0             // InvokeDynamic #0:accept:(Lokhttp3/Call;Lcom/openai/core/http/HttpRequest;)Ljava/util/function/BiConsumer;
+      41: invokevirtual #70                 // Method java/util/concurrent/CompletableFuture.whenComplete:(Ljava/util/function/BiConsumer;)Ljava/util/concurrent/CompletableFuture;
+      44: pop
+      45: aload_3
+      46: areturn
+
+  public void close();
+    Code:
+       0: aload_0
+       1: getfield      #13                 // Field ownsDispatcherExecutor:Z
+       4: ifeq          22
+       7: aload_0
+       8: getfield      #7                  // Field okHttpClient:Lokhttp3/OkHttpClient;
+      11: invokevirtual #74                 // Method okhttp3/OkHttpClient.dispatcher:()Lokhttp3/Dispatcher;
+      14: invokevirtual #80                 // Method okhttp3/Dispatcher.executorService:()Ljava/util/concurrent/ExecutorService;
+      17: invokeinterface #86,  1           // InterfaceMethod java/util/concurrent/ExecutorService.shutdown:()V
+      22: aload_0
+      23: getfield      #7                  // Field okHttpClient:Lokhttp3/OkHttpClient;
+      26: invokevirtual #91                 // Method okhttp3/OkHttpClient.connectionPool:()Lokhttp3/ConnectionPool;
+      29: invokevirtual #95                 // Method okhttp3/ConnectionPool.evictAll:()V
+      32: aload_0
+      33: getfield      #7                  // Field okHttpClient:Lokhttp3/OkHttpClient;
+      36: invokevirtual #100                // Method okhttp3/OkHttpClient.cache:()Lokhttp3/Cache;
+      39: ifnull        56
+      42: aload_0
+      43: getfield      #7                  // Field okHttpClient:Lokhttp3/OkHttpClient;
+      46: invokevirtual #100                // Method okhttp3/OkHttpClient.cache:()Lokhttp3/Cache;
+      49: invokevirtual #104                // Method okhttp3/Cache.close:()V
+      52: goto          56
+      55: astore_1
+      56: return
+    Exception table:
+       from    to  target type
+          42    52    55   Class java/io/IOException
+
+  private okhttp3.Call newCall(com.openai.core.http.HttpRequest, com.openai.core.RequestOptions);
+    Code:
+       0: aload_0
+       1: getfield      #7                  // Field okHttpClient:Lokhttp3/OkHttpClient;
+       4: invokevirtual #107                // Method okhttp3/OkHttpClient.newBuilder:()Lokhttp3/OkHttpClient$Builder;
+       7: astore_3
+       8: aload_2
+       9: invokevirtual #111                // Method com/openai/core/RequestOptions.getTimeout:()Lcom/openai/core/Timeout;
+      12: astore        4
+      14: aload         4
+      16: ifnull        53
+      19: aload_3
+      20: aload         4
+      22: invokevirtual #117                // Method com/openai/core/Timeout.connect:()Ljava/time/Duration;
+      25: invokevirtual #123                // Method okhttp3/OkHttpClient$Builder.connectTimeout:(Ljava/time/Duration;)Lokhttp3/OkHttpClient$Builder;
+      28: aload         4
+      30: invokevirtual #129                // Method com/openai/core/Timeout.read:()Ljava/time/Duration;
+      33: invokevirtual #132                // Method okhttp3/OkHttpClient$Builder.readTimeout:(Ljava/time/Duration;)Lokhttp3/OkHttpClient$Builder;
+      36: aload         4
+      38: invokevirtual #135                // Method com/openai/core/Timeout.write:()Ljava/time/Duration;
+      41: invokevirtual #138                // Method okhttp3/OkHttpClient$Builder.writeTimeout:(Ljava/time/Duration;)Lokhttp3/OkHttpClient$Builder;
+      44: aload         4
+      46: invokevirtual #141                // Method com/openai/core/Timeout.request:()Ljava/time/Duration;
+      49: invokevirtual #144                // Method okhttp3/OkHttpClient$Builder.callTimeout:(Ljava/time/Duration;)Lokhttp3/OkHttpClient$Builder;
+      52: pop
+      53: aload_3
+      54: invokevirtual #147                // Method okhttp3/OkHttpClient$Builder.build:()Lokhttp3/OkHttpClient;
+      57: astore        5
+      59: aload         5
+      61: aload_1
+      62: aload         5
+      64: invokestatic  #151                // Method toRequestWithStainlessHeaders:(Lcom/openai/core/http/HttpRequest;Lokhttp3/OkHttpClient;)Lokhttp3/Request;
+      67: invokevirtual #155                // Method okhttp3/OkHttpClient.newCall:(Lokhttp3/Request;)Lokhttp3/Call;
+      70: areturn
+
+  private static okhttp3.Request toRequestWithStainlessHeaders(com.openai.core.http.HttpRequest, okhttp3.OkHttpClient);
+    Code:
+       0: aload_0
+       1: invokevirtual #34                 // Method com/openai/core/http/HttpRequest.body:()Lcom/openai/core/http/HttpRequestBody;
+       4: invokestatic  #158                // Method toOkHttpRequestBody:(Lcom/openai/core/http/HttpRequestBody;)Lokhttp3/RequestBody;
+       7: astore_2
+       8: aload_2
+       9: ifnonnull     29
+      12: aload_0
+      13: invokevirtual #162                // Method com/openai/core/http/HttpRequest.method:()Lcom/openai/core/http/HttpMethod;
+      16: invokestatic  #166                // Method requiresBody:(Lcom/openai/core/http/HttpMethod;)Z
+      19: ifeq          29
+      22: ldc           #170                // String
+      24: aconst_null
+      25: invokestatic  #172                // Method okhttp3/RequestBody.create:(Ljava/lang/String;Lokhttp3/MediaType;)Lokhttp3/RequestBody;
+      28: astore_2
+      29: new           #178                // class okhttp3/Request$Builder
+      32: dup
+      33: invokespecial #180                // Method okhttp3/Request$Builder."<init>":()V
+      36: aload_0
+      37: invokevirtual #181                // Method com/openai/core/http/HttpRequest.url:()Ljava/lang/String;
+      40: invokevirtual #185                // Method okhttp3/Request$Builder.url:(Ljava/lang/String;)Lokhttp3/Request$Builder;
+      43: aload_0
+      44: invokevirtual #162                // Method com/openai/core/http/HttpRequest.method:()Lcom/openai/core/http/HttpMethod;
+      47: invokevirtual #188                // Method com/openai/core/http/HttpMethod.name:()Ljava/lang/String;
+      50: aload_2
+      51: invokevirtual #193                // Method okhttp3/Request$Builder.method:(Ljava/lang/String;Lokhttp3/RequestBody;)Lokhttp3/Request$Builder;
+      54: astore_3
+      55: aload_0
+      56: invokevirtual #196                // Method com/openai/core/http/HttpRequest.headers:()Lcom/openai/core/http/Headers;
+      59: astore        4
+      61: aload         4
+      63: invokevirtual #200                // Method com/openai/core/http/Headers.names:()Ljava/util/Set;
+      66: invokeinterface #206,  1          // InterfaceMethod java/util/Set.iterator:()Ljava/util/Iterator;
+      71: astore        5
+      73: aload         5
+      75: invokeinterface #212,  1          // InterfaceMethod java/util/Iterator.hasNext:()Z
+      80: ifeq          146
+      83: aload         5
+      85: invokeinterface #218,  1          // InterfaceMethod java/util/Iterator.next:()Ljava/lang/Object;
+      90: checkcast     #222                // class java/lang/String
+      93: astore        6
+      95: aload         4
+      97: aload         6
+      99: invokevirtual #224                // Method com/openai/core/http/Headers.values:(Ljava/lang/String;)Ljava/util/List;
+     102: invokeinterface #228,  1          // InterfaceMethod java/util/List.iterator:()Ljava/util/Iterator;
+     107: astore        7
+     109: aload         7
+     111: invokeinterface #212,  1          // InterfaceMethod java/util/Iterator.hasNext:()Z
+     116: ifeq          143
+     119: aload         7
+     121: invokeinterface #218,  1          // InterfaceMethod java/util/Iterator.next:()Ljava/lang/Object;
+     126: checkcast     #222                // class java/lang/String
+     129: astore        8
+     131: aload_3
+     132: aload         6
+     134: aload         8
+     136: invokevirtual #231                // Method okhttp3/Request$Builder.addHeader:(Ljava/lang/String;Ljava/lang/String;)Lokhttp3/Request$Builder;
+     139: pop
+     140: goto          109
+     143: goto          73
+     146: aload         4
+     148: invokevirtual #200                // Method com/openai/core/http/Headers.names:()Ljava/util/Set;
+     151: ldc           #235                // String X-Stainless-Read-Timeout
+     153: invokeinterface #237,  2          // InterfaceMethod java/util/Set.contains:(Ljava/lang/Object;)Z
+     158: ifne          189
+     161: aload_1
+     162: invokevirtual #241                // Method okhttp3/OkHttpClient.readTimeoutMillis:()I
+     165: ifeq          189
+     168: aload_3
+     169: ldc           #235                // String X-Stainless-Read-Timeout
+     171: aload_1
+     172: invokevirtual #241                // Method okhttp3/OkHttpClient.readTimeoutMillis:()I
+     175: i2l
+     176: invokestatic  #245                // Method java/time/Duration.ofMillis:(J)Ljava/time/Duration;
+     179: invokevirtual #251                // Method java/time/Duration.getSeconds:()J
+     182: invokestatic  #255                // Method java/lang/Long.toString:(J)Ljava/lang/String;
+     185: invokevirtual #231                // Method okhttp3/Request$Builder.addHeader:(Ljava/lang/String;Ljava/lang/String;)Lokhttp3/Request$Builder;
+     188: pop
+     189: aload         4
+     191: invokevirtual #200                // Method com/openai/core/http/Headers.names:()Ljava/util/Set;
+     194: ldc_w         #261                // String X-Stainless-Timeout
+     197: invokeinterface #237,  2          // InterfaceMethod java/util/Set.contains:(Ljava/lang/Object;)Z
+     202: ifne          234
+     205: aload_1
+     206: invokevirtual #263                // Method okhttp3/OkHttpClient.callTimeoutMillis:()I
+     209: ifeq          234
+     212: aload_3
+     213: ldc_w         #261                // String X-Stainless-Timeout
+     216: aload_1
+     217: invokevirtual #263                // Method okhttp3/OkHttpClient.callTimeoutMillis:()I
+     220: i2l
+     221: invokestatic  #245                // Method java/time/Duration.ofMillis:(J)Ljava/time/Duration;
+     224: invokevirtual #251                // Method java/time/Duration.getSeconds:()J
+     227: invokestatic  #255                // Method java/lang/Long.toString:(J)Ljava/lang/String;
+     230: invokevirtual #231                // Method okhttp3/Request$Builder.addHeader:(Ljava/lang/String;Ljava/lang/String;)Lokhttp3/Request$Builder;
+     233: pop
+     234: aload_3
+     235: invokevirtual #266                // Method okhttp3/Request$Builder.build:()Lokhttp3/Request;
+     238: areturn
+
+  private static okhttp3.Request toRequestComputeUrl(com.openai.core.http.HttpRequest, okhttp3.OkHttpClient);
+    Code:
+       0: aload_0
+       1: invokevirtual #34                 // Method com/openai/core/http/HttpRequest.body:()Lcom/openai/core/http/HttpRequestBody;
+       4: invokestatic  #158                // Method toOkHttpRequestBody:(Lcom/openai/core/http/HttpRequestBody;)Lokhttp3/RequestBody;
+       7: astore_2
+       8: aload_2
+       9: ifnonnull     29
+      12: aload_0
+      13: invokevirtual #162                // Method com/openai/core/http/HttpRequest.method:()Lcom/openai/core/http/HttpMethod;
+      16: invokestatic  #166                // Method requiresBody:(Lcom/openai/core/http/HttpMethod;)Z
+      19: ifeq          29
+      22: ldc           #170                // String
+      24: aconst_null
+      25: invokestatic  #172                // Method okhttp3/RequestBody.create:(Ljava/lang/String;Lokhttp3/MediaType;)Lokhttp3/RequestBody;
+      28: astore_2
+      29: new           #178                // class okhttp3/Request$Builder
+      32: dup
+      33: invokespecial #180                // Method okhttp3/Request$Builder."<init>":()V
+      36: aload_0
+      37: invokevirtual #181                // Method com/openai/core/http/HttpRequest.url:()Ljava/lang/String;
+      40: invokevirtual #185                // Method okhttp3/Request$Builder.url:(Ljava/lang/String;)Lokhttp3/Request$Builder;
+      43: aload_0
+      44: invokevirtual #162                // Method com/openai/core/http/HttpRequest.method:()Lcom/openai/core/http/HttpMethod;
+      47: invokevirtual #188                // Method com/openai/core/http/HttpMethod.name:()Ljava/lang/String;
+      50: aload_2
+      51: invokevirtual #193                // Method okhttp3/Request$Builder.method:(Ljava/lang/String;Lokhttp3/RequestBody;)Lokhttp3/Request$Builder;
+      54: astore_3
+      55: aload_0
+      56: invokevirtual #196                // Method com/openai/core/http/HttpRequest.headers:()Lcom/openai/core/http/Headers;
+      59: astore        4
+      61: aload         4
+      63: invokevirtual #200                // Method com/openai/core/http/Headers.names:()Ljava/util/Set;
+      66: invokeinterface #206,  1          // InterfaceMethod java/util/Set.iterator:()Ljava/util/Iterator;
+      71: astore        5
+      73: aload         5
+      75: invokeinterface #212,  1          // InterfaceMethod java/util/Iterator.hasNext:()Z
+      80: ifeq          146
+      83: aload         5
+      85: invokeinterface #218,  1          // InterfaceMethod java/util/Iterator.next:()Ljava/lang/Object;
+      90: checkcast     #222                // class java/lang/String
+      93: astore        6
+      95: aload         4
+      97: aload         6
+      99: invokevirtual #224                // Method com/openai/core/http/Headers.values:(Ljava/lang/String;)Ljava/util/List;
+     102: invokeinterface #228,  1          // InterfaceMethod java/util/List.iterator:()Ljava/util/Iterator;
+     107: astore        7
+     109: aload         7
+     111: invokeinterface #212,  1          // InterfaceMethod java/util/Iterator.hasNext:()Z
+     116: ifeq          143
+     119: aload         7
+     121: invokeinterface #218,  1          // InterfaceMethod java/util/Iterator.next:()Ljava/lang/Object;
+     126: checkcast     #222                // class java/lang/String
+     129: astore        8
+     131: aload_3
+     132: aload         6
+     134: aload         8
+     136: invokevirtual #231                // Method okhttp3/Request$Builder.addHeader:(Ljava/lang/String;Ljava/lang/String;)Lokhttp3/Request$Builder;
+     139: pop
+     140: goto          109
+     143: goto          73
+     146: aload_1
+     147: ifnull        238
+     150: aload         4
+     152: invokevirtual #200                // Method com/openai/core/http/Headers.names:()Ljava/util/Set;
+     155: ldc           #235                // String X-Stainless-Read-Timeout
+     157: invokeinterface #237,  2          // InterfaceMethod java/util/Set.contains:(Ljava/lang/Object;)Z
+     162: ifne          193
+     165: aload_1
+     166: invokevirtual #241                // Method okhttp3/OkHttpClient.readTimeoutMillis:()I
+     169: ifeq          193
+     172: aload_3
+     173: ldc           #235                // String X-Stainless-Read-Timeout
+     175: aload_1
+     176: invokevirtual #241                // Method okhttp3/OkHttpClient.readTimeoutMillis:()I
+     179: i2l
+     180: invokestatic  #245                // Method java/time/Duration.ofMillis:(J)Ljava/time/Duration;
+     183: invokevirtual #251                // Method java/time/Duration.getSeconds:()J
+     186: invokestatic  #255                // Method java/lang/Long.toString:(J)Ljava/lang/String;
+     189: invokevirtual #231                // Method okhttp3/Request$Builder.addHeader:(Ljava/lang/String;Ljava/lang/String;)Lokhttp3/Request$Builder;
+     192: pop
+     193: aload         4
+     195: invokevirtual #200                // Method com/openai/core/http/Headers.names:()Ljava/util/Set;
+     198: ldc_w         #261                // String X-Stainless-Timeout
+     201: invokeinterface #237,  2          // InterfaceMethod java/util/Set.contains:(Ljava/lang/Object;)Z
+     206: ifne          238
+     209: aload_1
+     210: invokevirtual #263                // Method okhttp3/OkHttpClient.callTimeoutMillis:()I
+     213: ifeq          238
+     216: aload_3
+     217: ldc_w         #261                // String X-Stainless-Timeout
+     220: aload_1
+     221: invokevirtual #263                // Method okhttp3/OkHttpClient.callTimeoutMillis:()I
+     224: i2l
+     225: invokestatic  #245                // Method java/time/Duration.ofMillis:(J)Ljava/time/Duration;
+     228: invokevirtual #251                // Method java/time/Duration.getSeconds:()J
+     231: invokestatic  #255                // Method java/lang/Long.toString:(J)Ljava/lang/String;
+     234: invokevirtual #231                // Method okhttp3/Request$Builder.addHeader:(Ljava/lang/String;Ljava/lang/String;)Lokhttp3/Request$Builder;
+     237: pop
+     238: aload_3
+     239: invokevirtual #266                // Method okhttp3/Request$Builder.build:()Lokhttp3/Request;
+     242: areturn
+
+  private static boolean requiresBody(com.openai.core.http.HttpMethod);
+    Code:
+       0: aload_0
+       1: getstatic     #269                // Field com/openai/core/http/HttpMethod.POST:Lcom/openai/core/http/HttpMethod;
+       4: if_acmpeq     21
+       7: aload_0
+       8: getstatic     #273                // Field com/openai/core/http/HttpMethod.PUT:Lcom/openai/core/http/HttpMethod;
+      11: if_acmpeq     21
+      14: aload_0
+      15: getstatic     #276                // Field com/openai/core/http/HttpMethod.PATCH:Lcom/openai/core/http/HttpMethod;
+      18: if_acmpne     25
+      21: iconst_1
+      22: goto          26
+      25: iconst_0
+      26: ireturn
+
+  private static okhttp3.RequestBody toOkHttpRequestBody(com.openai.core.http.HttpRequestBody);
+    Code:
+       0: aload_0
+       1: ifnonnull     6
+       4: aconst_null
+       5: areturn
+       6: aload_0
+       7: invokeinterface #279,  1          // InterfaceMethod com/openai/core/http/HttpRequestBody.contentType:()Ljava/lang/String;
+      12: astore_1
+      13: aload_1
+      14: ifnull        24
+      17: aload_1
+      18: invokestatic  #282                // Method okhttp3/MediaType.parse:(Ljava/lang/String;)Lokhttp3/MediaType;
+      21: goto          25
+      24: aconst_null
+      25: astore_2
+      26: aload_0
+      27: invokeinterface #288,  1          // InterfaceMethod com/openai/core/http/HttpRequestBody.contentLength:()J
+      32: lstore_3
+      33: new           #291                // class org/springframework/ai/openai/http/okhttp/SpringAiOpenAiHttpClient$2
+      36: dup
+      37: aload_2
+      38: lload_3
+      39: aload_0
+      40: invokespecial #293                // Method org/springframework/ai/openai/http/okhttp/SpringAiOpenAiHttpClient$2."<init>":(Lokhttp3/MediaType;JLcom/openai/core/http/HttpRequestBody;)V
+      43: areturn
+
+  private static com.openai.core.http.HttpResponse toHttpResponse(okhttp3.Response);
+    Code:
+       0: aload_0
+       1: invokevirtual #296                // Method okhttp3/Response.headers:()Lokhttp3/Headers;
+       4: invokestatic  #301                // Method toOpenAiHeaders:(Lokhttp3/Headers;)Lcom/openai/core/http/Headers;
+       7: astore_1
+       8: new           #305                // class org/springframework/ai/openai/http/okhttp/SpringAiOpenAiHttpClient$3
+      11: dup
+      12: aload_0
+      13: aload_1
+      14: invokespecial #307                // Method org/springframework/ai/openai/http/okhttp/SpringAiOpenAiHttpClient$3."<init>":(Lokhttp3/Response;Lcom/openai/core/http/Headers;)V
+      17: areturn
+
+  private static com.openai.core.http.HttpRequest toHttpRequest(okhttp3.Request);
+    Code:
+       0: invokestatic  #310                // Method com/openai/core/http/HttpRequest.builder:()Lcom/openai/core/http/HttpRequest$Builder;
+       3: aload_0
+       4: invokevirtual #314                // Method okhttp3/Request.method:()Ljava/lang/String;
+       7: invokestatic  #318                // Method com/openai/core/http/HttpMethod.valueOf:(Ljava/lang/String;)Lcom/openai/core/http/HttpMethod;
+      10: invokevirtual #322                // Method com/openai/core/http/HttpRequest$Builder.method:(Lcom/openai/core/http/HttpMethod;)Lcom/openai/core/http/HttpRequest$Builder;
+      13: aload_0
+      14: invokevirtual #327                // Method okhttp3/Request.url:()Lokhttp3/HttpUrl;
+      17: invokestatic  #330                // Method toBaseUrl:(Lokhttp3/HttpUrl;)Ljava/lang/String;
+      20: invokevirtual #334                // Method com/openai/core/http/HttpRequest$Builder.baseUrl:(Ljava/lang/String;)Lcom/openai/core/http/HttpRequest$Builder;
+      23: astore_1
+      24: aload_0
+      25: invokevirtual #327                // Method okhttp3/Request.url:()Lokhttp3/HttpUrl;
+      28: invokevirtual #338                // Method okhttp3/HttpUrl.pathSegments:()Ljava/util/List;
+      31: invokeinterface #228,  1          // InterfaceMethod java/util/List.iterator:()Ljava/util/Iterator;
+      36: astore_2
+      37: aload_2
+      38: invokeinterface #212,  1          // InterfaceMethod java/util/Iterator.hasNext:()Z
+      43: ifeq          65
+      46: aload_2
+      47: invokeinterface #218,  1          // InterfaceMethod java/util/Iterator.next:()Ljava/lang/Object;
+      52: checkcast     #222                // class java/lang/String
+      55: astore_3
+      56: aload_1
+      57: aload_3
+      58: invokevirtual #344                // Method com/openai/core/http/HttpRequest$Builder.addPathSegment:(Ljava/lang/String;)Lcom/openai/core/http/HttpRequest$Builder;
+      61: pop
+      62: goto          37
+      65: aload_0
+      66: invokevirtual #327                // Method okhttp3/Request.url:()Lokhttp3/HttpUrl;
+      69: invokevirtual #347                // Method okhttp3/HttpUrl.queryParameterNames:()Ljava/util/Set;
+      72: invokeinterface #206,  1          // InterfaceMethod java/util/Set.iterator:()Ljava/util/Iterator;
+      77: astore_2
+      78: aload_2
+      79: invokeinterface #212,  1          // InterfaceMethod java/util/Iterator.hasNext:()Z
+      84: ifeq          153
+      87: aload_2
+      88: invokeinterface #218,  1          // InterfaceMethod java/util/Iterator.next:()Ljava/lang/Object;
+      93: checkcast     #222                // class java/lang/String
+      96: astore_3
+      97: aload_0
+      98: invokevirtual #327                // Method okhttp3/Request.url:()Lokhttp3/HttpUrl;
+     101: aload_3
+     102: invokevirtual #350                // Method okhttp3/HttpUrl.queryParameterValues:(Ljava/lang/String;)Ljava/util/List;
+     105: invokeinterface #228,  1          // InterfaceMethod java/util/List.iterator:()Ljava/util/Iterator;
+     110: astore        4
+     112: aload         4
+     114: invokeinterface #212,  1          // InterfaceMethod java/util/Iterator.hasNext:()Z
+     119: ifeq          150
+     122: aload         4
+     124: invokeinterface #218,  1          // InterfaceMethod java/util/Iterator.next:()Ljava/lang/Object;
+     129: checkcast     #222                // class java/lang/String
+     132: astore        5
+     134: aload         5
+     136: ifnull        147
+     139: aload_1
+     140: aload_3
+     141: aload         5
+     143: invokevirtual #353                // Method com/openai/core/http/HttpRequest$Builder.putQueryParam:(Ljava/lang/String;Ljava/lang/String;)Lcom/openai/core/http/HttpRequest$Builder;
+     146: pop
+     147: goto          112
+     150: goto          78
+     153: aload_0
+     154: invokevirtual #357                // Method okhttp3/Request.headers:()Lokhttp3/Headers;
+     157: astore_2
+     158: iconst_0
+     159: istore_3
+     160: aload_2
+     161: invokevirtual #358                // Method okhttp3/Headers.size:()I
+     164: istore        4
+     166: iload_3
+     167: iload         4
+     169: if_icmpge     193
+     172: aload_1
+     173: aload_2
+     174: iload_3
+     175: invokevirtual #363                // Method okhttp3/Headers.name:(I)Ljava/lang/String;
+     178: aload_2
+     179: iload_3
+     180: invokevirtual #366                // Method okhttp3/Headers.value:(I)Ljava/lang/String;
+     183: invokevirtual #369                // Method com/openai/core/http/HttpRequest$Builder.putHeader:(Ljava/lang/String;Ljava/lang/String;)Lcom/openai/core/http/HttpRequest$Builder;
+     186: pop
+     187: iinc          3, 1
+     190: goto          166
+     193: aload_0
+     194: invokevirtual #372                // Method okhttp3/Request.body:()Lokhttp3/RequestBody;
+     197: astore_3
+     198: aload_3
+     199: ifnull        211
+     202: aload_1
+     203: aload_3
+     204: invokestatic  #375                // Method toHttpRequestBody:(Lokhttp3/RequestBody;)Lcom/openai/core/http/HttpRequestBody;
+     207: invokevirtual #379                // Method com/openai/core/http/HttpRequest$Builder.body:(Lcom/openai/core/http/HttpRequestBody;)Lcom/openai/core/http/HttpRequest$Builder;
+     210: pop
+     211: aload_1
+     212: invokevirtual #382                // Method com/openai/core/http/HttpRequest$Builder.build:()Lcom/openai/core/http/HttpRequest;
+     215: areturn
+
+  private static java.lang.String toBaseUrl(okhttp3.HttpUrl);
+    Code:
+       0: new           #385                // class java/lang/StringBuilder
+       3: dup
+       4: invokespecial #387                // Method java/lang/StringBuilder."<init>":()V
+       7: astore_1
+       8: aload_1
+       9: aload_0
+      10: invokevirtual #388                // Method okhttp3/HttpUrl.scheme:()Ljava/lang/String;
+      13: invokevirtual #391                // Method java/lang/StringBuilder.append:(Ljava/lang/String;)Ljava/lang/StringBuilder;
+      16: ldc_w         #395                // String ://
+      19: invokevirtual #391                // Method java/lang/StringBuilder.append:(Ljava/lang/String;)Ljava/lang/StringBuilder;
+      22: aload_0
+      23: invokevirtual #397                // Method okhttp3/HttpUrl.host:()Ljava/lang/String;
+      26: invokevirtual #391                // Method java/lang/StringBuilder.append:(Ljava/lang/String;)Ljava/lang/StringBuilder;
+      29: pop
+      30: aload_0
+      31: invokevirtual #400                // Method okhttp3/HttpUrl.port:()I
+      34: aload_0
+      35: invokevirtual #388                // Method okhttp3/HttpUrl.scheme:()Ljava/lang/String;
+      38: invokestatic  #403                // Method okhttp3/HttpUrl.defaultPort:(Ljava/lang/String;)I
+      41: if_icmpeq     58
+      44: aload_1
+      45: bipush        58
+      47: invokevirtual #407                // Method java/lang/StringBuilder.append:(C)Ljava/lang/StringBuilder;
+      50: aload_0
+      51: invokevirtual #400                // Method okhttp3/HttpUrl.port:()I
+      54: invokevirtual #410                // Method java/lang/StringBuilder.append:(I)Ljava/lang/StringBuilder;
+      57: pop
+      58: aload_1
+      59: invokevirtual #413                // Method java/lang/StringBuilder.toString:()Ljava/lang/String;
+      62: areturn
+
+  private static com.openai.core.http.HttpRequestBody toHttpRequestBody(okhttp3.RequestBody);
+    Code:
+       0: aload_0
+       1: invokevirtual #415                // Method okhttp3/RequestBody.contentType:()Lokhttp3/MediaType;
+       4: astore_1
+       5: aload_1
+       6: ifnull        16
+       9: aload_1
+      10: invokevirtual #418                // Method okhttp3/MediaType.toString:()Ljava/lang/String;
+      13: goto          17
+      16: aconst_null
+      17: astore_2
+      18: aload_0
+      19: invokevirtual #419                // Method okhttp3/RequestBody.contentLength:()J
+      22: lstore_3
+      23: goto          41
+      26: astore        5
+      28: new           #47                 // class com/openai/errors/OpenAIIoException
+      31: dup
+      32: ldc_w         #420                // String Could not read content length
+      35: aload         5
+      37: invokespecial #51                 // Method com/openai/errors/OpenAIIoException."<init>":(Ljava/lang/String;Ljava/lang/Throwable;)V
+      40: athrow
+      41: aload_0
+      42: invokevirtual #422                // Method okhttp3/RequestBody.isOneShot:()Z
+      45: istore        5
+      47: new           #425                // class org/springframework/ai/openai/http/okhttp/SpringAiOpenAiHttpClient$4
+      50: dup
+      51: aload_2
+      52: lload_3
+      53: iload         5
+      55: aload_0
+      56: invokespecial #427                // Method org/springframework/ai/openai/http/okhttp/SpringAiOpenAiHttpClient$4."<init>":(Ljava/lang/String;JZLokhttp3/RequestBody;)V
+      59: areturn
+    Exception table:
+       from    to  target type
+          18    23    26   Class java/io/IOException
+
+  private static com.openai.core.http.Headers toOpenAiHeaders(okhttp3.Headers);
+    Code:
+       0: invokestatic  #430                // Method com/openai/core/http/Headers.builder:()Lcom/openai/core/http/Headers$Builder;
+       3: astore_1
+       4: iconst_0
+       5: istore_2
+       6: aload_0
+       7: invokevirtual #358                // Method okhttp3/Headers.size:()I
+      10: istore_3
+      11: iload_2
+      12: iload_3
+      13: if_icmpge     37
+      16: aload_1
+      17: aload_0
+      18: iload_2
+      19: invokevirtual #363                // Method okhttp3/Headers.name:(I)Ljava/lang/String;
+      22: aload_0
+      23: iload_2
+      24: invokevirtual #366                // Method okhttp3/Headers.value:(I)Ljava/lang/String;
+      27: invokevirtual #433                // Method com/openai/core/http/Headers$Builder.put:(Ljava/lang/String;Ljava/lang/String;)Lcom/openai/core/http/Headers$Builder;
+      30: pop
+      31: iinc          2, 1
+      34: goto          11
+      37: aload_1
+      38: invokevirtual #439                // Method com/openai/core/http/Headers$Builder.build:()Lcom/openai/core/http/Headers;
+      41: areturn
+
+  private static void lambda$executeAsync$0(okhttp3.Call, com.openai.core.http.HttpRequest, com.openai.core.http.HttpResponse, java.lang.Throwable);
+    Code:
+       0: aload_3
+       1: instanceof    #441                // class java/util/concurrent/CancellationException
+       4: ifeq          13
+       7: aload_0
+       8: invokeinterface #443,  1          // InterfaceMethod okhttp3/Call.cancel:()V
+      13: aload_1
+      14: invokevirtual #34                 // Method com/openai/core/http/HttpRequest.body:()Lcom/openai/core/http/HttpRequestBody;
+      17: astore        4
+      19: aload         4
+      21: ifnull        31
+      24: aload         4
+      26: invokeinterface #40,  1           // InterfaceMethod com/openai/core/http/HttpRequestBody.close:()V
+      31: return
+}

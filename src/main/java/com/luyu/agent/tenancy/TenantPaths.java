@@ -86,4 +86,14 @@ public final class TenantPaths {
     public static Path rpgSavesDir(String tenantId) {
         return tenantDir(tenantId).resolve("rpg-saves");
     }
+
+    /** 当前请求租户的策划管线 run 根：{@code ~/.agent/tenants/<tid>/planner-runs}（add-planner-pipeline）。 */
+    public static Path plannerRunsDir() {
+        return tenantDir().resolve("planner-runs");
+    }
+
+    /** 指定租户的策划管线 run 根。 */
+    public static Path plannerRunsDir(String tenantId) {
+        return tenantDir(tenantId).resolve("planner-runs");
+    }
 }

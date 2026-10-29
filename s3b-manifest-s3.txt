@@ -1,0 +1,130 @@
+﻿  S3:
+    status: CONFIRMED
+    version: 4
+    summary: 85 个候选：人物001：青云门外门弟子，剑法平平却心怀侠义、人物002：青云门内门首座，冷面剑客，掌门师弟、人物007：少林方丈，佛法精深，慈悲为怀、人物009：峨眉派女掌门，剑心通明，门规森严、人物011：丐帮帮主，打狗棒法传人，滑稽机…
+    rounds:
+    - {round: 1, feedback: Rewrite the characters with more distinct and vivid personalities,
+      at: '2026-10-28T10:23:51.387275800'}
+    confirmedVersion: 4
+    upstreamVersion: 1
+    candidates:
+    - {id: candidate-01, title: 人物001：青云门外门弟子，剑法平平却心怀侠义, status: CONFIRMED}
+    - {id: candidate-02, title: 人物002：青云门内门首座，冷面剑客，掌门师弟, status: CONFIRMED}
+    - {id: candidate-03, title: 人物007：少林方丈，佛法精深，慈悲为怀, status: CONFIRMED}
+    - {id: candidate-04, title: 人物009：峨眉派女掌门，剑心通明，门规森严, status: CONFIRMED}
+    - {id: candidate-05, title: 人物011：丐帮帮主，打狗棒法传人，滑稽机智, status: CONFIRMED}
+    - {id: candidate-06, title: 人物013：唐门门主，暗器毒物双绝，行事诡秘, status: CONFIRMED}
+    - {id: candidate-07, title: 人物014：唐门少主，毒经天才，体弱多病, status: CONFIRMED}
+    - {id: candidate-08, title: 人物016：五毒教圣女，蛊术传人，亦正亦邪, status: CONFIRMED}
+    - {id: candidate-09, title: 人物018：魔教教主，武功盖世，喜怒无常, status: CONFIRMED}
+    - {id: candidate-10, title: 人物020：魔教右护法，笑里藏刀，心机深沉, status: CONFIRMED}
+    - {id: candidate-11, title: 人物022：锦衣卫指挥使，朝廷鹰犬，权谋高手, status: CONFIRMED}
+    - {id: candidate-12, title: 人物024：东厂督主，武林出身的大内权宦, status: CONFIRMED}
+    - {id: candidate-13, title: 人物026：天下第一庄庄主，豪爽好客，广交豪杰, status: CONFIRMED}
+    - {id: candidate-14, title: 人物029：铸剑世家老祖，铸出过名剑的宗师, status: CONFIRMED}
+    - {id: candidate-15, title: 人物030：药王谷谷主，医术通神，脾气古怪, status: CONFIRMED}
+    - {id: candidate-16, title: 人物034：神捕司总捕头，六扇门第一高手, status: CONFIRMED}
+    - {id: candidate-17, title: 人物036：雁门关守将，抗敌名将，铁血刚正, status: CONFIRMED}
+    - {id: candidate-18, title: 人物038：塞外马贼王，横行大漠的枭雄, status: CONFIRMED}
+    - {id: candidate-19, title: 人物053：客栈老板娘，八面玲珑的老板娘, status: CONFIRMED}
+    - {id: candidate-20, title: 人物084：垂暮剑圣，天下第一剑，隐居多年, status: CONFIRMED}
+    - {id: candidate-21, title: 人物003：青云门掌门，年迈德高，深居简出, status: CONFIRMED}
+    - {id: candidate-22, title: 人物004：武当山道长，太极名家，与世无争, status: CONFIRMED}
+    - {id: candidate-23, title: 人物005：武当俗家弟子，市井出身，机灵多变, status: CONFIRMED}
+    - {id: candidate-24, title: 人物006：少林寺武僧头陀，铁掌无敌，不苟言笑, status: CONFIRMED}
+    - {id: candidate-25, title: 人物008：少林藏经阁扫地僧，深藏不露的隐世高手, status: CONFIRMED}
+    - {id: candidate-26, title: 人物010：峨眉派大师姐，剑术凌厉，性情高傲, status: CONFIRMED}
+    - {id: candidate-27, title: 人物012：丐帮九袋长老，市井消息灵通人士, status: CONFIRMED}
+    - {id: candidate-28, title: 人物015：唐门老仆，忠心耿耿的哑仆, status: CONFIRMED}
+    - {id: candidate-29, title: 人物017：五毒教长老，野心勃勃的夺权者, status: CONFIRMED}
+    - {id: candidate-30, title: 人物019：魔教左护法，刀法绝伦，忠心护主, status: CONFIRMED}
+    - {id: candidate-31, title: 人物021：魔教圣女，教主独女，冷艳孤傲, status: CONFIRMED}
+    - {id: candidate-32, title: 人物023：锦衣卫千户，出身寒微的酷吏, status: CONFIRMED}
+    - {id: candidate-33, title: 人物025：江湖第一神偷，轻功绝顶，劫富济贫, status: CONFIRMED}
+    - {id: candidate-34, title: 人物027：天下第一庄少庄主，纨绔子弟，浪子回头, status: CONFIRMED}
+    - {id: candidate-35, title: 人物028：铸剑世家传人，能辨天下名剑, status: CONFIRMED}
+    - {id: candidate-36, title: 人物031：药王谷小药童，天资聪颖的孤儿, status: CONFIRMED}
+    - {id: candidate-37, title: 人物032：鬼刀门刀王，一刀断江的狂人, status: CONFIRMED}
+    - {id: candidate-38, title: 人物033：鬼刀门弃徒，改练左手刀的独臂客, status: CONFIRMED}
+    - {id: candidate-39, title: 人物035：神捕司女捕快，追踪术天下无双, status: CONFIRMED}
+    - {id: candidate-40, title: 人物037：雁门关参军，运筹帷幄的儒将, status: CONFIRMED}
+    - {id: candidate-41, title: 人物060：樵夫，山间砍柴的大力士, status: CONFIRMED}
+    - {id: candidate-42, title: 人物061：绣娘，飞针走线暗器无双的巧手妇人, status: CONFIRMED}
+    - {id: candidate-43, title: 人物062：铁匠，百炼成钢的打铁匠, status: CONFIRMED}
+    - {id: candidate-44, title: 人物063：屠夫，市井中深藏不露的刀客, status: CONFIRMED}
+    - {id: candidate-45, title: 人物064：花匠，莳花弄草暗藏毒性的园丁, status: CONFIRMED}
+    - {id: candidate-46, title: 人物065：琴师，宫廷乐师出身，流落江湖, status: CONFIRMED}
+    - {id: candidate-47, title: 人物066：舞者，掌上起舞的轻功高手, status: CONFIRMED}
+    - {id: candidate-48, title: 人物067：僧人，云游四方的苦行头陀, status: CONFIRMED}
+    - {id: candidate-49, title: 人物068：道童，仙山学艺的童子, status: CONFIRMED}
+    - {id: candidate-50, title: 人物069：尼姑，带发修行的女尼, status: CONFIRMED}
+    - {id: candidate-51, title: 人物070：相士，铁口直断的算命先生, status: CONFIRMED}
+    - {id: candidate-52, title: 人物071：赌徒，千术通神的赌坊常客, status: CONFIRMED}
+    - {id: candidate-53, title: 人物072：盐枭，私盐贩子头目，水性极佳, status: CONFIRMED}
+    - {id: candidate-54, title: 人物073：漕帮龙头，运河一霸的水上豪强, status: CONFIRMED}
+    - {id: candidate-55, title: 人物074：车夫，驾车如飞的御马好手, status: CONFIRMED}
+    - {id: candidate-56, title: 人物075：船娘，摆渡江上三十年的老船家, status: CONFIRMED}
+    - {id: candidate-57, title: 人物076：店小二，客栈跑堂，耳听八方, status: CONFIRMED}
+    - {id: candidate-58, title: 人物077：货郎，走街串巷挑担的货郎, status: CONFIRMED}
+    - {id: candidate-59, title: 人物078：乞丐，破碗竹杖的老丐, status: CONFIRMED}
+    - {id: candidate-60, title: 人物079：哑女，不能言却武功不俗的少女, status: CONFIRMED}
+    - {id: candidate-61, title: 人物039：塞外牧马人，通晓马语的老者, status: CONFIRMED}
+    - {id: candidate-62, title: 人物040：西域番僧，金刚不坏之躯的苦行僧, status: CONFIRMED}
+    - {id: candidate-63, title: 人物041：波斯胡商，往来丝路的珠宝商人, status: CONFIRMED}
+    - {id: candidate-64, title: 人物042：波斯舞姬，身怀异域武艺的美人, status: CONFIRMED}
+    - {id: candidate-65, title: 人物043：岛国浪人，东瀛剑客，寻剑问道, status: CONFIRMED}
+    - {id: candidate-66, title: 人物044：南疆巫祝，通晓天机的祭司, status: CONFIRMED}
+    - {id: candidate-67, title: 人物045：南疆蛊女，与蛇共舞的少女, status: CONFIRMED}
+    - {id: candidate-68, title: 人物046：北莽剑客，雪原独行的孤狼, status: CONFIRMED}
+    - {id: candidate-69, title: 人物047：中原镖局总镖头，信誉卓著的老江湖, status: CONFIRMED}
+    - {id: candidate-70, title: 人物048：镖局少镖头，初生牛犊的少年英侠, status: CONFIRMED}
+    - {id: candidate-71, title: 人物049：黑风寨大当家，占山为王的恶匪, status: CONFIRMED}
+    - {id: candidate-72, title: 人物050：黑风寨军师，落第秀才出身的阴谋家, status: CONFIRMED}
+    - {id: candidate-73, title: 人物051：游方郎中，行走江湖的赤脚医生, status: CONFIRMED}
+    - {id: candidate-74, title: 人物052：说书先生，遍知江湖掌故的百晓生, status: CONFIRMED}
+    - {id: candidate-75, title: 人物054：酒疯子，醉拳宗师，酒不离身, status: CONFIRMED}
+    - {id: candidate-76, title: 人物055：琴魔，以琴音杀人于无形的乐师, status: CONFIRMED}
+    - {id: candidate-77, title: 人物056：棋痴，棋艺通神的残局老人, status: CONFIRMED}
+    - {id: candidate-78, title: 人物057：书狂，过目不忘的书生剑客, status: CONFIRMED}
+    - {id: candidate-79, title: 人物058：画仙，丹青妙手，画中藏杀机, status: CONFIRMED}
+    - {id: candidate-80, title: 人物059：渔隐，江上垂钓的隐世高人, status: CONFIRMED}
+    - {id: candidate-81, title: 人物080：盲叟，眼盲心明的琴师老者, status: CONFIRMED}
+    - {id: candidate-82, title: 人物081：独臂翁，断臂重生的刀法宗师, status: CONFIRMED}
+    - {id: candidate-83, title: 人物082：双生姊妹，江湖闻名的双人剑阵, status: CONFIRMED}
+    - {id: candidate-84, title: 人物083：少年剑客，天赋异禀的练武奇才, status: CONFIRMED}
+    - {id: candidate-85, title: 人物085：隐世神医，能起死回生的传说医者, status: CONFIRMED}
+    batches:
+    - index: 1
+      names: [人物001, 人物002, 人物003, 人物004, 人物005, 人物006, 人物007, 人物008, 人物009, 人物010,
+        人物011, 人物012, 人物013, 人物014, 人物015, 人物016, 人物017, 人物018, 人物019, 人物020]
+      status: DONE
+    - index: 2
+      names: [人物021, 人物022, 人物023, 人物024, 人物025, 人物026, 人物027, 人物028, 人物029, 人物030,
+        人物031, 人物032, 人物033, 人物034, 人物035, 人物036, 人物037, 人物038, 人物039, 人物040]
+      status: DONE
+    - index: 3
+      names: [人物041, 人物042, 人物043, 人物044, 人物045, 人物046, 人物047, 人物048, 人物049, 人物050,
+        人物051, 人物052, 人物053, 人物054, 人物055, 人物056, 人物057, 人物058, 人物059, 人物060]
+      status: DONE
+    - index: 4
+      names: [人物061, 人物062, 人物063, 人物064, 人物065, 人物066, 人物067, 人物068, 人物069, 人物070,
+        人物071, 人物072, 人物073, 人物074, 人物075, 人物076, 人物077, 人物078, 人物079, 人物080]
+      status: DONE
+    - index: 5
+      names: [人物081, 人物082, 人物083, 人物084, 人物085]
+      status: DONE
+    - index: 6
+      names: [人物003, 人物004, 人物005, 人物006, 人物008, 人物010, 人物012, 人物015, 人物017, 人物019,
+        人物021, 人物023, 人物025, 人物027, 人物028, 人物031, 人物032, 人物033, 人物035, 人物037]
+      status: DONE
+    - index: 7
+      names: [人物039, 人物040, 人物041, 人物042, 人物043, 人物044, 人物045, 人物046, 人物047, 人物048,
+        人物049, 人物050, 人物051, 人物052, 人物054, 人物055, 人物056, 人物057, 人物058, 人物059]
+      status: DONE
+    - index: 8
+      names: [人物060, 人物061, 人物062, 人物063, 人物064, 人物065, 人物066, 人物067, 人物068, 人物069,
+        人物070, 人物071, 人物072, 人物073, 人物074, 人物075, 人物076, 人物077, 人物078, 人物079]
+      status: DONE
+    - index: 9
+      names: [人物080, 人物081, 人物082, 人物083, 人物085]
+      status: DONE

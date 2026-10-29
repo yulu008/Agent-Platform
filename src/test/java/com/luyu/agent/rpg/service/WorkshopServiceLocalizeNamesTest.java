@@ -9,6 +9,9 @@ import com.luyu.agent.rpg.repository.RpgCharacterCardRepository;
 import com.luyu.agent.rpg.repository.RpgGameStateRepository;
 import com.luyu.agent.rpg.repository.RpgLocationRepository;
 import com.luyu.agent.rpg.repository.RpgRelationshipRepository;
+import com.luyu.agent.rpg.repository.RpgStarIncarnationRepository;
+import com.luyu.agent.rpg.repository.RpgStarIncarnationRuntimeRepository;
+import com.luyu.agent.rpg.repository.RpgWorldbookEntryRepository;
 import com.luyu.agent.rpg.repository.RpgTriggerRepository;
 import com.luyu.agent.rpg.repository.RpgTriggerRuntimeRepository;
 import com.luyu.agent.rpg.repository.RpgWorldSettingRepository;
@@ -17,6 +20,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.ai.session.SessionRepository;
+import org.springframework.ai.session.SessionService;
 import org.springframework.transaction.PlatformTransactionManager;
 
 import java.util.List;
@@ -76,7 +81,15 @@ class WorkshopServiceLocalizeNamesTest {
         llmGenerator = mock(WorkshopLlmGenerator.class);
 
         service = new WorkshopService(worldRepo, charRepo, locationRepo, relRepo, triggerRepo,
-                stateRepo, runtimeRepo, llmGenerator, mock(PlatformTransactionManager.class));
+                stateRepo, runtimeRepo, mock(RpgStarIncarnationRepository.class),
+                mock(RpgStarIncarnationRuntimeRepository.class), llmGenerator,
+                mock(CharacterOriginService.class),
+                mock(WorldCoverStorageService.class),
+                mock(PlatformTransactionManager.class),
+                mock(RpgWorldbookEntryRepository.class),
+                mock(LorebookSetService.class),
+                mock(LoreArchiveService.class),
+                mock(SessionService.class), mock(SessionRepository.class));
 
         WorldSetting world = new WorldSetting();
         world.setId(WORLD_ID);

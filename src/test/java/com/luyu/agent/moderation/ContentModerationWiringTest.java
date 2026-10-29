@@ -23,6 +23,8 @@ import org.springframework.ai.session.SessionService;
 import com.luyu.agent.config.ChatClientRegistry;
 import com.luyu.agent.controller.ChatStreamController;
 import com.luyu.agent.metering.QuotaGuard;
+import com.luyu.agent.rpg.config.RpgLorebookProperties;
+import com.luyu.agent.rpg.config.RpgWorldbookProperties;
 import com.luyu.agent.rpg.controller.RpgGameController;
 import com.luyu.agent.rpg.controller.WorkshopController;
 import com.luyu.agent.rpg.engine.GameLoopService;
@@ -32,8 +34,13 @@ import com.luyu.agent.rpg.engine.RpgHistoryCleaner;
 import com.luyu.agent.rpg.engine.SaveDeletionService;
 import com.luyu.agent.rpg.engine.StateDeltaSanitizer;
 import com.luyu.agent.rpg.engine.TurnGuardService;
+import com.luyu.agent.rpg.eval.service.PromptHashService;
+import com.luyu.agent.rpg.repository.RpgDestinedFigureRepository;
+import com.luyu.agent.rpg.repository.RpgEventLogRepository;
+import com.luyu.agent.rpg.service.CharacterOriginService;
 import com.luyu.agent.rpg.service.WorkshopLlmGenerator;
 import com.luyu.agent.rpg.service.WorkshopService;
+import com.luyu.agent.rpg.story.engine.StoryRunEngine;
 import com.luyu.agent.service.ContextInfoService;
 import com.luyu.agent.service.ImageUploadService;
 import com.luyu.agent.service.SessionTitleGenerator;
@@ -114,7 +121,8 @@ class ContentModerationWiringTest {
                 mock(StateDeltaSanitizer.class), mock(WorkshopService.class),
                 mock(SessionService.class), mock(RpgHistoryCleaner.class),
                 mock(RollbackService.class), new TurnGuardService(),
-                mock(SaveDeletionService.class), guard, blockedGate(), mock(QuotaGuard.class));
+                mock(SaveDeletionService.class), guard, blockedGate(), mock(QuotaGuard.class),
+                mock(RpgEventLogRepository.class), mock(StoryRunEngine.class), mock(PromptHashService.class));
 
         List<ServerSentEvent<Object>> events = controller.gameTurn(
                 Map.of("gameStateId", "gs-1", "sessionId", "s-1", "message", BLOCKED_INPUT))
@@ -138,7 +146,10 @@ class ContentModerationWiringTest {
         WorkshopLlmGenerator llmGenerator = mock(WorkshopLlmGenerator.class);
 
         WorkshopController controller = new WorkshopController(
-                workshopService, llmGenerator, blockedGate(), mock(QuotaGuard.class));
+                workshopService, llmGenerator, mock(CharacterOriginService.class),
+                blockedGate(), mock(QuotaGuard.class), new RpgWorldbookProperties(),
+                new RpgLorebookProperties(), mock(RpgDestinedFigureRepository.class),
+                mock(StoryRunEngine.class));
 
         ResponseEntity<?> response = controller.generateWorld(Map.of("keywords", BLOCKED_INPUT));
 
@@ -153,7 +164,10 @@ class ContentModerationWiringTest {
         WorkshopLlmGenerator llmGenerator = mock(WorkshopLlmGenerator.class);
 
         WorkshopController controller = new WorkshopController(
-                workshopService, llmGenerator, blockedGate(), mock(QuotaGuard.class));
+                workshopService, llmGenerator, mock(CharacterOriginService.class),
+                blockedGate(), mock(QuotaGuard.class), new RpgWorldbookProperties(),
+                new RpgLorebookProperties(), mock(RpgDestinedFigureRepository.class),
+                mock(StoryRunEngine.class));
 
         ResponseEntity<?> response = controller.generateCharacter(Map.of("description", BLOCKED_INPUT));
 

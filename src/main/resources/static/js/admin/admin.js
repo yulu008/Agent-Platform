@@ -44,6 +44,7 @@
             const tab = btn.dataset.tab;
             $('panel-usage').hidden = tab !== 'usage';
             $('panel-pricing').hidden = tab !== 'pricing';
+            $('panel-eval').hidden = tab !== 'eval';
             if (tab === 'pricing') loadPricing();
         });
     });
@@ -85,9 +86,17 @@
         currentTenant = tenantId;
         currentPage = 0;
         $('tenantDetail').hidden = false;
+        resetCollapse();
         $('tenantDetailTitle').textContent = '租户详情 · ' + tenantId;
         $('tenantDetail').scrollIntoView({ behavior: 'smooth', block: 'start' });
         await Promise.all([loadTenantDetail(), loadLogs()]);
+    }
+
+    // 折叠态复位（openTenant 点「查看」时内容区总是展开的）
+    function resetCollapse() {
+        $('tenantDetailBody').hidden = false;
+        $('closeDetail').textContent = '收起';
+        $('closeDetail').setAttribute('aria-expanded', 'true');
     }
 
     async function loadTenantDetail() {
@@ -220,7 +229,13 @@
         if (currentTenant) loadTenantDetail();
     });
     $('closeDetail').addEventListener('click', () => {
-        $('tenantDetail').hidden = true; currentTenant = null;
+        // 折叠而非整块隐藏：头部（标题+本按钮）留在原位，「展开」入口始终可见；
+        // 此前整块隐藏后唯一展开入口是上方表格行「查看」，收起后常滚出视口，
+        // 表现为「再也展不开」。currentTenant 保留，换窗口时折叠态也能预取最新数据
+        const collapse = !$('tenantDetailBody').hidden;
+        $('tenantDetailBody').hidden = collapse;
+        $('closeDetail').textContent = collapse ? '展开' : '收起';
+        $('closeDetail').setAttribute('aria-expanded', String(!collapse));
     });
     $('saveBudget').addEventListener('click', saveBudget);
     $('clearBudget').addEventListener('click', clearBudget);

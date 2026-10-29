@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Agent Platform · 策划管线</title>
+    <link rel="stylesheet" th:href="@{/css/sidebar.css(v=${#dates.createNow().time})}"/>
+    <link rel="stylesheet" th:href="@{/css/planner.css(v=${#dates.createNow().time})}"/>
+</head>
+<body>
+
+<!-- 全局侧边栏（global-sidebar-nav，承接 unified-global-topbar）：单源 fragment 三件套
+     （侧栏列 + 移动端极简顶条 + 抽屉遮罩）；🧭 策划管线 为当前页高亮；
+     管理端入口仅 platform_admin（门控同 home） -->
+<div class="app-shell">
+    <aside th:replace="~{fragments/sidebar :: sidebar('planner', ${isPlatformAdmin}, ${currentUserEmail})}"></aside>
+    <div th:replace="~{fragments/sidebar :: mobileTop}"></div>
+    <div th:replace="~{fragments/sidebar :: mask}"></div>
+    <div class="app-content">
+
+<!-- ========== run 列表视图（add-planner-pipeline tasks 6.1，默认落地）========== -->
+<main class="planner-main" id="plannerListView">
+    <div class="planner-head">
+        <div class="planner-head-text">
+            <h1>🧭 策划管线</h1>
+            <p class="planner-lead">从小说原文或 IP 名字到可开局世界包的多阶段生产线：IP 拆解 → 世界观 → 人物 → 剧情 → 分支 → 成稿安装，每阶段你确认掌舵，关掉浏览器隔天也能继续。</p>
+        </div>
+        <!-- 新建入口（tasks 6.2 创建向导）：进入向导视图，?create= 深链同落 -->
+        <button type="button" class="planner-new-btn" id="plannerNewBtn">＋ 新建策划</button>
+    </div>
+    <!-- 配置开关停用横幅（tasks 2.6 同源语义）：列表接口 503 时显示，列表区隐藏 -->
+    <div class="planner-disabled" id="plannerDisabled" hidden>
+        ⚠️ 策划管线功能已停用（rpg.planner.enabled=false）。工坊与 RPG 玩法不受影响。
+    </div>
+    <div class="planner-count" id="plannerCount">共 0 条策划</div>
+    <div class="planner-grid" id="plannerRunList"></div>
+    <div class="planner-empty" id="plannerEmpty" hidden>
+        还没有策划管线，点「＋ 新建策划」从一段原文或一个 IP 名字开始你的第一条生产线
+    </div>
+</main>
+
+<!-- ========== 创建向导视图（add-planner-pipeline tasks 6.2：载体 + 风格两维度采集）========== -->
+<main class="planner-main" id="plannerCreateView" hidden>
+    <button type="button" class="planner-back-btn" id="plannerCreateBackBtn">← 返回列表</button>
+    <div class="planner-wizard">
+        <h1>🧭 新建策划</h1>
+        <p class="planner-lead">选两个维度，创建后从 S1 IP 拆解开始逐阶段生成与确认；产物最终安装为可开局世界包。</p>
+
+        <!-- 维度一：载体（source_mode）——选中项切换下方输入区 -->
+        <div class="wizard-field">
+            <div class="wizard-field-label">① 内容载体</div>
+            <div class="wizard-choice-row">
+                <label class="wizard-choice">
+                    <input type="radio" name="plannerSourceMode" value="text" checked/>
+                    <span class="wizard-choice-title">📄 贴原文</span>
+                    <span class="wizard-choice-desc">粘贴小说/设定原文，管线拆解提炼（忠实模式每条设定带出处）</span>
+                </label>
+                <label class="wizard-choice">
+                    <input type="radio" name="plannerSourceMode" value="ip_name"/>
+                    <span class="wizard-choice-title">🔎 IP 名字</span>
+                    <span class="wizard-choice-desc">给一个 IP 名并上传浏览器另存的 HTML 资料页（至少 1 份），管线离线拆解资料（联网抓取已退役）</span>
+                </label>
+            </div>
+            <!-- 贴原文输入区（text 模式必填）：.md 文件读入（planner-s1-chained
+                 refinement tasks 6.1）与粘贴共用校验链（客户端 FileReader 读入
+                 textarea，无服务端上传面）；字数提示（tasks 6.2）超链式阈值提示
+                 链式提炼、超硬上限红字拦截（前端轻提示，后端 400 单点兜底） -->
+            <div id="plannerTextInput">
+                <div class="wizard-text-toolbar">
+                    <input type="file" id="plannerMdFile" accept=".md" hidden/>
+                    <button type="button" id="plannerMdFileBtn">📥 读入 .md 文件</button>
+                    <span id="plannerMdFileName" class="wizard-text-toolbar-name" hidden></span>
+                </div>
+                <p id="plannerTextCountHint" class="wizard-count-hint" hidden></p>
+                <textarea id="plannerText" rows="10"
+                          placeholder="粘贴小说原文或完整设定文本…（text 模式必填，提交前过内容审查；也可用上方按钮读入 .md 文件）"></textarea>
+            </div>
+            <!-- IP 名输入区（ip_name 模式必填） -->
+            <div id="plannerIpNameInput" hidden>
+                <input type="text" id="plannerIpName" autocomplete="off"
+                       placeholder="IP 名字，如：进击的巨人（ip_name 模式必填，提交前过内容审查）"/>
+                <!-- HTML 资料页上传（ip_name 必填，planner-html-source）：浏览器另存
+                     页面上传，服务端清洗后作 S1 生成原料；反爬提示条见下方 helper -->
+                <div class="wizard-pages">
+                    <div class="wizard-pages-toolbar">
+                        <input type="file" id="plannerPageFiles" accept=".html,.htm" multiple hidden/>
+                        <button type="button" id="plannerPageFilesBtn">📄 选择 HTML 资料页</button>
+                        <span id="plannerPageCount" class="wizard-pages-count"></span>
+                    </div>
+                    <div id="plannerPageChips" class="wizard-page-chips"></div>
+                    <p class="wizard-pages-hint">💡 资料获取：在浏览器打开百科/资料页 → 右键「另存为」保存 HTML → 上传到这里（至少 1 份、最多 5 份、单份 ≤ 2MB）。管线联网抓取已退役（反爬与合规风险），上传资料页离线拆解更稳。</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 维度二：风格（style_mode） -->
+        <div class="wizard-field">
+            <div class="wizard-field-label">② 拆解风格</div>
+            <div class="wizard-choice-row">
+                <label class="wizard-choice">
+                    <input type="radio" name="plannerStyleMode" value="faithful" checked/>
+                    <span class="wizard-choice-title">📕 忠实拆解</span>
+                    <span class="wizard-choice-desc">贴原设定，S1 每条要素标出处，确认门可逐条核对</span>
+                </label>
+                <label class="wizard-choice">
+                    <input type="radio" name="plannerStyleMode" value="remix"/>
+                    <span class="wizard-choice-title">✨ 自由二创</span>
+                    <span class="wizard-choice-desc">放开约束，S1 附灵感源清单，世界可以长成新的样子</span>
+                </label>
+            </div>
+        </div>
+
+        <!-- 可选展示名（后端缺省自动推导：IP 名或原文截断） -->
+        <div class="wizard-field">
+            <div class="wizard-field-label">③ 展示名（可选）</div>
+            <input type="text" id="plannerName" autocomplete="off"
+                   placeholder="列表展示名，留空自动取 IP 名或原文开头"/>
+        </div>
+
+        <!-- 表单内错误提示（必填校验/后端 400；审查拒答 422 也走此处红字，不弹窗打断） -->
+        <div class="wizard-error" id="plannerCreateError" hidden></div>
+
+        <div class="wizard-actions">
+            <button type="button" class="btn-secondary" id="plannerCreateCancelBtn">取消</button>
+            <button type="button" class="planner-new-btn" id="plannerCreateSubmitBtn">创建管线 →</button>
+        </div>
+    </div>
+</main>
+
+<!-- ========== run 详情视图（tasks 6.3：六阶段步骤条 + 跨天恢复渲染；门操作 6.4+ 注入）========== -->
+<main class="planner-main" id="plannerDetailView" hidden>
+    <button type="button" class="planner-back-btn" id="plannerBackBtn">← 返回列表</button>
+    <div class="planner-detail-head">
+        <h1 id="plannerDetailName">-</h1>
+        <span id="plannerDetailBadge" class="run-badge">-</span>
+        <!-- 放弃按钮（spec「run 放弃」）：任何非终态可弃，工作区文件树保留可回看 -->
+        <button type="button" class="planner-abandon-btn" id="plannerAbandonBtn" hidden>放弃此管线</button>
+    </div>
+    <div class="planner-detail-meta" id="plannerDetailMeta"></div>
+    <!-- 详情拉取失败横幅（404 跨租户/409 工作区损坏） -->
+    <div class="wizard-error" id="plannerDetailError" hidden></div>
+    <!-- 源内容预览（跨天恢复上下文：创作源头一屏可辨，全文创建时已提交） -->
+    <div class="planner-source-card" id="plannerSourceCard" hidden>
+        <div class="planner-source-head" id="plannerSourceHead">创作源</div>
+        <p class="planner-source-preview" id="plannerSourcePreview"></p>
+        <!-- 资料页/扫描网页回显（ip_name 模式，planner-html-source）：sourcePages
+             优先（「资料页 N 份」），无则回落 sourceUrls（旧 run「扫描网页」兼容回显） -->
+        <p class="planner-source-urls" id="plannerSourceUrls" hidden></p>
+    </div>
+    <!-- 六阶段垂直步骤条：已确认阶段折叠、当前阶段展开、点击头部可切换（门操作 6.4+ 注入） -->
+    <div class="planner-stages" id="plannerStageList"></div>
+</main>
+
+<!-- auth-redirect.js：全局 401 统一跳转登录（multi-tenant-column-isolation 惯例） -->
+<!-- rpg/markdown.js：稿件 Markdown 渲染（版本全文/候选卡 payload/S6 全包预览，rpg-js-split 拆分件） -->
+</div><!-- /.app-content -->
+</div><!-- /.app-shell -->
+
+<script th:src="@{/js/auth-redirect.js(v=${#dates.createNow().time})}"></script>
+<script th:src="@{/js/rpg/markdown.js(v=${#dates.createNow().time})}"></script>
+<script th:src="@{/js/rpg/planner.js(v=${#dates.createNow().time})}"></script>
+<script th:src="@{/js/sidebar.js(v=${#dates.createNow().time})}"></script>
+
+</body>
+</html>

@@ -38,20 +38,20 @@ public class RpgCharacterCardRepository {
 
     public CharacterCard findById(String id) {
         List<CharacterCard> list = jdbcTemplate.query(
-                "SELECT * FROM rpg_character_card WHERE id = ? AND tenant_id = ?",
+                "SELECT * FROM rpg_character_card WHERE id = ? AND tenant_id = ? AND deleted_at IS NULL",
                 BeanPropertyRowMapper.newInstance(CharacterCard.class), id, tid());
         return list.isEmpty() ? null : list.get(0);
     }
 
     public List<CharacterCard> findByWorldId(String worldId) {
         return jdbcTemplate.query(
-                "SELECT * FROM rpg_character_card WHERE world_id = ? AND tenant_id = ? ORDER BY created_at",
+                "SELECT * FROM rpg_character_card WHERE world_id = ? AND tenant_id = ? AND deleted_at IS NULL ORDER BY created_at",
                 BeanPropertyRowMapper.newInstance(CharacterCard.class), worldId, tid());
     }
 
     public List<CharacterCard> findByWorldIdAndType(String worldId, String type) {
         return jdbcTemplate.query(
-                "SELECT * FROM rpg_character_card WHERE world_id = ? AND type = ? AND tenant_id = ? ORDER BY created_at",
+                "SELECT * FROM rpg_character_card WHERE world_id = ? AND type = ? AND tenant_id = ? AND deleted_at IS NULL ORDER BY created_at",
                 BeanPropertyRowMapper.newInstance(CharacterCard.class), worldId, type, tid());
     }
 
@@ -89,16 +89,26 @@ public class RpgCharacterCardRepository {
     }
 
     /**
-     * 该世界下的角色数（删除世界观前的阻塞校验）。
+     * 该世界下的角色数（未软删；工坊级联软删后即归零）。
      */
     public int countByWorldId(String worldId) {
         Integer count = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM rpg_character_card WHERE world_id = ? AND tenant_id = ?",
+                "SELECT COUNT(*) FROM rpg_character_card WHERE world_id = ? AND tenant_id = ? AND deleted_at IS NULL",
                 Integer.class, worldId, tid());
         return count == null ? 0 : count;
     }
 
-    public void deleteById(String id) {
-        jdbcTemplate.update("DELETE FROM rpg_character_card WHERE id = ? AND tenant_id = ?", id, tid());
+    /** 软删除单角色（workshop-soft-delete-cascade D4：角色删除级联入口） */
+    public int softDeleteById(String id) {
+        return jdbcTemplate.update(
+                "UPDATE rpg_character_card SET deleted_at = CURRENT_TIMESTAMP WHERE id = ? AND tenant_id = ? AND deleted_at IS NULL",
+                id, tid());
+    }
+
+    /** 软删除某世界全部角色（workshop-soft-delete-cascade D3：世界级联） */
+    public int softDeleteByWorldId(String worldId) {
+        return jdbcTemplate.update(
+                "UPDATE rpg_character_card SET deleted_at = CURRENT_TIMESTAMP WHERE world_id = ? AND tenant_id = ? AND deleted_at IS NULL",
+                worldId, tid());
     }
 }

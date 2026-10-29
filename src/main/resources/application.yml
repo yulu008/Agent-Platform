@@ -12,6 +12,14 @@ spring:
   thymeleaf:
     cache: false
 
+  # MultipartFile 尺寸闸：max-file-size 4MB 服务封面上传；request 16MB 容纳
+  # planner 资料页满配（planner-html-source：5 份 × 2MB + 表单字段；单份 2MB
+  # 语义闸在 PipelineRunController 层校验，封面单文件 4MB 语义不变）
+  servlet:
+    multipart:
+      max-file-size: 4MB
+      max-request-size: 16MB
+
   h2:
     console:
       enabled: true
@@ -48,6 +56,7 @@ spring:
 
 # 多模型配置（完全接管模型装配，排除 Spring AI OpenAI 自动配置）
 # 每个模型独立 base-url/api-key/model/max-tokens/timeout，由 ModelConfiguration 装配
+# （timeout 语义 = 读空闲超时：流式 token 在流动即不限总时长，见 ModelConfiguration）
 agent:
   models:
     glm-5-2:
@@ -57,9 +66,13 @@ agent:
       model: glm-5.2
       # GLM-5.2 默认 max-tokens=4096，多 tool call 时输出中途截断致 JSON 不完整，提升到 32768 降低截断概率
       max-tokens: 32768
+      # 超时语义为「读空闲超时」（ModelConfiguration 双重覆盖：基础客户端 customizer
+      # + ClientOptions.timeout 反射改写——每请求 RequestOptions 覆盖源也同语义）：
+      # token 持续流动即不限总时长，仅网络/模型停摆超阈值才断流；180s 对齐
+      # 旧 callTimeout 时代实测容忍度，读空闲语义下严格更宽松
       timeout: 180s
       temperature: 0.2
-      roles: [chat, compaction, title, subagent, workshop]
+      roles: [chat, compaction, title, subagent, workshop, planner]
       default-model: true
     glm-5-1:
       base-url: https://open.bigmodel.cn/api/paas/v4
@@ -68,6 +81,7 @@ agent:
       max-tokens: 32768
       timeout: 180s
       temperature: 0.2
+      # roles 加 'judge' 值即把该模型指定为内容评估裁判（content-eval 批跑），如 roles: [chat, judge]
       roles: [chat]
       default-model: false
     local:
@@ -144,6 +158,55 @@ rpg:
     # 世界观只渲染进首轮 system prompt 且不落库，长对话后会漂移；重注入块随 user 消息落库、
     # 旧副本随 30 事件滑窗自然滑出不会累积；<= 0 表示完全关闭
     world-refresh-every-turns: 10
+  # 招式技能树（建档初始发放 + GM 上下文渲染；领悟门禁由 rpg-technique-gate 消费同一组配置）
+  technique:
+    # 精英档星阶（Gold / Specter-TianGang / GodWarrior）建档时全部根节点的初始熟练度
+    # 档位映射见 TechniqueProficiency：200=入门、400=小成、600=大成、800=圆满、1000=究极奥义
+    initial-proficiency-elite: 400
+    # 新人档星阶（Silver / Bronze / Hidden / Specter-DiSha）确定性抽中那 1 招的初始熟练度
+    initial-proficiency-rookie: 200
+    # 领悟后继招式所需的前置熟练度阈值；调低→进阶快但树的分层被稀释，调高→每层需多轮打磨
+    default-unlock-threshold: 400
+  # 设定集（star-lorebook：关键词触发注入 + 名录只读端点）
+  lorebook:
+    # 总开关（回滚路径）：设为 false 即整体停用——关键词扫描与「设定集·已揭示」注入断流，
+    # 名录只读端点返回 503；表与数据保留不动，开局抢星的 runtime 落档不在此开关管辖（存档级不变量）
+    enabled: true
+  # 策划管线（add-planner-pipeline：多阶段内容生成管线）
+  # 工作区真源在 ~/.agent/tenants/<tid>/planner-runs/<runId>/（阶段状态存 manifest.yaml）
+  planner:
+    # 总开关（回滚路径）：设为 false 即整体停用——管线端点返回 503，表与工作区文件保留不动
+    enabled: true
+    # ip_name 模式 HTML 资料页数量上限（planner-html-source，scanUrls 时代
+    # scan-url-limit 的语义接替；至少 1 份才允许创建）
+    max-source-pages: 5
+    # ip_name 模式单份 HTML 资料页字节上限（超出 413；long 字段不支持 2MB 带单位写法，2097152 = 2×1024×1024）
+    max-page-bytes: 2097152
+    # S3 批容量 / S5 候选数量上限（planner-s3-batch-generate：S3 语义从「总上限」转为「每批容量」，
+    # 名册按序切块分批生成，总候选数由批数累计不受总上限截断；S5 分支语义不变）
+    max-candidates: 20
+    # S3 批间并行度（多批 LLM 调用合并单 SSE 流；置 1 即串行回退，配置级回滚路径）
+    batch-concurrency: 2
+    # ---- S1 text 链式提炼（planner-s1-chained-refinement）----
+    # 链式触发阈值（字符数）：≤ 阈值单流直塞（行为零增量），> 阈值走「分块→逐块笔记→汇总」。
+    # 调超大值即整体回退单流（配置级回滚路径）
+    chain-threshold-chars: 10000
+    # 单块字数上限：`#` 章超限章内二次切分、无结构兜底切块的粒度
+    chunk-max-chars: 12000
+    # text 原文总字数硬上限：创建时超出 400 拒绝（防极端 payload/落盘/moderation 扫描）
+    max-source-chars: 500000
+    # 汇总轮笔记总量防御上限：超出置 FAILED 报可读错误引导拆 run，不静默截断
+    notes-total-max-chars: 100000
+  # 内容质量评估（content-eval-character-consistency：人物一致性离线批跑参数，绑定 EvalProperties）
+  # 注意：judge 模型选择不在本段——agent.models 任一条目 roles 加 'judge' 值即指定裁判，
+  # 未配置条目 = eval 未启用（端点明确报错，不静默 fallback）
+  eval:
+    # judge 调用并发度（1 = 串行；批跑 judge 成本单路可控）
+    judge-concurrency: 1
+    # 状态轨迹断崖检测阈值：|Δ| ≥ 该值且该轮叙述无对应关键词命中 → L1 预警
+    cliff-threshold: 40
+    # 动态层滑窗轮数（早窗/晚窗各取 N 轮，超上下文预算时最近轮优先缩窗）
+    dynamic-window-turns: 15
 
 # Actuator 端点：暴露 metrics 供可观测性验证
 # /actuator/metrics/gen_ai_client_token_usage_total 查看 token 用量

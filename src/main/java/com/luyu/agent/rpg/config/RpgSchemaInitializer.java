@@ -71,7 +71,7 @@ public class RpgSchemaInitializer {
             try (java.sql.Connection conn = dataSource.getConnection()) {
                 populator.populate(conn);
             }
-            log.info("RPG schema 初始化完成（8 张表已就绪）");
+            log.info("RPG schema 初始化完成（11 张表已就绪）");
             return "initialized";
         } catch (Exception e) {
             log.error("RPG schema 初始化失败", e);

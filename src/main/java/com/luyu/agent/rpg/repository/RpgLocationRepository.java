@@ -37,14 +37,14 @@ public class RpgLocationRepository {
 
     public Location findById(String id) {
         List<Location> list = jdbcTemplate.query(
-                "SELECT * FROM rpg_location WHERE id = ? AND tenant_id = ?",
+                "SELECT * FROM rpg_location WHERE id = ? AND tenant_id = ? AND deleted_at IS NULL",
                 BeanPropertyRowMapper.newInstance(Location.class), id, tid());
         return list.isEmpty() ? null : list.get(0);
     }
 
     public List<Location> findByWorldId(String worldId) {
         return jdbcTemplate.query(
-                "SELECT * FROM rpg_location WHERE world_id = ? AND tenant_id = ? ORDER BY name",
+                "SELECT * FROM rpg_location WHERE world_id = ? AND tenant_id = ? AND deleted_at IS NULL ORDER BY name",
                 BeanPropertyRowMapper.newInstance(Location.class), worldId, tid());
     }
 
@@ -55,12 +55,26 @@ public class RpgLocationRepository {
     }
 
     /**
-     * 该世界下的地点数（删除世界观前的阻塞校验）。
+     * 该世界下的地点数（未软删；工坊级联软删后即归零）。
      */
     public int countByWorldId(String worldId) {
         Integer count = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM rpg_location WHERE world_id = ? AND tenant_id = ?",
+                "SELECT COUNT(*) FROM rpg_location WHERE world_id = ? AND tenant_id = ? AND deleted_at IS NULL",
                 Integer.class, worldId, tid());
         return count == null ? 0 : count;
+    }
+
+    /** 软删除单个地点（workshop-soft-delete-cascade D5：三件套无条件软删） */
+    public int softDeleteById(String id) {
+        return jdbcTemplate.update(
+                "UPDATE rpg_location SET deleted_at = CURRENT_TIMESTAMP WHERE id = ? AND tenant_id = ? AND deleted_at IS NULL",
+                id, tid());
+    }
+
+    /** 软删除某世界全部地点（workshop-soft-delete-cascade D3：世界级联） */
+    public int softDeleteByWorldId(String worldId) {
+        return jdbcTemplate.update(
+                "UPDATE rpg_location SET deleted_at = CURRENT_TIMESTAMP WHERE world_id = ? AND tenant_id = ? AND deleted_at IS NULL",
+                worldId, tid());
     }
 }

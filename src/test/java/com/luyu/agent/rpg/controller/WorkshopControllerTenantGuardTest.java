@@ -14,8 +14,13 @@ import com.luyu.agent.config.AuthProperties;
 import com.luyu.agent.controller.AuthController;
 import com.luyu.agent.metering.QuotaGuard;
 import com.luyu.agent.moderation.ContentModerationGate;
+import com.luyu.agent.rpg.config.RpgLorebookProperties;
+import com.luyu.agent.rpg.config.RpgWorldbookProperties;
+import com.luyu.agent.rpg.repository.RpgDestinedFigureRepository;
+import com.luyu.agent.rpg.service.CharacterOriginService;
 import com.luyu.agent.rpg.service.WorkshopLlmGenerator;
 import com.luyu.agent.rpg.service.WorkshopService;
+import com.luyu.agent.rpg.story.engine.StoryRunEngine;
 import com.luyu.agent.service.JwtService;
 
 import static org.mockito.ArgumentMatchers.anyString;
@@ -34,7 +39,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 @WebMvcTest(WorkshopController.class)
 @Import(JwtService.class)
-@EnableConfigurationProperties(AuthProperties.class)
+@EnableConfigurationProperties({AuthProperties.class, RpgLorebookProperties.class, RpgWorldbookProperties.class})
 @TestPropertySource(properties = "auth.jwt.secret=test-secret-key-0123456789abcdef0123456789")
 class WorkshopControllerTenantGuardTest {
 
@@ -50,6 +55,10 @@ class WorkshopControllerTenantGuardTest {
     @MockitoBean
     private WorkshopLlmGenerator llmGenerator;
 
+    /** add-rpg-star-destiny 为 WorkshopController 构造器新增了该依赖，切片测试必须 mock 否则上下文加载失败 */
+    @MockitoBean
+    private CharacterOriginService originService;
+
     @MockitoBean
     private ContentModerationGate moderationGate;
 
@@ -59,6 +68,14 @@ class WorkshopControllerTenantGuardTest {
     /** AdminWebConfig（WebMvcConfigurer）随切片拉入，其依赖 PlatformAdminGuard 不在切片中，mock 之 */
     @MockitoBean
     private PlatformAdminGuard platformAdminGuard;
+
+    /** preset-destined-figures：controller 直挂的命定人物只读 repo，mock 兑住切片装配 */
+    @MockitoBean
+    private RpgDestinedFigureRepository destinedFigureRepo;
+
+    /** story-graph-runtime 4.1：controller 直挂的故事图运行引擎（开局物化），mock 兑住切片装配 */
+    @MockitoBean
+    private StoryRunEngine storyRunEngine;
 
     /** 租户 B 的有效 JWT cookie（租户隔离语义由 Repository 过滤 mock 模拟）。 */
     private jakarta.servlet.http.Cookie tenantBCookie() {

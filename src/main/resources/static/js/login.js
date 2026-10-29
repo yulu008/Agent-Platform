@@ -8,10 +8,10 @@
     const submitBtn = document.getElementById('submitBtn');
     const errorBox = document.getElementById('authError');
 
-    // 登录后进入：目的地选择（记忆到 localStorage，默认主会话）
+    // 登录后进入：目的地选择（记忆到 localStorage，默认 AI助手）
     const DEST_KEY = 'agent.loginDest';
     const destOptions = document.getElementById('destOptions');
-    let dest = localStorage.getItem(DEST_KEY) === '/rpg' ? '/rpg' : '/';
+    let dest = localStorage.getItem(DEST_KEY) === '/rpg' ? '/rpg' : '/chat';
 
     function renderDest() {
         destOptions.querySelectorAll('.auth-dest-option').forEach(btn => {
@@ -25,12 +25,36 @@
         if (!btn) {
             return;
         }
-        dest = btn.dataset.dest === '/rpg' ? '/rpg' : '/';
+        dest = btn.dataset.dest === '/rpg' ? '/rpg' : '/chat';
         localStorage.setItem(DEST_KEY, dest);
         renderDest();
     });
 
     let mode = 'login';
+
+    // 切换账号预填（account-switch-sidebar）：侧栏已知账号跳入 /login?email=<目标>，
+    // 预填邮箱、密码留空、光标落密码框（还差一次密码输入即完成切换）
+    const prefillEmail = new URLSearchParams(window.location.search).get('email');
+    if (prefillEmail) {
+        document.getElementById('email').value = prefillEmail;
+        document.getElementById('password').focus();
+    }
+
+    // 已知账号记忆（account-switch-sidebar）：仅存邮箱明文（无凭据），去重置顶，
+    // 截断保留最近 8 条；sidebar.js 读同一 key 渲染侧栏切换列表
+    const ACCOUNTS_KEY = 'agent.knownAccounts';
+    const ACCOUNTS_MAX = 8;
+
+    function rememberAccount(email) {
+        try {
+            const raw = localStorage.getItem(ACCOUNTS_KEY);
+            const list = raw ? JSON.parse(raw) : [];
+            const next = [email]
+                .concat(Array.isArray(list) ? list.filter(e => e !== email) : [])
+                .slice(0, ACCOUNTS_MAX);
+            localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(next));
+        } catch (e) { /* localStorage 不可用（隐私模式等）时静默降级为不记忆 */ }
+    }
 
     function setMode(next) {
         mode = next;
@@ -71,7 +95,8 @@
                 body: JSON.stringify({ email, password })
             });
             if (response.ok) {
-                // cookie 已由响应 Set-Cookie 写入，按用户选择的目的地跳转
+                // cookie 已由响应 Set-Cookie 写入；账号入已知列表后按用户选择的目的地跳转
+                rememberAccount(email);
                 window.location.href = dest;
                 return;
             }

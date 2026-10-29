@@ -3,39 +3,151 @@
 <head>
     <meta charset="UTF-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <title>Agent Platform · 选择入口</title>
+    <title>Agent Platform · 世界橱窗</title>
+    <link rel="stylesheet" th:href="@{/css/sidebar.css(v=${#dates.createNow().time})}"/>
     <link rel="stylesheet" th:href="@{/css/home.css(v=${#dates.createNow().time})}"/>
+    <link rel="stylesheet" th:href="@{/css/world-wall.css(v=${#dates.createNow().time})}"/>
 </head>
 <body>
 
-    <div class="home-card">
-        <h1 class="home-title"><span class="logo-dot"></span>Agent Platform</h1>
-        <p class="home-subtitle">选择要进入的功能</p>
+    <!-- 全局侧边栏（global-sidebar-nav，承接 unified-global-topbar）：单源 fragment 三件套
+         （侧栏列 + 移动端极简顶条 + 抽屉遮罩）；根首页 🏠 首页高亮（active='gallery'），
+         管理端入口仅 platform_admin；页面主体包 .app-content 让位给世界墙 -->
+    <div class="app-shell">
+        <aside th:replace="~{fragments/sidebar :: sidebar('gallery', ${isPlatformAdmin}, ${currentUserEmail})}"></aside>
+        <div th:replace="~{fragments/sidebar :: mobileTop}"></div>
+        <div th:replace="~{fragments/sidebar :: mask}"></div>
+        <div class="app-content">
 
-        <div class="home-entries">
-            <a class="home-entry" th:href="@{/chat}">
-                <span class="home-entry-icon">💬</span>
-                <span class="home-entry-text">
-                    <span class="home-entry-name">主会话</span>
-                    <span class="home-entry-desc">与智能代理对话</span>
-                </span>
-            </a>
-            <a class="home-entry" th:href="@{/rpg}">
-                <span class="home-entry-icon">🎲</span>
-                <span class="home-entry-text">
-                    <span class="home-entry-name">RPG 首页</span>
-                    <span class="home-entry-desc">沙盒角色扮演冒险</span>
-                </span>
-            </a>
-            <a class="home-entry" th:href="@{/admin}" th:if="${isPlatformAdmin}">
-                <span class="home-entry-icon">📊</span>
-                <span class="home-entry-text">
-                    <span class="home-entry-name">管理端</span>
-                    <span class="home-entry-desc">用量看板 · 预算 · 单价</span>
-                </span>
-            </a>
+    <!-- 世界橱窗墙（works-view-and-world-publish 5.2）：client-fetch /rpg/worlds/showcase 渲染
+         （gallery.js 共享渲染器）= 全平台已发布世界 + 预设世界，本地未发布沙盒卡不上橱窗；
+         预设卡深链 /rpg?preset=<key>；已发布卡点击分流（5.3）：本人 → /rpg?world= 深链开局
+         本地原世界，他人 → 导入确认弹窗 → 快照复制为新世界 -->
+    <main class="showcase-main">
+        <!-- 页头（对齐 .planner-head / .works-select-header 的「标题 + 说明」惯例）：
+             橱窗是只读页无动作按钮，说明行把三类卡的下钻语义一句话讲清 -->
+        <div class="showcase-head">
+            <h1>🏠 世界橱窗</h1>
+            <p class="showcase-lead">全平台已发布的共享世界与官方预设都在这里：点击预设卡直接开局；他人发布的共享世界可一键复制为你的新世界；自己发布的卡会直接带你回到本地原世界。</p>
+        </div>
+        <div id="showcaseWall" class="world-wall"></div>
+    </main>
+
+    <!-- 导入确认弹窗（5.3：非本人已发布卡点击；名称/简介/发布者/子数据计数，明示将复制一份新世界） -->
+    <div class="showcase-import-overlay" id="showcaseImportOverlay" hidden>
+        <div class="showcase-import-dialog">
+            <h3>⬇ 导入共享世界</h3>
+            <div class="showcase-import-body" id="showcaseImportBody"></div>
+            <div class="showcase-import-actions">
+                <button type="button" class="btn-import-primary" id="showcaseImportConfirmBtn">复制为我的新世界</button>
+                <button type="button" class="btn-import-secondary" id="showcaseImportCancelBtn">取消</button>
+            </div>
         </div>
     </div>
+
+    </div><!-- /.app-content -->
+    </div><!-- /.app-shell -->
+
+    <script th:src="@{/js/rpg/gallery.js(v=${#dates.createNow().time})}"></script>
+    <script>
+        // 橱窗初始化（world-card-gallery 7.3 + works-view-and-world-publish 5.2/5.3）：
+        // 骨架卡占位防首屏闪空；fetch 失败保留顶栏入口可用，墙内提示重试
+        (function initShowcase() {
+            const wall = document.getElementById('showcaseWall');
+            renderWallSkeleton(wall);
+            fetchShowcase().then(cards => {
+                renderWorldWall(wall, cards, {
+                    // 预设卡走 <a> 深链进向导（保留中键/新标签）；已发布卡落回 div 走 JS 交互
+                    hrefFor: card => card.source === 'preset'
+                        ? '/rpg?preset=' + encodeURIComponent(card.presetKey)
+                        : null,
+                    // 已发布卡发布者标识行（world-card-pub；本人卡绿色高亮）
+                    publisherLabelFor: card => card.source === 'published'
+                        ? (card.publisherSelf ? '⭐ 你发布的' : '🌐 共享世界')
+                        : null,
+                    // 已发布卡点击分流（5.3 / design D5）：本人直接深链开局本地原世界，
+                    // 他人进导入确认弹窗（快照复制为新世界）
+                    onCardClick: card => {
+                        if (card.source !== 'published') return;
+                        if (card.publisherSelf && card.originWorldId) {
+                            location.href = '/rpg?world=' + encodeURIComponent(card.originWorldId);
+                            return;
+                        }
+                        openShowcaseImport(card);
+                    }
+                });
+            }).catch(e => {
+                console.error('橱窗墙加载失败', e);
+                wall.innerHTML = '<div class="wall-error">世界墙加载失败，请刷新重试；顶栏入口仍可用</div>';
+            });
+        })();
+
+        // ===== 导入确认弹窗（5.3）=====
+        let importTarget = null;   // 待导入的 ShowcaseCard（id=packId）
+
+        function openShowcaseImport(card) {
+            importTarget = card;
+            // 概览：名称 / 简介 / 发布者（租户短码）/ 子数据计数，明示将复制一份新世界
+            const pubShort = card.publisherTenantId ? String(card.publisherTenantId).slice(0, 8) : '（未知）';
+            document.getElementById('showcaseImportBody').replaceChildren(
+                el('p', 'showcase-import-name', card.name || '未命名世界'),
+                el('p', 'showcase-import-blurb', card.blurb || '（无简介）'),
+                el('p', 'showcase-import-meta', '发布者：' + pubShort + '… · 子数据 ' + (card.entryCount || 0) + ' 条'),
+                el('p', 'showcase-import-hint',
+                    '导入会把该世界发布时点的完整快照（世界观 / 角色 / 地点 / 关系 / 触发器 / 世界书 / 冥星录 / 封面）复制为你的新世界：与发布者此后的修改互不影响，你可以自由编辑与开局。')
+            );
+            document.getElementById('showcaseImportOverlay').hidden = false;
+        }
+
+        function closeShowcaseImport() {
+            document.getElementById('showcaseImportOverlay').hidden = true;
+            importTarget = null;
+        }
+
+        document.getElementById('showcaseImportCancelBtn').addEventListener('click', closeShowcaseImport);
+        // 点遮罩空白处关闭（点卡片本体不冒泡关闭）
+        document.getElementById('showcaseImportOverlay').addEventListener('click', ev => {
+            if (ev.target === ev.currentTarget) closeShowcaseImport();
+        });
+
+        // 确认导入（POST /rpg/shared-worlds/{id}/import，design D1 各导入各的）：
+        // 成功跳 /rpg 落作品墙并展开新世界卡（init.js ?world= 深链链路）；
+        // 409 发布者本人（D5 边缘：本地原世界已删）/ 404 包已下架 → toast 呈现
+        document.getElementById('showcaseImportConfirmBtn').addEventListener('click', async () => {
+            if (!importTarget) return;
+            const btn = document.getElementById('showcaseImportConfirmBtn');
+            btn.disabled = true;
+            btn.textContent = '复制中…';
+            try {
+                const res = await fetch('/rpg/shared-worlds/' + encodeURIComponent(importTarget.id) + '/import',
+                    {method: 'POST'});
+                if (res.status === 409 || res.status === 404) {
+                    const body = await res.json().catch(() => null);
+                    alert('导入失败: ' + ((body && body.error) || ('HTTP ' + res.status)));
+                    closeShowcaseImport();
+                    return;
+                }
+                if (!res.ok) { alert('导入失败 (HTTP ' + res.status + ')'); return; }
+                const body = await res.json();
+                // 落 /rpg 作品墙并展开新世界卡，直接衔接选角开局
+                location.href = '/rpg?world=' + encodeURIComponent(body.newWorldId);
+            } catch (e) {
+                alert('导入失败: ' + e.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '复制为我的新世界';
+            }
+        });
+
+        /** 小工具：建元素并填文本（弹窗概览行） */
+        function el(tag, cls, text) {
+            const node = document.createElement(tag);
+            node.className = cls;
+            node.textContent = text;
+            return node;
+        }
+    </script>
+    <script th:src="@{/js/sidebar.js(v=${#dates.createNow().time})}"></script>
 
 </body>
 </html>

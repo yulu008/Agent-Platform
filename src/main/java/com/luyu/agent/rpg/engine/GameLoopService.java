@@ -6,8 +6,10 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.luyu.agent.rpg.config.RpgMemoryProperties;
 import com.luyu.agent.rpg.model.EventLog;
 import com.luyu.agent.rpg.model.GameState;
+import com.luyu.agent.rpg.model.CosmoSense;
 import com.luyu.agent.rpg.model.Trigger;
 import com.luyu.agent.rpg.repository.*;
+import com.luyu.agent.rpg.story.engine.StoryNodeMaterializer;
 import com.luyu.agent.tenancy.TenantContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -57,6 +59,9 @@ public class GameLoopService {
     private final MemorySnapshotStore memorySnapshotStore;
     private final NpcKeyRepairService npcKeyRepairService;
     private final TurnGuardService turnGuardService;
+    private final StarLorebookScanner starLorebookScanner;
+    private final WorldbookScanner worldbookScanner;
+    private final StoryNodeMaterializer storyNodeMaterializer;
 
     public GameLoopService(RpgGameStateRepository stateRepo,
                            RpgEventLogRepository eventRepo,
@@ -72,7 +77,10 @@ public class GameLoopService {
                            RpgGameStateSnapshotRepository snapshotRepo,
                            MemorySnapshotStore memorySnapshotStore,
                            NpcKeyRepairService npcKeyRepairService,
-                           TurnGuardService turnGuardService) {
+                           TurnGuardService turnGuardService,
+                           StarLorebookScanner starLorebookScanner,
+                           WorldbookScanner worldbookScanner,
+                           StoryNodeMaterializer storyNodeMaterializer) {
         this.stateRepo = stateRepo;
         this.eventRepo = eventRepo;
         this.runtimeRepo = runtimeRepo;
@@ -88,6 +96,9 @@ public class GameLoopService {
         this.memorySnapshotStore = memorySnapshotStore;
         this.npcKeyRepairService = npcKeyRepairService;
         this.turnGuardService = turnGuardService;
+        this.starLorebookScanner = starLorebookScanner;
+        this.worldbookScanner = worldbookScanner;
+        this.storyNodeMaterializer = storyNodeMaterializer;
     }
 
     /**
@@ -189,9 +200,19 @@ public class GameLoopService {
         Set<String> validNpcKeys = npcKeyCtx == null || npcKeyCtx.validKeys() == null
                 ? Set.of() : npcKeyCtx.validKeys();
 
+        // 故事图当前位置块（story-graph-runtime 4.3）：每轮现算——首轮 system prompt 不落库、
+        // 玩家行动原文不可注入（RpgHistoryCleaner 清洗契约），块拼在 system 末尾；后续轮经
+        // 增量模板注入 user 轨（落库，30 事件滑窗内持续在场，同 customBlockContract 模式）。
+        // 未挂图/未开图返回 null 零增量，prompt 与现状逐字节一致
+        String storyNodeBlock = storyNodeMaterializer.buildStoryNodeBlock(gameStateId, gs);
+
         if (isFirstRound) {
             systemPrompt = contextAssembler.assembleFirstRound(gameStateId);
             userPrompt = playerAction;
+            if (storyNodeBlock != null && !storyNodeBlock.isBlank()) {
+                // 首轮注入 system 末尾：system 不落库、不进清洗链，无回放风险
+                systemPrompt = systemPrompt + storyNodeBlock;
+            }
         } else {
             // 每 N 轮追加一次记忆整理提醒 + 世界背景回顾（N 见 rpg.memory.remind-every-turns /
             // rpg.memory.world-refresh-every-turns）。
@@ -208,9 +229,24 @@ public class GameLoopService {
             // 当前在场 NPC 名单（rpg-scene-cast D6）：每轮反哺 GM，保持场景班底在场感一致；
             // 旧存档无戳时为「（暂无）」占位，推进一轮盖戳后自然重建
             String sceneCastReference = contextAssembler.buildSceneCastReference(gameStateId);
+            // 设定集·已揭示（rpg-lore-archival-loading D5/D6）：关键词扫描（仅非首轮），激活即向
+            // MEMORY.md 追加档案索引行；注入块只渲染本轮新命中打一行式提示（命中轮滑窗残留，
+            // 滑出后靠索引兜底与 GM 主动拉取），激活前档案已由开局物化落盘。扫描文本含
+            // GM 上一轮叙事，避免 GM 先提武将名而漏激活。本轮无新命中时块为 null，
+            // assembleIncremental 直接省略（首轮不扫：首轮 userPrompt 是玩家行动原文，不包模板）
+            String starLorebookBlock = contextAssembler.buildStarLorebookBlock(
+                    starLorebookScanner.scanAndCollect(gameStateId, playerAction, newTurn).newlyRevealed());
+            // 世界书·关联设定（add-rpg-worldbook D4）：通用世界书关键词扫描（仅非首轮），瞬时注入——
+            // 仅本轮命中的条目才注入，与冥星录（sticky 双表）平行的第三条注入轨。未命中时块为 null。
+            String worldbookBlock = contextAssembler.buildWorldbookBlock(
+                    worldbookScanner.scan(gameStateId, playerAction));
+            // 本世界自定义状态字段契约（rpg-hud-custom-blocks D5）：每轮反哺——字段清单只渲染进
+            // 首轮 system prompt（SystemMessage 不落库），不每轮重注入则第 2 轮起模型无从输出
+            String customBlockContract = contextAssembler.buildCustomBlockContract(gameStateId);
             userPrompt = contextAssembler.assembleIncremental(
                     playerAction, triggered, memoryReminder, worldRefreshBlock,
-                    npcKeyReference, sceneCastReference);
+                    npcKeyReference, sceneCastReference, starLorebookBlock, worldbookBlock,
+                    customBlockContract, storyNodeBlock);
             if (memoryReminder) {
                 log.debug("第 {} 轮触发记忆整理提醒（间隔 {} 轮）", newTurn, memoryProperties.getRemindEveryTurns());
             }
@@ -250,8 +286,10 @@ public class GameLoopService {
      * @param gameStateId 游戏状态 ID
      * @param gmOutput    GM 完整输出文本
      * @param turnContext  轮次上下文
+     * @return 轮次产物（rpg-hud-bubble-components D3）：修复后 state_delta JSON 与轮次号，
+     *         供 turn_persisted 尾包携带（与 rpg_event_log 落库快照同源）；存档缺失或无 state_delta 时为 null
      */
-    public void finalizeTurn(String gameStateId, String gmOutput, TurnContext turnContext) {
+    public TurnOutcome finalizeTurn(String gameStateId, String gmOutput, TurnContext turnContext) {
         boolean restored = false;
         if (!TenantContext.isPresent()) {
             Object carrier = turnContext.toolContext().get(TenantContext.TOOL_CONTEXT_KEY);
@@ -261,7 +299,7 @@ public class GameLoopService {
             }
         }
         try {
-            doFinalizeTurn(gameStateId, gmOutput, turnContext);
+            return doFinalizeTurn(gameStateId, gmOutput, turnContext);
         } finally {
             if (restored) {
                 TenantContext.clear();
@@ -269,11 +307,11 @@ public class GameLoopService {
         }
     }
 
-    private void doFinalizeTurn(String gameStateId, String gmOutput, TurnContext turnContext) {
+    private TurnOutcome doFinalizeTurn(String gameStateId, String gmOutput, TurnContext turnContext) {
         GameState gs = stateRepo.findById(gameStateId);
         if (gs == null) {
             log.warn("finalizeTurn: 游戏状态未找到: {}", gameStateId);
-            return;
+            return null;
         }
 
         // 步骤6a: state_delta 提取（方案3混合式）
@@ -317,10 +355,11 @@ public class GameLoopService {
             // PC 结构化状态变更（GM 有时写驼峰 playerStates，两种 key 均接受）
             JsonNode playerNode = firstPresent(stateDelta, "player", "playerStates");
             if (playerNode != null && playerNode.isObject()) {
-                newPlayerStates = mergePlayerStates(gs.getPlayerStates(), playerNode);
                 List<String> changedFields = new ArrayList<>();
                 playerNode.fieldNames().forEachRemaining(changedFields::add);
                 playerChangeSummary = String.join(",", changedFields);
+                // cosmo 专用键旁路（rpg-cosmo-sense D4）：merge 之前结算，避免走自由键覆盖语义毁掉累加
+                newPlayerStates = applyCosmoThenMerge(gs.getPlayerStates(), (ObjectNode) playerNode);
             }
         }
 
@@ -369,7 +408,9 @@ public class GameLoopService {
             }
         }
 
-        // 步骤6g: 记录 NPC 行为和状态变更事件（state_delta 存修复后的版本，所见即所存）
+        // 步骤6g: 记录 NPC 行为和状态变更事件（state_delta 存修复后的版本，所见即所存）。
+        // 序列化产物同时回传（rpg-hud-bubble-components D3：尾包 state 与落库快照同源）
+        String stateDeltaJson = null;
         if (stateDelta != null) {
             EventLog stateEvent = new EventLog();
             stateEvent.setGameStateId(gameStateId);
@@ -379,7 +420,8 @@ public class GameLoopService {
                     + (playerChangeSummary == null ? "" : "; player变更: " + playerChangeSummary)
                     + (outcome.repairNote() == null ? "" : "；" + outcome.repairNote()));
             try {
-                stateEvent.setStateDelta(mapper.writeValueAsString(stateDelta));
+                stateDeltaJson = mapper.writeValueAsString(stateDelta);
+                stateEvent.setStateDelta(stateDeltaJson);
             } catch (Exception e) {
                 log.warn("state_delta 序列化失败: {}", e.getMessage());
             }
@@ -388,6 +430,8 @@ public class GameLoopService {
 
         log.info("轮次 [{}] 完成: gameStateId={}, triggered={}",
                 turnContext.newTurn(), gameStateId, turnContext.triggered().size());
+
+        return new TurnOutcome(turnContext.newTurn(), stateDeltaJson);
     }
 
     // ==================== npc_states key 校验/修复 ====================
@@ -520,6 +564,69 @@ public class GameLoopService {
             log.warn("player_states 合并失败，保持原值: {}", e.getMessage());
             return baseJson;
         }
+    }
+
+    /**
+     * cosmo 专用键旁路 + player 合并（rpg-cosmo-sense D4）。
+     * <p>
+     * 仅当 base 已含数值 cosmo 键（星命存档）且 overlay 写了 cosmo 时触发结算：
+     * 提取增量 → 从 overlay 移除（不进通用合并）→ 结算 → 合并其余键 → 回写结算后的 cosmo。
+     * base 无 cosmo 键（非星命/旧档）时 cosmo 原样留在 overlay，走 mergePlayerStates 自由键覆盖透传。
+     */
+    private String applyCosmoThenMerge(String baseJson, ObjectNode overlay) {
+        Integer settled = null;
+        try {
+            JsonNode base = (baseJson != null && !baseJson.isBlank())
+                    ? mapper.readTree(baseJson) : mapper.createObjectNode();
+            if (base.isObject() && base.path("cosmo").isNumber() && overlay.has("cosmo")) {
+                int baseCosmo = base.path("cosmo").asInt();
+                int delta = overlay.path("cosmo").isNumber() ? overlay.path("cosmo").asInt() : 0;
+                settled = settleCosmo(baseCosmo, delta);
+                overlay.remove("cosmo");
+            }
+        } catch (Exception e) {
+            log.warn("cosmo 结算旁路解析失败，按通用合并处理: {}", e.getMessage());
+        }
+        String merged = mergePlayerStates(baseJson, overlay);
+        if (settled != null) {
+            try {
+                ObjectNode mergedObj = (ObjectNode) mapper.readTree(merged);
+                mergedObj.put("cosmo", settled);
+                return mapper.writeValueAsString(mergedObj);
+            } catch (Exception e) {
+                log.warn("cosmo 结算回写失败，保留合并结果: {}", e.getMessage());
+            }
+        }
+        return merged;
+    }
+
+    /**
+     * 小宇宙成长结算（rpg-cosmo-sense D4）。
+     * <ul>
+     *   <li>正增量：Δ>400 截断为 400；截断后 >50 触发回落，留账 = [1,50] 随机整数；≤50 原样累加</li>
+     *   <li>负增量：不截断；累加后主角 clamp 下界 1（永不产出 0）</li>
+     * </ul>
+     * NPC 下界 0 的规则在 {@link CosmoSense} 在册，本变更不建 NPC 数值载体，故结算只走主角下界。
+     *
+     * @param base  存档当前小宇宙
+     * @param delta GM 写的本轮变化量
+     * @return 结算后小宇宙（≥ 主角下界 1）
+     */
+    static int settleCosmo(int base, int delta) {
+        int gain = cosmoGain(delta);
+        return Math.max(CosmoSense.PLAYER_MIN, base + gain);
+    }
+
+    /**
+     * 本轮实际留账增量：正向 >400 截断为 400，再 >50 回落为 [1,50] 随机；负向/小额原样。
+     * 回落随机在 finalize 单点计算（无两遍一致性问题），故直接用 ThreadLocalRandom。
+     */
+    private static int cosmoGain(int delta) {
+        int d = Math.min(delta, 400); // 正向 >400 截断；负向不受影响
+        if (d > 50) {
+            return java.util.concurrent.ThreadLocalRandom.current().nextInt(1, 51); // [1,50]
+        }
+        return d;
     }
 
     /** 对象深合并：overlay 的键覆盖 base，未提及键保留（递归嵌套对象）。 */
@@ -705,5 +812,17 @@ public class GameLoopService {
             boolean firstRound,       // 是否首轮
             int newTurn,              // 新轮次号
             Set<String> validNpcKeys  // 合法 npc_states key 集合（卡 ID ∪ 存档既有 key，供 finalizeTurn 校验）
+    ) {}
+
+    /**
+     * 轮次产物（rpg-hud-bubble-components D3：finalizeTurn 的回传值）。
+     * <p>
+     * stateDeltaJson 为 6b 校验/修复后的 state_delta 序列化文本——与 rpg_event_log 的
+     * state_change 快照同源同值，供 Controller 在 turn_persisted 尾包携带（前端渲染
+     * GM 气泡富组件）。无 state_delta（缺失/未闭合被丢弃）或存档缺失时整体为 null。
+     */
+    public record TurnOutcome(
+            int turn,               // 轮次号
+            String stateDeltaJson   // 修复后 state_delta JSON（与 EventLog 快照一致；可能为 null）
     ) {}
 }

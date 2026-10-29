@@ -60,6 +60,11 @@ public class CompactionController {
         if (sessionTenantGuard.isForeign(sessionId)) {
             return ResponseEntity.notFound().build();
         }
+        // RPG 会话压缩不可达（separate-rpg-chat-sessions spec）：chat 递归摘要会向
+        // RPG 会话写入 synthetic 合成事件，破坏 RPG 滑窗压缩「零合成事件」策略契约
+        if (sessionTenantGuard.isRpg(sessionId)) {
+            return ResponseEntity.notFound().build();
+        }
         try {
             // 使用 always-fire trigger 无条件触发压缩
             // SessionService.compact() 内部处理 CAS 和归档

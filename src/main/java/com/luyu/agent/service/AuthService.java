@@ -116,6 +116,23 @@ public class AuthService {
         return new AuthUser((String) row.get("ID"), (String) row.get("TENANT_ID"), normalized);
     }
 
+    /**
+     * 按用户 ID 回查登录邮箱（account-switch-sidebar：侧栏账号区 chip 展示）。
+     * <p>
+     * {@code app_user} 不在 {@code TenantGuardedJdbcTemplate} 守卫名单（同
+     * {@code PlatformAdminGuard} 按主键回查），页面渲染每请求一次，量级可忽略。
+     *
+     * @return 用户邮箱；userId 为空或用户不存在时返回 null（chip 显示占位）
+     */
+    public String findEmailByUserId(String userId) {
+        if (userId == null || userId.isBlank()) {
+            return null;
+        }
+        List<String> emails = jdbcTemplate.queryForList(
+                "SELECT email FROM app_user WHERE id = ?", String.class, userId);
+        return emails.isEmpty() ? null : emails.get(0);
+    }
+
     private static String normalizeEmail(String email) {
         return email == null ? "" : email.trim().toLowerCase();
     }

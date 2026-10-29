@@ -5,6 +5,7 @@ import com.luyu.agent.rpg.model.GameStateSnapshot;
 import com.luyu.agent.rpg.repository.RpgEventLogRepository;
 import com.luyu.agent.rpg.repository.RpgGameStateRepository;
 import com.luyu.agent.rpg.repository.RpgGameStateSnapshotRepository;
+import com.luyu.agent.rpg.repository.RpgStarIncarnationRuntimeRepository;
 import com.luyu.agent.rpg.repository.RpgTriggerRuntimeRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -51,6 +52,7 @@ class RollbackServiceTest {
     private RpgGameStateSnapshotRepository snapshotRepo;
     private RpgEventLogRepository eventLogRepo;
     private RpgTriggerRuntimeRepository triggerRuntimeRepo;
+    private RpgStarIncarnationRuntimeRepository starRuntimeRepo;
     private MemorySnapshotStore memorySnapshotStore;
     private RpgHistoryCleaner historyCleaner;
     private TransactionTemplate transactionTemplate;
@@ -65,6 +67,7 @@ class RollbackServiceTest {
         snapshotRepo = mock(RpgGameStateSnapshotRepository.class);
         eventLogRepo = mock(RpgEventLogRepository.class);
         triggerRuntimeRepo = mock(RpgTriggerRuntimeRepository.class);
+        starRuntimeRepo = mock(RpgStarIncarnationRuntimeRepository.class);
         memorySnapshotStore = mock(MemorySnapshotStore.class);
         historyCleaner = mock(RpgHistoryCleaner.class);
         transactionTemplate = mock(TransactionTemplate.class);
@@ -82,8 +85,8 @@ class RollbackServiceTest {
                 .thenAnswer(inv -> inv.getArgument(0) == null ? "" : ((String) inv.getArgument(0)).trim());
 
         service = new RollbackService(jdbcTemplate, sessionService, stateRepo, snapshotRepo,
-                eventLogRepo, triggerRuntimeRepo, memorySnapshotStore, historyCleaner, transactionTemplate,
-                turnGuardService);
+                eventLogRepo, triggerRuntimeRepo, starRuntimeRepo, memorySnapshotStore, historyCleaner,
+                transactionTemplate, turnGuardService);
     }
 
     // ==================== 事件构造辅助 ====================
@@ -159,9 +162,10 @@ class RollbackServiceTest {
         verify(stateRepo).updateFlags(GS_ID, "{\"见过盗贼\":true}");
         // PC 结构化状态随快照还原（rpg-player-memory：快照是回溯真源）
         verify(stateRepo).updatePlayerStates(GS_ID, "{\"money\":100, \"titles\":[\"燕云小剑客\"]}");
-        // 副产数据与过期快照清理
+        // 副产数据与过期快照清理（含世界书 runtime：被回溯轮次激活的条目撤销，star-lorebook）
         verify(eventLogRepo).deleteFromTurn(GS_ID, 2);
         verify(triggerRuntimeRepo).deleteFromTurn(GS_ID, 2);
+        verify(starRuntimeRepo).deleteFromTurn(GS_ID, 2);
         verify(snapshotRepo).deleteFromTurn(GS_ID, 2);
         // 记忆目录还原（事务提交后）
         verify(memorySnapshotStore).deleteFromTurn(GS_ID, 2);

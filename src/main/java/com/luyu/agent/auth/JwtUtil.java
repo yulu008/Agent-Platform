@@ -28,8 +28,8 @@ public class JwtUtil {
     private final SecretKey key;
     private final Duration expiration;
 
-    public JwtUtil(@Value("${jwt.secret}") String secret,
-                   @Value("${jwt.expiration-hours:24}") int expirationHours) {
+    public JwtUtil(@Value("${auth.jwt.secret}") String secret,
+                   @Value("${auth.jwt.expiration-hours:168}") int expirationHours) {
         this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
         this.expiration = Duration.ofHours(expirationHours);
     }

@@ -3,10 +3,13 @@ package com.luyu.agent.rpg.engine;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.luyu.agent.rpg.config.RpgSavePaths;
+import com.luyu.agent.rpg.config.RpgTechniqueProperties;
 import com.luyu.agent.rpg.model.*;
 import com.luyu.agent.rpg.repository.*;
+import com.luyu.agent.rpg.service.LoreArchiveService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
 
@@ -61,6 +64,12 @@ public class GmContextAssembler {
     /** npc_states 无既有条目（或不可解析）时，NPC key 参考块的占位文案 */
     static final String NPC_KEYS_EMPTY = "（暂无）";
 
+    /** customBlocks 块数上限（rpg-hud-custom-blocks D1：≤5 块，与前端 workshop.js/hud.js 同源） */
+    static final int MAX_CUSTOM_BLOCKS = 5;
+
+    /** customBlocks field 的安全正则（rpg-hud-custom-blocks D1/D4，与前端 HUD_BLOCK_FIELD_RE 同源） */
+    static final String CUSTOM_BLOCK_FIELD_PATTERN = "[a-zA-Z][a-zA-Z0-9_]{0,63}";
+
     /**
      * 每 N 轮插入一次的记忆整理提醒。
      * <p>
@@ -81,6 +90,8 @@ public class GmContextAssembler {
     private final RpgCharacterCardRepository charRepo;
     private final RpgTriggerRepository triggerRepo;
     private final RpgGameStateRepository stateRepo;
+    /** 招式门禁配置（rpg-technique-tree-data D8）：渲染「需 X≥阈值」文案取 defaultUnlockThreshold */
+    private final RpgTechniqueProperties techniqueProps;
 
     private final String systemPromptTemplate;
     private final String incrementalPromptTemplate;
@@ -91,10 +102,20 @@ public class GmContextAssembler {
                                RpgCharacterCardRepository charRepo,
                                RpgTriggerRepository triggerRepo,
                                RpgGameStateRepository stateRepo) {
+        this(worldRepo, charRepo, triggerRepo, stateRepo, new RpgTechniqueProperties());
+    }
+
+    @Autowired
+    public GmContextAssembler(RpgWorldSettingRepository worldRepo,
+                               RpgCharacterCardRepository charRepo,
+                               RpgTriggerRepository triggerRepo,
+                               RpgGameStateRepository stateRepo,
+                               RpgTechniqueProperties techniqueProps) {
         this.worldRepo = worldRepo;
         this.charRepo = charRepo;
         this.triggerRepo = triggerRepo;
         this.stateRepo = stateRepo;
+        this.techniqueProps = techniqueProps;
         this.systemPromptTemplate = loadTemplate(SYSTEM_PROMPT_PATH);
         this.incrementalPromptTemplate = loadTemplate(INCREMENTAL_PROMPT_PATH);
         this.memoryPromptTemplate = loadTemplate(MEMORY_PROMPT_PATH);
@@ -131,7 +152,8 @@ public class GmContextAssembler {
     public String assembleFirstRound(String gameStateId) {
         GameState gs = stateRepo.findById(gameStateId);
         if (gs == null) {
-            return systemPromptTemplate;
+            // 降级分支同样剔除 {{CUSTOM_BLOCK_FIELDS}} 占位段，避免占位符原文漏进提示词
+            return stripCustomBlockPlaceholder(systemPromptTemplate);
         }
 
         WorldSetting world = worldRepo.findById(gs.getWorldId());
@@ -139,12 +161,15 @@ public class GmContextAssembler {
         List<CharacterCard> npcs = charRepo.findByWorldIdAndType(gs.getWorldId(), "npc");
         List<Trigger> triggers = triggerRepo.findByWorldId(gs.getWorldId());
 
-        return systemPromptTemplate
+        String prompt = systemPromptTemplate
                 .replace("{{WORLD_SETTING}}", formatWorld(world))
                 .replace("{{PLAYER_CARD}}", formatCard(player))
                 .replace("{{NPC_CARDS}}", npcs.stream().map(this::formatCard).collect(Collectors.joining("\n\n---\n\n")))
                 .replace("{{TRIGGER_DEFINITIONS}}", triggers.stream().map(this::formatTrigger).collect(Collectors.joining("\n\n---\n\n")))
                 .replace("{{GAME_STATE}}", formatGameState(gs));
+        // 自定义状态字段契约段（rpg-hud-custom-blocks D5）：与 state_delta 契约段同位置注入；
+        // 无块世界剔除占位段后与现状逐字节一致（零增量）
+        return applyCustomBlockContract(prompt, buildCustomBlockContractSection(world));
     }
 
     /**
@@ -223,6 +248,112 @@ public class GmContextAssembler {
     public String assembleIncremental(String playerAction, List<Trigger> triggerHits,
                                      boolean memoryReminder, String worldRefreshBlock,
                                      String npcKeyReference, String sceneCast) {
+        return assembleIncremental(playerAction, triggerHits, memoryReminder,
+                worldRefreshBlock, npcKeyReference, sceneCast, null);
+    }
+
+    /**
+     * 组装后续轮增量 prompt（七参重载，star-lorebook；委托八参全量重载，{@code worldbookBlock} 传 null）。
+     *
+     * @param playerAction     玩家行动文本
+     * @param triggerHits      触发器命中结果（已通过的触发器列表）
+     * @param memoryReminder   是否在本轮追加一次记忆整理提醒（每 N 轮由 {@code GameLoopService} 置 true）
+     * @param worldRefreshBlock 「世界背景回顾」重注入块（每 N 轮由 {@code GameLoopService} 经
+     *                         {@link #buildWorldRefreshBlock(String)} 现算后传入；null 表示本轮不注入）
+     * @param npcKeyReference  「现有 NPC 状态 key」参考块（每轮由 {@code GameLoopService} 经
+     *                         {@link #buildNpcKeyReference(String)} 现算后传入；null/空白时占位为「（暂无）」）
+     * @param sceneCast        「当前在场 NPC」名单块（每轮由 {@code GameLoopService} 经
+     *                         {@link #buildSceneCastReference(String)} 现算后传入；null/空白时占位为「（暂无）」）
+     * @param starLorebookBlock 「设定集·已揭示」块（每轮由 {@code GameLoopService} 经
+     *                         {@link #buildStarLorebookBlock(List)} 现算后传入；null/空白时省略——
+     *                         未激活任何条目时不注入占位，与任务指令段的降噪取向一致）
+     * @return 增量注入的 user prompt
+     */
+    public String assembleIncremental(String playerAction, List<Trigger> triggerHits,
+                                     boolean memoryReminder, String worldRefreshBlock,
+                                     String npcKeyReference, String sceneCast,
+                                     String starLorebookBlock) {
+        return assembleIncremental(playerAction, triggerHits, memoryReminder,
+                worldRefreshBlock, npcKeyReference, sceneCast, starLorebookBlock, null);
+    }
+
+    /**
+     * 组装后续轮增量 prompt（八参重载，add-rpg-worldbook；委托九参全量重载，
+     * {@code customBlockContract} 传 null）。
+     *
+     * @param playerAction     玩家行动文本
+     * @param triggerHits      触发器命中结果（已通过的触发器列表）
+     * @param memoryReminder   是否在本轮追加一次记忆整理提醒（每 N 轮由 {@code GameLoopService} 置 true）
+     * @param worldRefreshBlock 「世界背景回顾」重注入块（null 表示本轮不注入）
+     * @param npcKeyReference  「现有 NPC 状态 key」参考块（null/空白时占位为「（暂无）」）
+     * @param sceneCast        「当前在场 NPC」名单块（null/空白时占位为「（暂无）」）
+     * @param starLorebookBlock 「设定集·已揭示」块（设定集 sticky；null/空白时省略）
+     * @param worldbookBlock   「世界书·关联设定」块（通用世界书瞬时命中；null/空白时省略——
+     *                         与 starLorebookBlock 同侧追加，块头不同故可同轮共存）
+     * @return 增量注入的 user prompt
+     */
+    public String assembleIncremental(String playerAction, List<Trigger> triggerHits,
+                                     boolean memoryReminder, String worldRefreshBlock,
+                                     String npcKeyReference, String sceneCast,
+                                     String starLorebookBlock, String worldbookBlock) {
+        return assembleIncremental(playerAction, triggerHits, memoryReminder, worldRefreshBlock,
+                npcKeyReference, sceneCast, starLorebookBlock, worldbookBlock, null);
+    }
+
+    /**
+     * 组装后续轮增量 prompt（九参全量重载，rpg-hud-custom-blocks；委托十参全量重载，
+     * {@code storyNodeBlock} 传 null）。
+     *
+     * @param playerAction     玩家行动文本
+     * @param triggerHits      触发器命中结果（已通过的触发器列表）
+     * @param memoryReminder   是否在本轮追加一次记忆整理提醒（每 N 轮由 {@code GameLoopService} 置 true）
+     * @param worldRefreshBlock 「世界背景回顾」重注入块（null 表示本轮不注入）
+     * @param npcKeyReference  「现有 NPC 状态 key」参考块（null/空白时占位为「（暂无）」）
+     * @param sceneCast        「当前在场 NPC」名单块（null/空白时占位为「（暂无）」）
+     * @param starLorebookBlock 「设定集·已揭示」块（设定集 sticky；null/空白时省略）
+     * @param worldbookBlock   「世界书·关联设定」块（通用世界书瞬时命中；null/空白时省略——
+     *                         与 starLorebookBlock 同侧追加，块头不同故可同轮共存）
+     * @param customBlockContract 「本世界自定义状态字段」契约块（每轮由 {@code GameLoopService} 经
+     *                            {@link #buildCustomBlockContract(String)} 现算后传入；null/空白时省略——
+     *                            首轮 system prompt 不落库，缺本块则第 2 轮起模型无从知晓字段清单）
+     * @return 增量注入的 user prompt
+     */
+    public String assembleIncremental(String playerAction, List<Trigger> triggerHits,
+                                     boolean memoryReminder, String worldRefreshBlock,
+                                     String npcKeyReference, String sceneCast,
+                                     String starLorebookBlock, String worldbookBlock,
+                                     String customBlockContract) {
+        return assembleIncremental(playerAction, triggerHits, memoryReminder, worldRefreshBlock,
+                npcKeyReference, sceneCast, starLorebookBlock, worldbookBlock,
+                customBlockContract, null);
+    }
+
+    /**
+     * 组装后续轮增量 prompt（十参全量重载，story-graph-runtime 4.3）。
+     *
+     * @param playerAction     玩家行动文本
+     * @param triggerHits      触发器命中结果（已通过的触发器列表）
+     * @param memoryReminder   是否在本轮追加一次记忆整理提醒（每 N 轮由 {@code GameLoopService} 置 true）
+     * @param worldRefreshBlock 「世界背景回顾」重注入块（null 表示本轮不注入）
+     * @param npcKeyReference  「现有 NPC 状态 key」参考块（null/空白时占位为「（暂无）」）
+     * @param sceneCast        「当前在场 NPC」名单块（null/空白时占位为「（暂无）」）
+     * @param starLorebookBlock 「设定集·已揭示」块（设定集 sticky；null/空白时省略）
+     * @param worldbookBlock   「世界书·关联设定」块（通用世界书瞬时命中；null/空白时省略——
+     *                         与 starLorebookBlock 同侧追加，块头不同故可同轮共存）
+     * @param customBlockContract 「本世界自定义状态字段」契约块（每轮由 {@code GameLoopService} 经
+     *                            {@link #buildCustomBlockContract(String)} 现算后传入；null/空白时省略——
+     *                            首轮 system prompt 不落库，缺本块则第 2 轮起模型无从知晓字段清单）
+     * @param storyNodeBlock   「故事图当前位置（结构指示）」块（story-graph-runtime 4.3，
+     *                        {@code StoryNodeMaterializer.buildStoryNodeBlock} 产出；
+     *                        null/空白时省略——未挂图/未开图的 world 零增量，
+     *                        prompt 与九参重载逐字节一致）
+     * @return 增量注入的 user prompt
+     */
+    public String assembleIncremental(String playerAction, List<Trigger> triggerHits,
+                                     boolean memoryReminder, String worldRefreshBlock,
+                                     String npcKeyReference, String sceneCast,
+                                     String starLorebookBlock, String worldbookBlock,
+                                     String customBlockContract, String storyNodeBlock) {
         String triggerText = triggerHits == null || triggerHits.isEmpty()
                 ? "本轮无触发器命中。"
                 : triggerHits.stream()
@@ -247,6 +378,27 @@ public class GmContextAssembler {
             // 追加在模板末尾（## GM 任务指令 段之后），避开 ## 玩家行动 段：
             // RpgHistoryCleaner 按「## 玩家行动 到下一个 \n## 」截取玩家原文，落进该区间会被当成玩家的话回放
             prompt += worldRefreshBlock;
+        }
+        if (starLorebookBlock != null && !starLorebookBlock.isBlank()) {
+            // 「设定集·已揭示」块与【世界背景回顾】同侧（design D4）：追加在模板末尾、
+            // ## GM 任务指令 段之后，以 \n\n## 开头自成一段，绝不在 ## 玩家行动 与下一 ## 之间
+            prompt += starLorebookBlock;
+        }
+        if (worldbookBlock != null && !worldbookBlock.isBlank()) {
+            // 「世界书·关联设定」块（通用世界书瞬时命中）与已揭示块同侧、同落位约束（design D5）：
+            // 追加在模板末尾、## GM 任务指令 段之后，以 \n\n## 开头自成一段，块头不同故可与已揭示块共存
+            prompt += worldbookBlock;
+        }
+        if (customBlockContract != null && !customBlockContract.isBlank()) {
+            // 「本世界自定义状态字段」块与既有注入块同侧、同落位约束（rpg-hud-custom-blocks design D5）：
+            // 追加在模板末尾、## GM 任务指令 段之后，以 \n\n## 开头自成一段
+            prompt += customBlockContract;
+        }
+        if (storyNodeBlock != null && !storyNodeBlock.isBlank()) {
+            // 「故事图当前位置（结构指示）」块（story-graph-runtime 4.3）与既有注入块同侧、同落位约束：
+            // 追加在模板末尾、## GM 任务指令 段之后，以 \n\n## 开头自成一段
+            // （RpgHistoryCleaner 按「## 玩家行动 到下一个 \n## 」截取玩家原文，本块天然被清洗剔除）
+            prompt += storyNodeBlock;
         }
         return prompt;
     }
@@ -390,6 +542,88 @@ public class GmContextAssembler {
         return String.join("\n", lines);
     }
 
+    // ==================== 设定集·已揭示（star-lorebook / rpg-lore-archival-loading） ====================
+
+    /**
+     * 组装「设定集·已揭示」块（纯函数，不触库；数据由 {@link StarLorebookScanner#scanAndCollect}
+     * 现算后传入）。rpg-lore-archival-loading 纯索引档位（design D5/D6）：只渲染<b>本轮新命中</b>，
+     * 每条一行「星名·武将名已揭示，档案见 lore_&lt;星名&gt;.md」——命中轮随 user 消息落库在
+     * 滑窗内存活约 15 轮（滑窗残留层）；既有激活依赖 MEMORY.md 索引兜底与 GM 主动拉取。
+     * 分类分组（add-star-lorebook-category D3）：按传入顺序遍历，category 非空且与前一条不同
+     * 时先输出一行【分类】标题行（分类名只出现一次，token 效率）；无分类条目维持平铺。
+     * 落位约束见 {@code assembleIncremental} 七参重载：必须追加在 {@code ## GM 任务指令} 段之后
+     * （{@code ## 玩家行动} 区间之外），规避 {@link RpgHistoryCleaner} 把名录文本当玩家原话回放
+     * （块内新增【分类】行同在块内，按位置段清洗整体剔除，契约不变）。
+     *
+     * @param entries 本轮新命中的条目（既有已激活不重复注入——旧全量 sticky 渠道已退场）
+     * @return 以 {@code \n\n## 设定集·已揭示} 开头的注入块；entries 为空时返回 null（本轮不注入）
+     */
+    public String buildStarLorebookBlock(List<StarLorebookScanner.RevealedEntry> entries) {
+        if (entries == null || entries.isEmpty()) {
+            // 本轮无新命中 → 省略块（不报错、不注入占位；既有激活走记忆通道）
+            return null;
+        }
+        String lastCategory = null;
+        StringBuilder sb = new StringBuilder();
+        sb.append("\n\n## 设定集·已揭示\n\n");
+        sb.append("以下设定集条目本轮首次被提及，档案已归档，细节用 GmMemoryView 读取对应档案：\n");
+        for (StarLorebookScanner.RevealedEntry entry : entries) {
+            StarIncarnation incarnation = entry.incarnation();
+            String fileName = LoreArchiveService.starArchiveFileName(incarnation.getStarName());
+            // 分类分组（add-star-lorebook-category D3）：category 非空且与前一条不同 →
+            // 先输出一行【分类】（防御空白视为未分类；条目行格式不变）
+            String category = incarnation.getCategory() == null || incarnation.getCategory().isBlank()
+                    ? null : incarnation.getCategory().trim();
+            if (category != null && !category.equals(lastCategory)) {
+                sb.append('【').append(category).append("】\n");
+            }
+            lastCategory = category;
+            sb.append("- ").append(incarnation.getStarName());
+            if (incarnation.getWarlordName() != null && !incarnation.getWarlordName().isBlank()) {
+                sb.append('·').append(incarnation.getWarlordName());
+            }
+            // claimed 行人物区分提示语（preset-destined-figures D3）：人物局撞星标
+            // 【人即玩家】（玩家=武将本人，勿演成失衣武将）；其余 claim 路径（无名新人/
+            // 信胜撞星）标【星归玩家】（冥衣归玩家、武将失衣另谋他途）。
+            if (entry.claimed()) {
+                sb.append(entry.playerIsFigure() ? "【人即玩家】" : "【星归玩家】");
+            }
+            sb.append("已揭示，档案见 ").append(fileName).append('\n');
+        }
+        return sb.toString();
+    }
+
+    // ==================== 世界书·关联设定（add-rpg-worldbook） ====================
+
+    /**
+     * 组装「世界书·关联设定」块（纯函数，不触库；数据由 {@link WorldbookScanner#scan} 现算后传入）。
+     * <p>
+     * 渲染本轮命中的玩家自定义世界书条目；与设定集的「设定集·已揭示」块<b>块头不同</b>，
+     * 二者同轮共存时可区分（design D5）。落位约束见 {@code assembleIncremental} 八参重载：
+     * 必须追加在 {@code ## GM 任务指令} 段之后（{@code ## 玩家行动} 区间之外），
+     * 规避 {@link RpgHistoryCleaner} 把条目文本当玩家原话回放。
+     *
+     * @param entries 本轮命中的启用条目（按仓储排序）
+     * @return 以 {@code \n\n## 世界书·关联设定} 开头的注入块；entries 为空时返回 null（本轮不注入）
+     */
+    public String buildWorldbookBlock(List<WorldbookEntry> entries) {
+        if (entries == null || entries.isEmpty()) {
+            // 未命中任何条目 → 省略块（不报错、不注入占位）
+            return null;
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("\n\n## 世界书·关联设定\n\n");
+        sb.append("以下为玩家自定义世界设定，本轮被提及，供叙事参考（保持设定一致，勿凭空改写）：\n");
+        for (WorldbookEntry entry : entries) {
+            sb.append("- ").append(entry.getTitle());
+            if (entry.getContent() != null && !entry.getContent().isBlank()) {
+                sb.append('：').append(entry.getContent());
+            }
+            sb.append('\n');
+        }
+        return sb.toString();
+    }
+
     // ==================== 场景在场名单（rpg-scene-cast） ====================
 
     /**
@@ -457,6 +691,113 @@ public class GmContextAssembler {
                     : "- " + key);
         }
         return lines.isEmpty() ? NPC_KEYS_EMPTY : String.join("\n", lines);
+    }
+
+    // ==================== 自定义状态字段契约（rpg-hud-custom-blocks） ====================
+
+    /**
+     * 组装增量轮「本世界自定义状态字段」每轮反哺块（查库版）。
+     * <p>
+     * 动机：字段清单只渲染进首轮 system prompt（SystemMessage 不落库），第 2 轮起上下文里
+     * 没有契约，模型无从输出自定义字段——HUD 块会在首轮后消失。本块随增量 prompt 每轮
+     * 注入（体积仅为字段清单，不随状态膨胀），照 {@code worldRefreshBlock} 先例由
+     * {@code GameLoopService} 现算传入 {@code assembleIncremental} 九参重载。
+     *
+     * @param gameStateId 游戏状态 ID
+     * @return 以 {@code \n\n## 本世界自定义状态字段} 开头的注入块；无有效块时为 null（本轮不注入）
+     */
+    public String buildCustomBlockContract(String gameStateId) {
+        if (stateRepo == null) {
+            return null;
+        }
+        GameState gs = stateRepo.findById(gameStateId);
+        WorldSetting world = gs == null ? null : worldRepo.findById(gs.getWorldId());
+        List<String> fields = collectCustomBlockFields(world);
+        if (fields.isEmpty()) {
+            return null;
+        }
+        return "\n\n## 本世界自定义状态字段\n\n"
+                + "`<state_delta>` 根级继续输出本世界自定义字段（前端渲染为面板内容块；"
+                + "值为数组，每项 {\"text\": \"…\", \"done\": true|false}，整体替换，无新变化时省略该键）：\n"
+                + String.join("\n", fields);
+    }
+
+    /**
+     * 首轮 system prompt 的 {@code {{CUSTOM_BLOCK_FIELDS}}} 契约段（纯函数，不触库）：
+     * 3 空格缩进列表续行形态，落位在 state_delta 契约说明之后（「4. 状态变更」条目内）。
+     *
+     * @return 缩进契约段；无有效块时为 null（占位段整体剔除，提示词零增量）
+     */
+    String buildCustomBlockContractSection(WorldSetting world) {
+        List<String> fields = collectCustomBlockFields(world);
+        if (fields.isEmpty()) {
+            return null;
+        }
+        return "   本世界自定义状态字段（写入 `<state_delta>` 根级，前端渲染为面板内容块；"
+                + "值为数组，每项 {\"text\": \"…\", \"done\": true|false}，整体替换，无新变化时省略该键）：\n"
+                + String.join("\n", fields.stream().map(f -> "   " + f).toList());
+    }
+
+    /**
+     * 契约字段行集（{@code - `field`（title）}）。
+     * <p>
+     * 校验与前端 {@code applyWorldCustomBlocks}（hud.js）同规则（D4/D7 双层校验的后端侧）：
+     * 坏 JSON/非数组/超 {@value #MAX_CUSTOM_BLOCKS} 块整包丢弃，单块结构错/title 超长/field
+     * 非安全正则仅丢该块（warn 可观测）——保证提示词引导的字段集与前端渲染的块集一致。
+     * accent 是渲染侧关注点（CSS 变量白名单），此处不校验。
+     */
+    private List<String> collectCustomBlockFields(WorldSetting world) {
+        if (world == null || world.getCustomBlocks() == null || world.getCustomBlocks().isBlank()) {
+            return List.of();
+        }
+        JsonNode root;
+        try {
+            root = mapper.readTree(world.getCustomBlocks());
+        } catch (IOException e) {
+            log.warn("customBlocks 不是合法 JSON，契约段整包丢弃: {}", e.getMessage());
+            return List.of();
+        }
+        if (!root.isArray() || root.isEmpty()) {
+            log.warn("customBlocks 非数组或为空，契约段整包丢弃");
+            return List.of();
+        }
+        if (root.size() > MAX_CUSTOM_BLOCKS) {
+            log.warn("customBlocks 超 {} 块上限，契约段整包丢弃: {}", MAX_CUSTOM_BLOCKS, root.size());
+            return List.of();
+        }
+        List<String> fields = new ArrayList<>();
+        for (JsonNode block : root) {
+            String title = block.path("title").asText(null);
+            String field = block.path("field").asText(null);
+            if (!block.isObject()
+                    || title == null || title.isBlank() || title.length() > 20
+                    || field == null || !field.matches(CUSTOM_BLOCK_FIELD_PATTERN)) {
+                log.warn("customBlocks 单块非法（title={}, field={}），契约段丢弃该块", title, field);
+                continue;
+            }
+            fields.add("- `" + field + "`（" + title + "）");
+        }
+        return fields;
+    }
+
+    /**
+     * 首轮占位段处理：有块替换 {@code {{CUSTOM_BLOCK_FIELDS}}} 为契约段；
+     * 无块把「占位行连同其前后段落空行」整块剔除——提示词与占位符引入前逐字节一致（零增量）。
+     */
+    private static String applyCustomBlockContract(String prompt, String contractSection) {
+        if (contractSection == null) {
+            return stripCustomBlockPlaceholder(prompt);
+        }
+        return prompt.replace("{{CUSTOM_BLOCK_FIELDS}}", contractSection);
+    }
+
+    private static String stripCustomBlockPlaceholder(String prompt) {
+        // 模板文件为 CRLF 行尾（随编辑器/平台而异），LF/CRLF 两种形态都精确剔除占位段；
+        // 末个 replace 兜底抹掉异常行尾形态的裸占位符——绝不让占位符残留漏进提示词
+        //（spec：无块世界与占位符引入前逐字节一致）
+        return prompt.replace("\n\n{{CUSTOM_BLOCK_FIELDS}}\n\n", "\n\n")
+                .replace("\r\n\r\n{{CUSTOM_BLOCK_FIELDS}}\r\n\r\n", "\r\n\r\n")
+                .replace("{{CUSTOM_BLOCK_FIELDS}}", "");
     }
 
     // ==================== 格式化辅助方法 ====================
@@ -547,13 +888,140 @@ public class GmContextAssembler {
 
     private String formatGameState(GameState gs) {
         if (gs == null) return "（未初始化）";
+        String starDestiny = formatStarDestiny(gs.getPlayerStates());
         return String.format("""
                 当前轮次：%d
                 当前位置：%s
                 标记：%s
                 NPC状态：%s
+                玩家状态：%s
+                %s
                 """, gs.getTurnCount(), gs.getCurrentLocation(),
-                gs.getFlags(), gs.getNpcStates());
+                gs.getFlags(), gs.getNpcStates(),
+                gs.getPlayerStates() != null ? gs.getPlayerStates() : "{}",
+                starDestiny);
+    }
+
+    /**
+     * 从 playerStates JSON 中提取星命摘要行。
+     * <p>
+     * 格式：星命：白羊座 | Gold | saint | 热情冲动、勇往直前
+     * 若有招式，追加招式名称列表。
+     * 无星命数据时返回空字符串。
+     * <p>包内可见：纯函数（仅依赖 playerStates 字符串），供单测直接注入验证小宇宙措辞追加与降级。
+     */
+    String formatStarDestiny(String playerStates) {
+        if (playerStates == null || playerStates.isBlank()) {
+            return "";
+        }
+        try {
+            JsonNode root = mapper.readTree(playerStates);
+            String constellation = root.path("constellation").asText("");
+            String starRank = root.path("star_rank").asText("");
+            String faction = root.path("faction").asText("");
+            String traits = root.path("zodiac_traits").asText("");
+            if (constellation.isBlank() && starRank.isBlank()) {
+                return "";
+            }
+            StringBuilder sb = new StringBuilder();
+            sb.append("星命：").append(constellation).append(" | ")
+              .append(starRank).append(" | ").append(faction).append(" | ").append(traits);
+            // 小宇宙行（rpg-cosmo-sense D5）：仅当存档有数值 cosmo 键时追加，措辞取自 CosmoSense 单一真源
+            JsonNode cosmoNode = root.path("cosmo");
+            if (cosmoNode.isNumber()) {
+                sb.append(" | 小宇宙 ").append(CosmoSense.render(cosmoNode.asInt()));
+            }
+            // 命定身份行（preset-destined-figures D2）：仅人物模式存档有 figure 键时追加——
+            // GM 感知「玩家是谁」（如「命定身份：织田信长——弘治二年二十二岁……」）；
+            // 无名新人/旧档不含该键，星命行零改动。
+            if (!root.path("figure_key").asText("").isBlank()) {
+                sb.append("\n命定身份：").append(root.path("figure_display_name").asText(""));
+                String figureEraNote = root.path("figure_era_note").asText("");
+                if (!figureEraNote.isBlank()) {
+                    sb.append("——").append(figureEraNote);
+                }
+            }
+            // 招式树三段压缩渲染（rpg-technique-tree-data D7）：已会 / 可悟 / 封印，替换旧版招式名平铺
+            List<TechniqueState> techStates = TechniqueStateReader.read(root);
+            if (!techStates.isEmpty()) {
+                sb.append("\n").append(renderTechniqueBlock(constellation, techStates));
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    /**
+     * 招式树三段压缩渲染（D7）。
+     * <p>
+     * 「已会」带数值/档位（措辞取 {@link TechniqueProficiency} 单一真源）；「可悟」= 未学且全部前置
+     * learned=true，附全前置条件文案；「封印」= 前置仍有未学者，附未满足前置条件。
+     * 招式总数 &gt; 6 时「封印」段降级为只列名字不列条件（token 控制）。
+     */
+    private String renderTechniqueBlock(String constellation, List<TechniqueState> states) {
+        int threshold = techniqueProps != null
+                ? techniqueProps.getDefaultUnlockThreshold()
+                : RpgTechniqueProperties.DEFAULT_UNLOCK_THRESHOLD;
+        Map<String, TechniqueState> byName = new HashMap<>();
+        states.forEach(t -> byName.put(t.name(), t));
+        List<TechniqueState> learned = new ArrayList<>();
+        List<TechniqueState> unlockable = new ArrayList<>();
+        List<TechniqueState> sealed = new ArrayList<>();
+        for (TechniqueState t : states) {
+            if (t.learned()) {
+                learned.add(t);
+            } else if (t.prerequisites().stream().allMatch(p -> {
+                TechniqueState ps = byName.get(p);
+                return ps != null && ps.learned();
+            })) {
+                unlockable.add(t);
+            } else {
+                sealed.add(t);
+            }
+        }
+        StringBuilder sb = new StringBuilder("招式（").append(constellation).append("）：");
+        if (!learned.isEmpty()) {
+            sb.append("\n  已会：").append(learned.stream()
+                    .map(t -> t.name() + " " + TechniqueProficiency.render(t.proficiency()))
+                    .collect(Collectors.joining("、")));
+        }
+        if (!unlockable.isEmpty()) {
+            sb.append("\n  可悟：").append(unlockable.stream()
+                    .map(t -> t.name() + prereqCondition(t, threshold, null))
+                    .collect(Collectors.joining("、")));
+        }
+        if (!sealed.isEmpty()) {
+            sb.append("\n  封印：");
+            if (states.size() > 6) {
+                sb.append(sealed.stream().map(TechniqueState::name).collect(Collectors.joining("、")));
+            } else {
+                sb.append(sealed.stream()
+                        .map(t -> t.name() + prereqCondition(t, threshold, byName))
+                        .collect(Collectors.joining("、")));
+            }
+        }
+        return sb.toString();
+    }
+
+    /**
+     * 前置条件文案「（需 A≥400 且 B≥400）」；无前置返回空串。
+     *
+     * @param byName null = 可悟段，列全部前置；非 null = 封印段，只列未满足前置（未学或熟练度未达标）
+     */
+    private String prereqCondition(TechniqueState tech, int threshold, Map<String, TechniqueState> byName) {
+        List<String> prereqs = tech.prerequisites();
+        if (byName != null) {
+            prereqs = prereqs.stream().filter(p -> {
+                TechniqueState ps = byName.get(p);
+                return ps == null || !ps.learned() || ps.proficiency() < threshold;
+            }).toList();
+        }
+        if (prereqs.isEmpty()) {
+            return "";
+        }
+        return "（需 " + prereqs.stream().map(p -> p + "≥" + threshold)
+                .collect(Collectors.joining(" 且 ")) + "）";
     }
 
     private String loadTemplate(String path) {

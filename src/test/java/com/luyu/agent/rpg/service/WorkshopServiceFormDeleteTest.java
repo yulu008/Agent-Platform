@@ -2,17 +2,25 @@ package com.luyu.agent.rpg.service;
 
 import com.luyu.agent.rpg.model.CharacterCard;
 import com.luyu.agent.rpg.model.GameState;
+import com.luyu.agent.rpg.model.LorebookSet;
 import com.luyu.agent.rpg.model.WorldSetting;
 import com.luyu.agent.rpg.repository.RpgCharacterCardRepository;
 import com.luyu.agent.rpg.repository.RpgGameStateRepository;
 import com.luyu.agent.rpg.repository.RpgLocationRepository;
 import com.luyu.agent.rpg.repository.RpgRelationshipRepository;
+import com.luyu.agent.rpg.repository.RpgStarIncarnationRepository;
+import com.luyu.agent.rpg.repository.RpgStarIncarnationRuntimeRepository;
+import com.luyu.agent.rpg.repository.RpgWorldbookEntryRepository;
 import com.luyu.agent.rpg.repository.RpgTriggerRepository;
 import com.luyu.agent.rpg.repository.RpgTriggerRuntimeRepository;
 import com.luyu.agent.rpg.repository.RpgWorldSettingRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.ai.session.SessionRepository;
+import org.springframework.ai.session.SessionService;
 import org.springframework.transaction.PlatformTransactionManager;
+
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -23,15 +31,19 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * {@link WorkshopService} 表单新建/编辑与阻塞式删除的单元测试。
+ * {@link WorkshopService} 表单新建/编辑与条件级联软删除的单元测试
+ * （workshop-soft-delete-cascade 8.1：删除语义按 D3/D4 重写）。
  * <p>
  * 钉住三件容易回归的事：
  * <ol>
- *   <li><b>类型运行时推导</b>：新建角色未传 type 时兜底 npc；编辑时表单不传 type
+ *   <li><b>类型运行时推导</b>：新建角色未传 type 时缺省 npc；编辑时表单不传 type
  *       必须保留库内现值（不能把已升级为 player 的角色降级）；startGame 把被选角色
  *       升级为 player，且角色不属于该世界时零写入；</li>
  *   <li><b>新建/编辑分流</b>：id 为空走 INSERT，id 命中已有记录走 UPDATE；</li>
- *   <li><b>阻塞式删除</b>：被关系/触发器/存档引用时拒绝且消息指明原因，无引用时删除成功。</li>
+ *   <li><b>条件级联软删除</b>：世界删除有存档 409、无存档单事务级联软删
+ *       （通用世界书模板行与封面文件豁免）；角色删除仅存档玩家引用 409、
+ *       否则级联软删两端关系与 npc 关联触发器——被关系/触发器引用
+ *       不再构成拒绝理由（推翻 workshop-form-delete 阻塞式）。</li>
  * </ol>
  */
 class WorkshopServiceFormDeleteTest {
@@ -45,6 +57,10 @@ class WorkshopServiceFormDeleteTest {
     private RpgRelationshipRepository relRepo;
     private RpgTriggerRepository triggerRepo;
     private RpgGameStateRepository stateRepo;
+    private RpgStarIncarnationRepository starRepo;
+    private RpgWorldbookEntryRepository worldbookRepo;
+    private WorldCoverStorageService coverStorage;
+    private LorebookSetService lorebookSetService;
     private WorkshopService service;
 
     @BeforeEach
@@ -55,11 +71,30 @@ class WorkshopServiceFormDeleteTest {
         relRepo = mock(RpgRelationshipRepository.class);
         triggerRepo = mock(RpgTriggerRepository.class);
         stateRepo = mock(RpgGameStateRepository.class);
+        starRepo = mock(RpgStarIncarnationRepository.class);
+        worldbookRepo = mock(RpgWorldbookEntryRepository.class);
         RpgTriggerRuntimeRepository runtimeRepo = mock(RpgTriggerRuntimeRepository.class);
         WorkshopLlmGenerator llmGenerator = mock(WorkshopLlmGenerator.class);
+        coverStorage = mock(WorldCoverStorageService.class);
+        // 开局 fork 世界书副本（add-rpg-lorebook-sets D4）：startGame 依赖其非空返回，
+        // inheritSetId/claimedStarName/figureKey（preset-destined-figures）缺省为 null
+        // 故用 any() 匹配（anyString() 不匹配 null）
+        lorebookSetService = mock(LorebookSetService.class);
+        LorebookSet forked = new LorebookSet();
+        forked.setId("set-1");
+        forked.setWorldId(WORLD_ID);
+        when(lorebookSetService.copyForNewGame(any(), any(), any(), any(), any())).thenReturn(forked);
 
         service = new WorkshopService(worldRepo, charRepo, locationRepo, relRepo, triggerRepo,
-                stateRepo, runtimeRepo, llmGenerator, mock(PlatformTransactionManager.class));
+                stateRepo, runtimeRepo, starRepo,
+                mock(RpgStarIncarnationRuntimeRepository.class), llmGenerator,
+                mock(CharacterOriginService.class),
+                coverStorage,
+                mock(PlatformTransactionManager.class),
+                worldbookRepo,
+                lorebookSetService,
+                mock(LoreArchiveService.class),
+                mock(SessionService.class), mock(SessionRepository.class));
     }
 
     private CharacterCard card(String id, String worldId, String type) {
@@ -74,7 +109,7 @@ class WorkshopServiceFormDeleteTest {
     // ==================== 角色类型运行时推导 ====================
 
     @Test
-    void 新建角色未传类型时兜底为npc并走INSERT() {
+    void 新建角色未传类型时缺省为npc并走INSERT() {
         CharacterCard incoming = card(null, WORLD_ID, null);
 
         CharacterCard saved = service.saveCharacter(incoming);
@@ -148,57 +183,33 @@ class WorkshopServiceFormDeleteTest {
         verify(worldRepo).save(fresh);
     }
 
-    // ==================== 阻塞式删除角色 ====================
+    // ==================== 条件级联软删除角色（D4） ====================
 
     @Test
-    void 无引用角色删除成功() {
+    void 无存档挂靠的角色级联软删两端关系与关联触发器() {
         when(charRepo.findById(CHAR_ID)).thenReturn(card(CHAR_ID, WORLD_ID, "npc"));
-        when(relRepo.countByCharId(CHAR_ID)).thenReturn(0);
-        when(triggerRepo.countByNpcId(CHAR_ID)).thenReturn(0);
         when(stateRepo.countByPlayerCharId(CHAR_ID)).thenReturn(0);
+        // 被关系/触发器引用不构成拒绝理由：一并级联软删
 
         service.deleteCharacter(CHAR_ID);
 
-        verify(charRepo).deleteById(CHAR_ID);
-    }
-
-    @Test
-    void 被关系引用的角色删除被拒绝() {
-        when(charRepo.findById(CHAR_ID)).thenReturn(card(CHAR_ID, WORLD_ID, "npc"));
-        when(relRepo.countByCharId(CHAR_ID)).thenReturn(2);
-
-        assertThatThrownBy(() -> service.deleteCharacter(CHAR_ID))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("角色间关系");
-
-        verify(charRepo, never()).deleteById(any());
-    }
-
-    @Test
-    void 被触发器引用的角色删除被拒绝() {
-        when(charRepo.findById(CHAR_ID)).thenReturn(card(CHAR_ID, WORLD_ID, "npc"));
-        when(relRepo.countByCharId(CHAR_ID)).thenReturn(0);
-        when(triggerRepo.countByNpcId(CHAR_ID)).thenReturn(1);
-
-        assertThatThrownBy(() -> service.deleteCharacter(CHAR_ID))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("触发器");
-
-        verify(charRepo, never()).deleteById(any());
+        verify(relRepo).softDeleteByCharId(CHAR_ID);
+        verify(triggerRepo).softDeleteByNpcId(CHAR_ID);
+        verify(charRepo).softDeleteById(CHAR_ID);
     }
 
     @Test
     void 作为玩家被存档引用的角色删除被拒绝() {
         when(charRepo.findById(CHAR_ID)).thenReturn(card(CHAR_ID, WORLD_ID, "player"));
-        when(relRepo.countByCharId(CHAR_ID)).thenReturn(0);
-        when(triggerRepo.countByNpcId(CHAR_ID)).thenReturn(0);
         when(stateRepo.countByPlayerCharId(CHAR_ID)).thenReturn(1);
 
         assertThatThrownBy(() -> service.deleteCharacter(CHAR_ID))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("存档");
 
-        verify(charRepo, never()).deleteById(any());
+        verify(charRepo, never()).softDeleteById(any());
+        verify(relRepo, never()).softDeleteByCharId(any());
+        verify(triggerRepo, never()).softDeleteByNpcId(any());
     }
 
     @Test
@@ -208,55 +219,53 @@ class WorkshopServiceFormDeleteTest {
         assertThatThrownBy(() -> service.deleteCharacter(CHAR_ID))
                 .isInstanceOf(IllegalArgumentException.class);
 
-        verify(charRepo, never()).deleteById(any());
+        verify(charRepo, never()).softDeleteById(any());
     }
 
-    // ==================== 阻塞式删除世界观 ====================
+    // ==================== 条件级联软删除世界观（D3） ====================
 
     @Test
-    void 空世界观删除成功() {
+    void 无存档世界级联软删全部子数据且通用世界书与封面豁免() {
         WorldSetting world = new WorldSetting();
         world.setId(WORLD_ID);
+        world.setName("钟表城");
+        world.setCover("abc.png");
         when(worldRepo.findById(WORLD_ID)).thenReturn(world);
-        when(charRepo.countByWorldId(WORLD_ID)).thenReturn(0);
-        when(locationRepo.countByWorldId(WORLD_ID)).thenReturn(0);
-        when(triggerRepo.countByWorldId(WORLD_ID)).thenReturn(0);
         when(stateRepo.countByWorldId(WORLD_ID)).thenReturn(0);
+        // 两个角色：级联经每个角色双向软删关系（关系表无 world_id 列）
+        CharacterCard c1 = card("char-a", WORLD_ID, "npc");
+        CharacterCard c2 = card("char-b", WORLD_ID, "npc");
+        when(charRepo.findByWorldId(WORLD_ID)).thenReturn(List.of(c1, c2));
 
         service.deleteWorld(WORLD_ID);
 
-        verify(worldRepo).deleteById(WORLD_ID);
+        verify(relRepo).softDeleteByCharId("char-a");
+        verify(relRepo).softDeleteByCharId("char-b");
+        verify(charRepo).softDeleteByWorldId(WORLD_ID);
+        verify(locationRepo).softDeleteByWorldId(WORLD_ID);
+        verify(triggerRepo).softDeleteByWorldId(WORLD_ID);
+        verify(starRepo).softDeleteTemplatesByWorldId(WORLD_ID);
+        verify(worldRepo).softDeleteById(WORLD_ID);
+        // 通用世界书模板行与封面文件豁免（design D3）：物理行与资产都不动
+        verify(worldbookRepo, never()).softDeleteTemplateById(any());
+        verify(coverStorage, never()).delete(any(), any());
     }
 
     @Test
-    void 旗下有角色的世界观删除被拒绝() {
+    void 旗下有存档的世界删除被拒绝且零写入() {
         WorldSetting world = new WorldSetting();
         world.setId(WORLD_ID);
+        world.setCover("abc.png");
         when(worldRepo.findById(WORLD_ID)).thenReturn(world);
-        when(charRepo.countByWorldId(WORLD_ID)).thenReturn(3);
-
-        assertThatThrownBy(() -> service.deleteWorld(WORLD_ID))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("角色");
-
-        verify(worldRepo, never()).deleteById(any());
-    }
-
-    @Test
-    void 旗下有存档的世界观删除被拒绝() {
-        WorldSetting world = new WorldSetting();
-        world.setId(WORLD_ID);
-        when(worldRepo.findById(WORLD_ID)).thenReturn(world);
-        when(charRepo.countByWorldId(WORLD_ID)).thenReturn(0);
-        when(locationRepo.countByWorldId(WORLD_ID)).thenReturn(0);
-        when(triggerRepo.countByWorldId(WORLD_ID)).thenReturn(0);
         when(stateRepo.countByWorldId(WORLD_ID)).thenReturn(1);
 
         assertThatThrownBy(() -> service.deleteWorld(WORLD_ID))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("存档");
 
-        verify(worldRepo, never()).deleteById(any());
+        verify(worldRepo, never()).softDeleteById(any());
+        verify(charRepo, never()).softDeleteByWorldId(any());
+        verify(coverStorage, never()).delete(any(), any());
     }
 
     @Test
@@ -266,6 +275,6 @@ class WorkshopServiceFormDeleteTest {
         assertThatThrownBy(() -> service.deleteWorld(WORLD_ID))
                 .isInstanceOf(IllegalArgumentException.class);
 
-        verify(worldRepo, never()).deleteById(any());
+        verify(worldRepo, never()).softDeleteById(any());
     }
 }

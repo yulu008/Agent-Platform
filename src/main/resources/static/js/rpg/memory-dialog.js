@@ -15,6 +15,7 @@
  */
 
 const MEMORY_TYPES = [
+    {type: 'lore', icon: '⭐', label: '人物档案'},
     {type: 'npc_memory', icon: '👤', label: 'NPC 记忆'},
     {type: 'foreshadow', icon: '🪝', label: '伏笔'},
     {type: 'world_lore', icon: '🗺️', label: '世界细节'},

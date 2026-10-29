@@ -5,6 +5,7 @@ import com.luyu.agent.rpg.model.GameStateSnapshot;
 import com.luyu.agent.rpg.repository.RpgEventLogRepository;
 import com.luyu.agent.rpg.repository.RpgGameStateRepository;
 import com.luyu.agent.rpg.repository.RpgGameStateSnapshotRepository;
+import com.luyu.agent.rpg.repository.RpgStarIncarnationRuntimeRepository;
 import com.luyu.agent.rpg.repository.RpgTriggerRuntimeRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,7 +26,7 @@ import java.util.List;
  * <p>
  * 职责链：定位锚点轮次（位置删除法，D2）→ 校验 3 轮上限 → 校验快照存在 →
  * 事务内执行（硬删 {@code AI_SESSION_EVENT} + bump {@code AI_SESSION.event_version}（D4）+
- * 状态快照覆盖 {@code rpg_game_state} + 清理 event_log / trigger_runtime / 过期快照）→
+ * 状态快照覆盖 {@code rpg_game_state} + 清理 event_log / trigger_runtime / star_runtime / 过期快照）→
  * 事务提交后还原记忆目录（文件 IO 不进 DB 事务，失败降级为部分成功警告）。
  * <p>
  * 回溯与重新生成共用本服务：两者后端语义同构（删同轮起事件 + 回滚同一快照），
@@ -45,6 +46,7 @@ public class RollbackService {
     private final RpgGameStateSnapshotRepository snapshotRepo;
     private final RpgEventLogRepository eventLogRepo;
     private final RpgTriggerRuntimeRepository triggerRuntimeRepo;
+    private final RpgStarIncarnationRuntimeRepository starRuntimeRepo;
     private final MemorySnapshotStore memorySnapshotStore;
     private final RpgHistoryCleaner historyCleaner;
     private final TransactionTemplate transactionTemplate;
@@ -56,6 +58,7 @@ public class RollbackService {
                            RpgGameStateSnapshotRepository snapshotRepo,
                            RpgEventLogRepository eventLogRepo,
                            RpgTriggerRuntimeRepository triggerRuntimeRepo,
+                           RpgStarIncarnationRuntimeRepository starRuntimeRepo,
                            MemorySnapshotStore memorySnapshotStore,
                            RpgHistoryCleaner historyCleaner,
                            TransactionTemplate transactionTemplate,
@@ -66,6 +69,7 @@ public class RollbackService {
         this.snapshotRepo = snapshotRepo;
         this.eventLogRepo = eventLogRepo;
         this.triggerRuntimeRepo = triggerRuntimeRepo;
+        this.starRuntimeRepo = starRuntimeRepo;
         this.memorySnapshotStore = memorySnapshotStore;
         this.historyCleaner = historyCleaner;
         this.transactionTemplate = transactionTemplate;
@@ -157,6 +161,9 @@ public class RollbackService {
             stateRepo.updatePlayerStates(gameStateId, snap.getPlayerStates());
             eventLogRepo.deleteFromTurn(gameStateId, anchorTurn);
             triggerRuntimeRepo.deleteFromTurn(gameStateId, anchorTurn);
+            // 设定集·已揭示（star-lorebook）：被回溯轮次里关键词激活的条目随回滚撤销；
+            // deleteFromTurn 只删 activated_turn>=锚 且非 claimed 行，开局抢星记录（存档级不变量）保留
+            starRuntimeRepo.deleteFromTurn(gameStateId, anchorTurn);
             // 被回溯轮次之后的时间线作废：对应快照一并清理，避免重演后回溯到旧时间线
             snapshotRepo.deleteFromTurn(gameStateId, anchorTurn);
         });

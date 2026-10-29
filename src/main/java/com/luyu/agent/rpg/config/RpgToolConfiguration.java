@@ -41,7 +41,7 @@ import java.util.Map;
  * 对 {@code AgentModelsProperties} 的做法：属性类自身不加 {@code @Component}）。
  */
 @Configuration
-@EnableConfigurationProperties(RpgMemoryProperties.class)
+@EnableConfigurationProperties({RpgMemoryProperties.class, RpgTechniqueProperties.class, RpgLorebookProperties.class, RpgWorldbookProperties.class})
 public class RpgToolConfiguration {
 
     private static final Logger log = LoggerFactory.getLogger(RpgToolConfiguration.class);

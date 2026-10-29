@@ -19,6 +19,13 @@ public class WorldSetting {
     private String locations;      // JSON 数组: 地点 ID 列表
     private String atmosphere;
     private String openingTemplate;  // 开场白模板（含 {{}} 占位符）
+    private String cover;              // 封面文件名（data/covers/ 目录，{uuid}.{ext}；NULL = 无封面，world-card-gallery）
+    @JsonDeserialize(using = JsonToStringDeserializer.class)
+    private String themeTokens;        // JSON 对象: HUD 组件主题 token（CSS 变量白名单 + hudStyle 枚举；NULL = 组件默认主题，rpg-hud-bubble-components D10）
+    @JsonDeserialize(using = JsonToStringDeserializer.class)
+    private String customBlocks;       // JSON 数组: 作者自定义 HUD 内容块（{title, field, accent?}，≤5 块；NULL = 无自定义块，rpg-hud-custom-blocks D1）
+    /** 世界特有叙事定制（add-planner-pipeline tasks 5.1：S4「## 叙事规则」安装物化；NULL = 无定制） */
+    private String narrativeRules;
     private LocalDateTime createdAt;
 
     public WorldSetting() {
@@ -40,6 +47,14 @@ public class WorldSetting {
     public void setAtmosphere(String atmosphere) { this.atmosphere = atmosphere; }
     public String getOpeningTemplate() { return openingTemplate; }
     public void setOpeningTemplate(String openingTemplate) { this.openingTemplate = openingTemplate; }
+    public String getCover() { return cover; }
+    public void setCover(String cover) { this.cover = cover; }
+    public String getThemeTokens() { return themeTokens; }
+    public void setThemeTokens(String themeTokens) { this.themeTokens = themeTokens; }
+    public String getCustomBlocks() { return customBlocks; }
+    public void setCustomBlocks(String customBlocks) { this.customBlocks = customBlocks; }
+    public String getNarrativeRules() { return narrativeRules; }
+    public void setNarrativeRules(String narrativeRules) { this.narrativeRules = narrativeRules; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
 }

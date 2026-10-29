@@ -11,11 +11,12 @@ import org.springframework.util.Assert;
 /**
  * 多模型 ChatClient 注册表（决策 5：三索引与裸 Builder 复用）。
  * <p>
- * 维护三个索引：
+ * 维护四份索引：
  * <ul>
  *   <li>{@code byName} —— 对话 client（挂完整 advisor 链），按模型名查询，供请求级路由</li>
  *   <li>{@code byRole} —— 辅助纯净 client（无 advisor），按角色查询（title/compaction/workshop）</li>
  *   <li>{@code byRoleBuilder} —— 辅助裸 ChatClient.Builder（无 advisor），按角色查询（subagent 需 Builder 而非 client）</li>
+ *   <li>{@code byRoleModel} —— 角色到装配序首个模型名（如 judge 指纹可追溯，content-eval tasks 5.3）</li>
  * </ul>
  * 一个 role 多模型时取 default 标记的，否则取装配时首个注册的。
  */
@@ -24,6 +25,7 @@ public class ChatClientRegistry {
     private final Map<String, ChatClient> byName;
     private final Map<String, ChatClient> byRole;
     private final Map<String, ChatClient.Builder> byRoleBuilder;
+    private final Map<String, String> byRoleModel;
     private final String defaultName;
 
     /** RPG 专属对话 client（挂 rpgSessionMemoryAdvisor，maxEvents=30，与主聊天隔离），按模型名索引 */
@@ -36,6 +38,7 @@ public class ChatClientRegistry {
                                Map<String, ChatClient> rpgByName,
                                Map<String, ChatClient> byRole,
                                Map<String, ChatClient.Builder> byRoleBuilder,
+                               Map<String, String> byRoleModel,
                                String defaultName) {
         Assert.notEmpty(byName, "至少配置一个 roles 含 chat 的模型");
         Assert.hasText(defaultName, "未配置 default-model=true 的对话模型");
@@ -45,6 +48,7 @@ public class ChatClientRegistry {
         this.rpgByName = Collections.unmodifiableMap(rpgByName);
         this.byRole = Collections.unmodifiableMap(byRole);
         this.byRoleBuilder = Collections.unmodifiableMap(byRoleBuilder);
+        this.byRoleModel = Collections.unmodifiableMap(byRoleModel);
         this.defaultName = defaultName;
     }
 
@@ -98,6 +102,15 @@ public class ChatClientRegistry {
             throw new IllegalArgumentException("未配置辅助角色 builder: " + role);
         }
         return builder;
+    }
+
+    /**
+     * 角色绑定的模型名（装配序首个；与 {@link #forRole(String)} 同源）。
+     * 未配置该角色返回 null（调用方据此判定角色未启用，如 eval judge——
+     * design D1 未配置即未启用，无静默 fallback）。
+     */
+    public String roleModelName(String role) {
+        return byRoleModel.get(role);
     }
 
     /**

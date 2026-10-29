@@ -1,0 +1,563 @@
+﻿Compiled from "OpenAiSetup.java"
+public final class org.springframework.ai.openai.setup.OpenAiSetup {
+  static final java.lang.String OPENAI_URL;
+
+  static final java.lang.String OPENAI_API_KEY;
+
+  static final java.lang.String MICROSOFT_FOUNDRY_API_KEY;
+
+  static final java.lang.String GITHUB_MODELS_URL;
+
+  static final java.lang.String GITHUB_TOKEN;
+
+  static final java.lang.String DEFAULT_USER_AGENT;
+
+  private static final java.lang.String NO_AUTH_PLACEHOLDER_KEY;
+
+  private static final org.apache.commons.logging.Log logger;
+
+  private org.springframework.ai.openai.setup.OpenAiSetup();
+    Code:
+       0: aload_0
+       1: invokespecial #1                  // Method java/lang/Object."<init>":()V
+       4: return
+
+  public static com.openai.client.OpenAIClient setupSyncClient(java.lang.String, java.lang.String, com.openai.credential.Credential, java.lang.String, com.openai.azure.AzureOpenAIServiceVersion, java.lang.String, boolean, boolean, java.lang.String, java.time.Duration, int, java.net.Proxy, java.util.Map<java.lang.String, java.lang.String>, io.micrometer.observation.ObservationRegistry, io.micrometer.core.instrument.MeterRegistry, java.util.List<org.springframework.ai.openai.http.okhttp.OpenAiHttpClientBuilderCustomizer>);
+    Code:
+       0: aload_0
+       1: invokestatic  #7                  // Method detectBaseUrlFromEnv:(Ljava/lang/String;)Ljava/lang/String;
+       4: astore_0
+       5: iload         6
+       7: iload         7
+       9: aload_0
+      10: aload_3
+      11: aload         4
+      13: invokestatic  #13                 // Method detectModelProvider:(ZZLjava/lang/String;Ljava/lang/String;Lcom/openai/azure/AzureOpenAIServiceVersion;)Lorg/springframework/ai/openai/setup/OpenAiSetup$ModelProvider;
+      16: astore        16
+      18: aload_1
+      19: ifnull        26
+      22: aload_1
+      23: goto          31
+      26: aload         16
+      28: invokestatic  #17                 // Method detectApiKey:(Lorg/springframework/ai/openai/setup/OpenAiSetup$ModelProvider;)Ljava/lang/String;
+      31: astore        17
+      33: aload         17
+      35: ifnull        81
+      38: aload         17
+      40: invokevirtual #21                 // Method java/lang/String.isEmpty:()Z
+      43: ifeq          81
+      46: new           #27                 // class com/openai/client/OpenAIClientImpl
+      49: dup
+      50: aload_0
+      51: aload         16
+      53: aload         8
+      55: aload_3
+      56: aload         4
+      58: aload         5
+      60: aload         9
+      62: iload         10
+      64: aload         11
+      66: aload         12
+      68: aload         13
+      70: aload         14
+      72: aload         15
+      74: invokestatic  #29                 // Method buildNoAuthClientOptions:(Ljava/lang/String;Lorg/springframework/ai/openai/setup/OpenAiSetup$ModelProvider;Ljava/lang/String;Ljava/lang/String;Lcom/openai/azure/AzureOpenAIServiceVersion;Ljava/lang/String;Ljava/time/Duration;ILjava/net/Proxy;Ljava/util/Map;Lio/micrometer/observation/ObservationRegistry;Lio/micrometer/core/instrument/MeterRegistry;Ljava/util/List;)Lcom/openai/core/ClientOptions;
+      77: invokespecial #33                 // Method com/openai/client/OpenAIClientImpl."<init>":(Lcom/openai/core/ClientOptions;)V
+      80: areturn
+      81: aload_0
+      82: aload         16
+      84: aload         8
+      86: aload_3
+      87: aload         4
+      89: aload         5
+      91: aload         9
+      93: iload         10
+      95: aload         11
+      97: aload         12
+      99: aload         17
+     101: aload_2
+     102: aload         13
+     104: aload         14
+     106: aload         15
+     108: invokestatic  #36                 // Method buildClientOptions:(Ljava/lang/String;Lorg/springframework/ai/openai/setup/OpenAiSetup$ModelProvider;Ljava/lang/String;Ljava/lang/String;Lcom/openai/azure/AzureOpenAIServiceVersion;Ljava/lang/String;Ljava/time/Duration;ILjava/net/Proxy;Ljava/util/Map;Ljava/lang/String;Lcom/openai/credential/Credential;Lio/micrometer/observation/ObservationRegistry;Lio/micrometer/core/instrument/MeterRegistry;Ljava/util/List;)Lcom/openai/core/ClientOptions;
+     111: astore        18
+     113: new           #27                 // class com/openai/client/OpenAIClientImpl
+     116: dup
+     117: aload         18
+     119: invokespecial #33                 // Method com/openai/client/OpenAIClientImpl."<init>":(Lcom/openai/core/ClientOptions;)V
+     122: areturn
+
+  public static com.openai.client.OpenAIClientAsync setupAsyncClient(java.lang.String, java.lang.String, com.openai.credential.Credential, java.lang.String, com.openai.azure.AzureOpenAIServiceVersion, java.lang.String, boolean, boolean, java.lang.String, java.time.Duration, int, java.net.Proxy, java.util.Map<java.lang.String, java.lang.String>, io.micrometer.observation.ObservationRegistry, io.micrometer.core.instrument.MeterRegistry, java.util.List<org.springframework.ai.openai.http.okhttp.OpenAiHttpClientBuilderCustomizer>);
+    Code:
+       0: aload_0
+       1: invokestatic  #7                  // Method detectBaseUrlFromEnv:(Ljava/lang/String;)Ljava/lang/String;
+       4: astore_0
+       5: iload         6
+       7: iload         7
+       9: aload_0
+      10: aload_3
+      11: aload         4
+      13: invokestatic  #13                 // Method detectModelProvider:(ZZLjava/lang/String;Ljava/lang/String;Lcom/openai/azure/AzureOpenAIServiceVersion;)Lorg/springframework/ai/openai/setup/OpenAiSetup$ModelProvider;
+      16: astore        16
+      18: aload_1
+      19: ifnull        26
+      22: aload_1
+      23: goto          31
+      26: aload         16
+      28: invokestatic  #17                 // Method detectApiKey:(Lorg/springframework/ai/openai/setup/OpenAiSetup$ModelProvider;)Ljava/lang/String;
+      31: astore        17
+      33: aload         17
+      35: ifnull        81
+      38: aload         17
+      40: invokevirtual #21                 // Method java/lang/String.isEmpty:()Z
+      43: ifeq          81
+      46: new           #40                 // class com/openai/client/OpenAIClientAsyncImpl
+      49: dup
+      50: aload_0
+      51: aload         16
+      53: aload         8
+      55: aload_3
+      56: aload         4
+      58: aload         5
+      60: aload         9
+      62: iload         10
+      64: aload         11
+      66: aload         12
+      68: aload         13
+      70: aload         14
+      72: aload         15
+      74: invokestatic  #29                 // Method buildNoAuthClientOptions:(Ljava/lang/String;Lorg/springframework/ai/openai/setup/OpenAiSetup$ModelProvider;Ljava/lang/String;Ljava/lang/String;Lcom/openai/azure/AzureOpenAIServiceVersion;Ljava/lang/String;Ljava/time/Duration;ILjava/net/Proxy;Ljava/util/Map;Lio/micrometer/observation/ObservationRegistry;Lio/micrometer/core/instrument/MeterRegistry;Ljava/util/List;)Lcom/openai/core/ClientOptions;
+      77: invokespecial #42                 // Method com/openai/client/OpenAIClientAsyncImpl."<init>":(Lcom/openai/core/ClientOptions;)V
+      80: areturn
+      81: aload_0
+      82: aload         16
+      84: aload         8
+      86: aload_3
+      87: aload         4
+      89: aload         5
+      91: aload         9
+      93: iload         10
+      95: aload         11
+      97: aload         12
+      99: aload         17
+     101: aload_2
+     102: aload         13
+     104: aload         14
+     106: aload         15
+     108: invokestatic  #36                 // Method buildClientOptions:(Ljava/lang/String;Lorg/springframework/ai/openai/setup/OpenAiSetup$ModelProvider;Ljava/lang/String;Ljava/lang/String;Lcom/openai/azure/AzureOpenAIServiceVersion;Ljava/lang/String;Ljava/time/Duration;ILjava/net/Proxy;Ljava/util/Map;Ljava/lang/String;Lcom/openai/credential/Credential;Lio/micrometer/observation/ObservationRegistry;Lio/micrometer/core/instrument/MeterRegistry;Ljava/util/List;)Lcom/openai/core/ClientOptions;
+     111: astore        18
+     113: new           #40                 // class com/openai/client/OpenAIClientAsyncImpl
+     116: dup
+     117: aload         18
+     119: invokespecial #42                 // Method com/openai/client/OpenAIClientAsyncImpl."<init>":(Lcom/openai/core/ClientOptions;)V
+     122: areturn
+
+  private static com.openai.core.ClientOptions buildClientOptions(java.lang.String, org.springframework.ai.openai.setup.OpenAiSetup$ModelProvider, java.lang.String, java.lang.String, com.openai.azure.AzureOpenAIServiceVersion, java.lang.String, java.time.Duration, int, java.net.Proxy, java.util.Map<java.lang.String, java.lang.String>, java.lang.String, com.openai.credential.Credential, io.micrometer.observation.ObservationRegistry, io.micrometer.core.instrument.MeterRegistry, java.util.List<org.springframework.ai.openai.http.okhttp.OpenAiHttpClientBuilderCustomizer>);
+    Code:
+       0: invokestatic  #43                 // Method org/springframework/ai/openai/http/okhttp/SpringAiOpenAiHttpClient.builder:()Lorg/springframework/ai/openai/http/okhttp/SpringAiOpenAiHttpClient$Builder;
+       3: aload         12
+       5: invokevirtual #49                 // Method org/springframework/ai/openai/http/okhttp/SpringAiOpenAiHttpClient$Builder.observationRegistry:(Lio/micrometer/observation/ObservationRegistry;)Lorg/springframework/ai/openai/http/okhttp/SpringAiOpenAiHttpClient$Builder;
+       8: aload         13
+      10: invokevirtual #55                 // Method org/springframework/ai/openai/http/okhttp/SpringAiOpenAiHttpClient$Builder.meterRegistry:(Lio/micrometer/core/instrument/MeterRegistry;)Lorg/springframework/ai/openai/http/okhttp/SpringAiOpenAiHttpClient$Builder;
+      13: aload         6
+      15: invokevirtual #59                 // Method org/springframework/ai/openai/http/okhttp/SpringAiOpenAiHttpClient$Builder.timeout:(Ljava/time/Duration;)Lorg/springframework/ai/openai/http/okhttp/SpringAiOpenAiHttpClient$Builder;
+      18: aload         8
+      20: invokevirtual #63                 // Method org/springframework/ai/openai/http/okhttp/SpringAiOpenAiHttpClient$Builder.proxy:(Ljava/net/Proxy;)Lorg/springframework/ai/openai/http/okhttp/SpringAiOpenAiHttpClient$Builder;
+      23: astore        15
+      25: aload         14
+      27: invokeinterface #67,  1           // InterfaceMethod java/util/List.iterator:()Ljava/util/Iterator;
+      32: astore        16
+      34: aload         16
+      36: invokeinterface #73,  1           // InterfaceMethod java/util/Iterator.hasNext:()Z
+      41: ifeq          68
+      44: aload         16
+      46: invokeinterface #78,  1           // InterfaceMethod java/util/Iterator.next:()Ljava/lang/Object;
+      51: checkcast     #82                 // class org/springframework/ai/openai/http/okhttp/OpenAiHttpClientBuilderCustomizer
+      54: astore        17
+      56: aload         17
+      58: aload         15
+      60: invokeinterface #84,  2           // InterfaceMethod org/springframework/ai/openai/http/okhttp/OpenAiHttpClientBuilderCustomizer.customize:(Lorg/springframework/ai/openai/http/okhttp/SpringAiOpenAiHttpClient$Builder;)V
+      65: goto          34
+      68: invokestatic  #88                 // Method com/openai/core/ClientOptions.builder:()Lcom/openai/core/ClientOptions$Builder;
+      71: aload         15
+      73: invokevirtual #93                 // Method org/springframework/ai/openai/http/okhttp/SpringAiOpenAiHttpClient$Builder.build:()Lorg/springframework/ai/openai/http/okhttp/SpringAiOpenAiHttpClient;
+      76: invokevirtual #97                 // Method com/openai/core/ClientOptions$Builder.httpClient:(Lcom/openai/core/http/HttpClient;)Lcom/openai/core/ClientOptions$Builder;
+      79: aload_0
+      80: aload_1
+      81: aload_2
+      82: aload_3
+      83: invokestatic  #103                // Method calculateBaseUrl:(Ljava/lang/String;Lorg/springframework/ai/openai/setup/OpenAiSetup$ModelProvider;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+      86: invokevirtual #107                // Method com/openai/core/ClientOptions$Builder.baseUrl:(Ljava/lang/String;)Lcom/openai/core/ClientOptions$Builder;
+      89: aload         5
+      91: invokevirtual #111                // Method com/openai/core/ClientOptions$Builder.organization:(Ljava/lang/String;)Lcom/openai/core/ClientOptions$Builder;
+      94: aload         6
+      96: invokevirtual #114                // Method com/openai/core/ClientOptions$Builder.timeout:(Ljava/time/Duration;)Lcom/openai/core/ClientOptions$Builder;
+      99: iload         7
+     101: invokevirtual #117                // Method com/openai/core/ClientOptions$Builder.maxRetries:(I)Lcom/openai/core/ClientOptions$Builder;
+     104: ldc           #121                // String User-Agent
+     106: ldc           #123                // String spring-ai-openai
+     108: invokevirtual #125                // Method com/openai/core/ClientOptions$Builder.putHeader:(Ljava/lang/String;Ljava/lang/String;)Lcom/openai/core/ClientOptions$Builder;
+     111: astore        16
+     113: aload         10
+     115: ifnull        150
+     118: aload_1
+     119: getstatic     #129                // Field org/springframework/ai/openai/setup/OpenAiSetup$ModelProvider.MICROSOFT_FOUNDRY:Lorg/springframework/ai/openai/setup/OpenAiSetup$ModelProvider;
+     122: if_acmpne     139
+     125: aload         16
+     127: aload         10
+     129: invokestatic  #135                // Method com/openai/azure/credential/AzureApiKeyCredential.create:(Ljava/lang/String;)Lcom/openai/credential/Credential;
+     132: invokevirtual #141                // Method com/openai/core/ClientOptions$Builder.credential:(Lcom/openai/credential/Credential;)Lcom/openai/core/ClientOptions$Builder;
+     135: pop
+     136: goto          182
+     139: aload         16
+     141: aload         10
+     143: invokevirtual #145                // Method com/openai/core/ClientOptions$Builder.apiKey:(Ljava/lang/String;)Lcom/openai/core/ClientOptions$Builder;
+     146: pop
+     147: goto          182
+     150: aload         11
+     152: ifnull        166
+     155: aload         16
+     157: aload         11
+     159: invokevirtual #141                // Method com/openai/core/ClientOptions$Builder.credential:(Lcom/openai/credential/Credential;)Lcom/openai/core/ClientOptions$Builder;
+     162: pop
+     163: goto          182
+     166: aload_1
+     167: getstatic     #129                // Field org/springframework/ai/openai/setup/OpenAiSetup$ModelProvider.MICROSOFT_FOUNDRY:Lorg/springframework/ai/openai/setup/OpenAiSetup$ModelProvider;
+     170: if_acmpne     182
+     173: aload         16
+     175: invokestatic  #148                // Method azureAuthentication:()Lcom/openai/credential/Credential;
+     178: invokevirtual #141                // Method com/openai/core/ClientOptions$Builder.credential:(Lcom/openai/credential/Credential;)Lcom/openai/core/ClientOptions$Builder;
+     181: pop
+     182: aload         4
+     184: ifnull        195
+     187: aload         16
+     189: aload         4
+     191: invokevirtual #152                // Method com/openai/core/ClientOptions$Builder.azureServiceVersion:(Lcom/openai/azure/AzureOpenAIServiceVersion;)Lcom/openai/core/ClientOptions$Builder;
+     194: pop
+     195: aload         9
+     197: ifnull        239
+     200: aload         16
+     202: aload         9
+     204: invokeinterface #156,  1          // InterfaceMethod java/util/Map.entrySet:()Ljava/util/Set;
+     209: invokeinterface #162,  1          // InterfaceMethod java/util/Set.stream:()Ljava/util/stream/Stream;
+     214: invokedynamic #168,  0            // InvokeDynamic #0:apply:()Ljava/util/function/Function;
+     219: invokedynamic #172,  0            // InvokeDynamic #1:apply:()Ljava/util/function/Function;
+     224: invokestatic  #173                // Method java/util/stream/Collectors.toMap:(Ljava/util/function/Function;Ljava/util/function/Function;)Ljava/util/stream/Collector;
+     227: invokeinterface #179,  2          // InterfaceMethod java/util/stream/Stream.collect:(Ljava/util/stream/Collector;)Ljava/lang/Object;
+     232: checkcast     #157                // class java/util/Map
+     235: invokevirtual #185                // Method com/openai/core/ClientOptions$Builder.putAllHeaders:(Ljava/util/Map;)Lcom/openai/core/ClientOptions$Builder;
+     238: pop
+     239: aload         16
+     241: invokevirtual #189                // Method com/openai/core/ClientOptions$Builder.build:()Lcom/openai/core/ClientOptions;
+     244: areturn
+
+  private static com.openai.core.ClientOptions buildNoAuthClientOptions(java.lang.String, org.springframework.ai.openai.setup.OpenAiSetup$ModelProvider, java.lang.String, java.lang.String, com.openai.azure.AzureOpenAIServiceVersion, java.lang.String, java.time.Duration, int, java.net.Proxy, java.util.Map<java.lang.String, java.lang.String>, io.micrometer.observation.ObservationRegistry, io.micrometer.core.instrument.MeterRegistry, java.util.List<org.springframework.ai.openai.http.okhttp.OpenAiHttpClientBuilderCustomizer>);
+    Code:
+       0: invokestatic  #43                 // Method org/springframework/ai/openai/http/okhttp/SpringAiOpenAiHttpClient.builder:()Lorg/springframework/ai/openai/http/okhttp/SpringAiOpenAiHttpClient$Builder;
+       3: aload         10
+       5: invokevirtual #49                 // Method org/springframework/ai/openai/http/okhttp/SpringAiOpenAiHttpClient$Builder.observationRegistry:(Lio/micrometer/observation/ObservationRegistry;)Lorg/springframework/ai/openai/http/okhttp/SpringAiOpenAiHttpClient$Builder;
+       8: aload         11
+      10: invokevirtual #55                 // Method org/springframework/ai/openai/http/okhttp/SpringAiOpenAiHttpClient$Builder.meterRegistry:(Lio/micrometer/core/instrument/MeterRegistry;)Lorg/springframework/ai/openai/http/okhttp/SpringAiOpenAiHttpClient$Builder;
+      13: aload         6
+      15: invokevirtual #59                 // Method org/springframework/ai/openai/http/okhttp/SpringAiOpenAiHttpClient$Builder.timeout:(Ljava/time/Duration;)Lorg/springframework/ai/openai/http/okhttp/SpringAiOpenAiHttpClient$Builder;
+      18: aload         8
+      20: invokevirtual #63                 // Method org/springframework/ai/openai/http/okhttp/SpringAiOpenAiHttpClient$Builder.proxy:(Ljava/net/Proxy;)Lorg/springframework/ai/openai/http/okhttp/SpringAiOpenAiHttpClient$Builder;
+      23: astore        13
+      25: aload         13
+      27: invokedynamic #192,  0            // InvokeDynamic #2:intercept:()Lokhttp3/Interceptor;
+      32: invokevirtual #196                // Method org/springframework/ai/openai/http/okhttp/SpringAiOpenAiHttpClient$Builder.interceptor:(Lokhttp3/Interceptor;)Lorg/springframework/ai/openai/http/okhttp/SpringAiOpenAiHttpClient$Builder;
+      35: pop
+      36: aload         12
+      38: invokeinterface #67,  1           // InterfaceMethod java/util/List.iterator:()Ljava/util/Iterator;
+      43: astore        14
+      45: aload         14
+      47: invokeinterface #73,  1           // InterfaceMethod java/util/Iterator.hasNext:()Z
+      52: ifeq          79
+      55: aload         14
+      57: invokeinterface #78,  1           // InterfaceMethod java/util/Iterator.next:()Ljava/lang/Object;
+      62: checkcast     #82                 // class org/springframework/ai/openai/http/okhttp/OpenAiHttpClientBuilderCustomizer
+      65: astore        15
+      67: aload         15
+      69: aload         13
+      71: invokeinterface #84,  2           // InterfaceMethod org/springframework/ai/openai/http/okhttp/OpenAiHttpClientBuilderCustomizer.customize:(Lorg/springframework/ai/openai/http/okhttp/SpringAiOpenAiHttpClient$Builder;)V
+      76: goto          45
+      79: invokestatic  #88                 // Method com/openai/core/ClientOptions.builder:()Lcom/openai/core/ClientOptions$Builder;
+      82: aload         13
+      84: invokevirtual #93                 // Method org/springframework/ai/openai/http/okhttp/SpringAiOpenAiHttpClient$Builder.build:()Lorg/springframework/ai/openai/http/okhttp/SpringAiOpenAiHttpClient;
+      87: invokevirtual #97                 // Method com/openai/core/ClientOptions$Builder.httpClient:(Lcom/openai/core/http/HttpClient;)Lcom/openai/core/ClientOptions$Builder;
+      90: ldc           #200                // String no-auth-placeholder
+      92: invokevirtual #145                // Method com/openai/core/ClientOptions$Builder.apiKey:(Ljava/lang/String;)Lcom/openai/core/ClientOptions$Builder;
+      95: aload_0
+      96: aload_1
+      97: aload_2
+      98: aload_3
+      99: invokestatic  #103                // Method calculateBaseUrl:(Ljava/lang/String;Lorg/springframework/ai/openai/setup/OpenAiSetup$ModelProvider;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+     102: invokevirtual #107                // Method com/openai/core/ClientOptions$Builder.baseUrl:(Ljava/lang/String;)Lcom/openai/core/ClientOptions$Builder;
+     105: aload         5
+     107: invokevirtual #111                // Method com/openai/core/ClientOptions$Builder.organization:(Ljava/lang/String;)Lcom/openai/core/ClientOptions$Builder;
+     110: aload         6
+     112: invokevirtual #114                // Method com/openai/core/ClientOptions$Builder.timeout:(Ljava/time/Duration;)Lcom/openai/core/ClientOptions$Builder;
+     115: iload         7
+     117: invokevirtual #117                // Method com/openai/core/ClientOptions$Builder.maxRetries:(I)Lcom/openai/core/ClientOptions$Builder;
+     120: ldc           #121                // String User-Agent
+     122: ldc           #123                // String spring-ai-openai
+     124: invokevirtual #125                // Method com/openai/core/ClientOptions$Builder.putHeader:(Ljava/lang/String;Ljava/lang/String;)Lcom/openai/core/ClientOptions$Builder;
+     127: astore        14
+     129: aload         4
+     131: ifnull        142
+     134: aload         14
+     136: aload         4
+     138: invokevirtual #152                // Method com/openai/core/ClientOptions$Builder.azureServiceVersion:(Lcom/openai/azure/AzureOpenAIServiceVersion;)Lcom/openai/core/ClientOptions$Builder;
+     141: pop
+     142: aload         9
+     144: ifnull        186
+     147: aload         14
+     149: aload         9
+     151: invokeinterface #156,  1          // InterfaceMethod java/util/Map.entrySet:()Ljava/util/Set;
+     156: invokeinterface #162,  1          // InterfaceMethod java/util/Set.stream:()Ljava/util/stream/Stream;
+     161: invokedynamic #168,  0            // InvokeDynamic #0:apply:()Ljava/util/function/Function;
+     166: invokedynamic #202,  0            // InvokeDynamic #3:apply:()Ljava/util/function/Function;
+     171: invokestatic  #173                // Method java/util/stream/Collectors.toMap:(Ljava/util/function/Function;Ljava/util/function/Function;)Ljava/util/stream/Collector;
+     174: invokeinterface #179,  2          // InterfaceMethod java/util/stream/Stream.collect:(Ljava/util/stream/Collector;)Ljava/lang/Object;
+     179: checkcast     #157                // class java/util/Map
+     182: invokevirtual #185                // Method com/openai/core/ClientOptions$Builder.putAllHeaders:(Ljava/util/Map;)Lcom/openai/core/ClientOptions$Builder;
+     185: pop
+     186: aload         14
+     188: invokevirtual #189                // Method com/openai/core/ClientOptions$Builder.build:()Lcom/openai/core/ClientOptions;
+     191: areturn
+
+  static java.lang.String detectBaseUrlFromEnv(java.lang.String);
+    Code:
+       0: aload_0
+       1: ifnonnull     48
+       4: ldc           #203                // String OPENAI_BASE_URL
+       6: invokestatic  #205                // Method java/lang/System.getenv:(Ljava/lang/String;)Ljava/lang/String;
+       9: astore_1
+      10: aload_1
+      11: ifnull        26
+      14: aload_1
+      15: astore_0
+      16: getstatic     #210                // Field logger:Lorg/apache/commons/logging/Log;
+      19: ldc           #214                // String OpenAI Base URL detected from environment variable OPENAI_BASE_URL.
+      21: invokeinterface #216,  2          // InterfaceMethod org/apache/commons/logging/Log.debug:(Ljava/lang/Object;)V
+      26: ldc           #222                // String AZURE_OPENAI_BASE_URL
+      28: invokestatic  #205                // Method java/lang/System.getenv:(Ljava/lang/String;)Ljava/lang/String;
+      31: astore_2
+      32: aload_2
+      33: ifnull        48
+      36: aload_2
+      37: astore_0
+      38: getstatic     #210                // Field logger:Lorg/apache/commons/logging/Log;
+      41: ldc           #224                // String Microsoft Foundry Base URL detected from environment variable AZURE_OPENAI_BASE_URL.
+      43: invokeinterface #216,  2          // InterfaceMethod org/apache/commons/logging/Log.debug:(Ljava/lang/Object;)V
+      48: aload_0
+      49: areturn
+
+  public static org.springframework.ai.openai.setup.OpenAiSetup$ModelProvider detectModelProvider(boolean, boolean, java.lang.String, java.lang.String, com.openai.azure.AzureOpenAIServiceVersion);
+    Code:
+       0: iload_0
+       1: ifeq          8
+       4: getstatic     #129                // Field org/springframework/ai/openai/setup/OpenAiSetup$ModelProvider.MICROSOFT_FOUNDRY:Lorg/springframework/ai/openai/setup/OpenAiSetup$ModelProvider;
+       7: areturn
+       8: iload_1
+       9: ifeq          16
+      12: getstatic     #226                // Field org/springframework/ai/openai/setup/OpenAiSetup$ModelProvider.GITHUB_MODELS:Lorg/springframework/ai/openai/setup/OpenAiSetup$ModelProvider;
+      15: areturn
+      16: aload_2
+      17: ifnull        73
+      20: aload_2
+      21: ldc           #229                // String openai.azure.com
+      23: invokevirtual #231                // Method java/lang/String.endsWith:(Ljava/lang/String;)Z
+      26: ifne          56
+      29: aload_2
+      30: ldc           #235                // String openai.azure.com/
+      32: invokevirtual #231                // Method java/lang/String.endsWith:(Ljava/lang/String;)Z
+      35: ifne          56
+      38: aload_2
+      39: ldc           #237                // String cognitiveservices.azure.com
+      41: invokevirtual #231                // Method java/lang/String.endsWith:(Ljava/lang/String;)Z
+      44: ifne          56
+      47: aload_2
+      48: ldc           #239                // String cognitiveservices.azure.com/
+      50: invokevirtual #231                // Method java/lang/String.endsWith:(Ljava/lang/String;)Z
+      53: ifeq          60
+      56: getstatic     #129                // Field org/springframework/ai/openai/setup/OpenAiSetup$ModelProvider.MICROSOFT_FOUNDRY:Lorg/springframework/ai/openai/setup/OpenAiSetup$ModelProvider;
+      59: areturn
+      60: aload_2
+      61: ldc           #241                // String https://models.github.ai/inference
+      63: invokevirtual #243                // Method java/lang/String.startsWith:(Ljava/lang/String;)Z
+      66: ifeq          73
+      69: getstatic     #226                // Field org/springframework/ai/openai/setup/OpenAiSetup$ModelProvider.GITHUB_MODELS:Lorg/springframework/ai/openai/setup/OpenAiSetup$ModelProvider;
+      72: areturn
+      73: aload_3
+      74: ifnonnull     82
+      77: aload         4
+      79: ifnull        86
+      82: getstatic     #129                // Field org/springframework/ai/openai/setup/OpenAiSetup$ModelProvider.MICROSOFT_FOUNDRY:Lorg/springframework/ai/openai/setup/OpenAiSetup$ModelProvider;
+      85: areturn
+      86: getstatic     #246                // Field org/springframework/ai/openai/setup/OpenAiSetup$ModelProvider.OPEN_AI:Lorg/springframework/ai/openai/setup/OpenAiSetup$ModelProvider;
+      89: areturn
+
+  static java.lang.String calculateBaseUrl(java.lang.String, org.springframework.ai.openai.setup.OpenAiSetup$ModelProvider, java.lang.String, java.lang.String);
+    Code:
+       0: aload_1
+       1: getstatic     #246                // Field org/springframework/ai/openai/setup/OpenAiSetup$ModelProvider.OPEN_AI:Lorg/springframework/ai/openai/setup/OpenAiSetup$ModelProvider;
+       4: if_acmpne     23
+       7: aload_0
+       8: ifnull        18
+      11: aload_0
+      12: invokevirtual #249                // Method java/lang/String.isBlank:()Z
+      15: ifeq          21
+      18: ldc           #252                // String https://api.openai.com/v1
+      20: areturn
+      21: aload_0
+      22: areturn
+      23: aload_1
+      24: getstatic     #226                // Field org/springframework/ai/openai/setup/OpenAiSetup$ModelProvider.GITHUB_MODELS:Lorg/springframework/ai/openai/setup/OpenAiSetup$ModelProvider;
+      27: if_acmpne     58
+      30: aload_0
+      31: ifnull        41
+      34: aload_0
+      35: invokevirtual #249                // Method java/lang/String.isBlank:()Z
+      38: ifeq          44
+      41: ldc           #241                // String https://models.github.ai/inference
+      43: areturn
+      44: aload_0
+      45: ldc           #241                // String https://models.github.ai/inference
+      47: invokevirtual #243                // Method java/lang/String.startsWith:(Ljava/lang/String;)Z
+      50: ifeq          55
+      53: aload_0
+      54: areturn
+      55: ldc           #241                // String https://models.github.ai/inference
+      57: areturn
+      58: aload_1
+      59: getstatic     #129                // Field org/springframework/ai/openai/setup/OpenAiSetup$ModelProvider.MICROSOFT_FOUNDRY:Lorg/springframework/ai/openai/setup/OpenAiSetup$ModelProvider;
+      62: if_acmpne     126
+      65: aload_0
+      66: ifnull        76
+      69: aload_0
+      70: invokevirtual #249                // Method java/lang/String.isBlank:()Z
+      73: ifeq          87
+      76: new           #254                // class java/lang/IllegalArgumentException
+      79: dup
+      80: ldc_w         #256                // String Base URL must be provided for Microsoft Foundry.
+      83: invokespecial #258                // Method java/lang/IllegalArgumentException."<init>":(Ljava/lang/String;)V
+      86: athrow
+      87: aload_0
+      88: astore        4
+      90: aload_0
+      91: ldc_w         #261                // String /
+      94: invokevirtual #231                // Method java/lang/String.endsWith:(Ljava/lang/String;)Z
+      97: ifne          110
+     100: aload_0
+     101: ldc_w         #263                // String ?
+     104: invokevirtual #231                // Method java/lang/String.endsWith:(Ljava/lang/String;)Z
+     107: ifeq          123
+     110: aload_0
+     111: iconst_0
+     112: aload_0
+     113: invokevirtual #265                // Method java/lang/String.length:()I
+     116: iconst_1
+     117: isub
+     118: invokevirtual #269                // Method java/lang/String.substring:(II)Ljava/lang/String;
+     121: astore        4
+     123: aload         4
+     125: areturn
+     126: new           #254                // class java/lang/IllegalArgumentException
+     129: dup
+     130: aload_1
+     131: invokestatic  #273                // Method java/lang/String.valueOf:(Ljava/lang/Object;)Ljava/lang/String;
+     134: invokedynamic #277,  0            // InvokeDynamic #4:makeConcatWithConstants:(Ljava/lang/String;)Ljava/lang/String;
+     139: invokespecial #258                // Method java/lang/IllegalArgumentException."<init>":(Ljava/lang/String;)V
+     142: athrow
+
+  static com.openai.credential.Credential azureAuthentication();
+    Code:
+       0: invokestatic  #280                // Method org/springframework/ai/openai/setup/AzureInternalOpenAiHelper.getAzureCredential:()Lcom/openai/credential/Credential;
+       3: areturn
+       4: astore_0
+       5: new           #254                // class java/lang/IllegalArgumentException
+       8: dup
+       9: ldc_w         #287                // String Microsoft Foundry was detected, but no credential was provided. If you want to use passwordless authentication, you need to add the Azure Identity library (groupId=`com.azure`, artifactId=`azure-identity`) to your classpath.
+      12: invokespecial #258                // Method java/lang/IllegalArgumentException."<init>":(Ljava/lang/String;)V
+      15: athrow
+    Exception table:
+       from    to  target type
+           0     3     4   Class java/lang/NoClassDefFoundError
+
+  static java.lang.String detectApiKey(org.springframework.ai.openai.setup.OpenAiSetup$ModelProvider);
+    Code:
+       0: aload_0
+       1: getstatic     #246                // Field org/springframework/ai/openai/setup/OpenAiSetup$ModelProvider.OPEN_AI:Lorg/springframework/ai/openai/setup/OpenAiSetup$ModelProvider;
+       4: if_acmpne     23
+       7: ldc_w         #289                // String OPENAI_API_KEY
+      10: invokestatic  #205                // Method java/lang/System.getenv:(Ljava/lang/String;)Ljava/lang/String;
+      13: ifnull        23
+      16: ldc_w         #289                // String OPENAI_API_KEY
+      19: invokestatic  #205                // Method java/lang/System.getenv:(Ljava/lang/String;)Ljava/lang/String;
+      22: areturn
+      23: aload_0
+      24: getstatic     #129                // Field org/springframework/ai/openai/setup/OpenAiSetup$ModelProvider.MICROSOFT_FOUNDRY:Lorg/springframework/ai/openai/setup/OpenAiSetup$ModelProvider;
+      27: if_acmpne     46
+      30: ldc_w         #291                // String MICROSOFT_FOUNDRY_API_KEY
+      33: invokestatic  #205                // Method java/lang/System.getenv:(Ljava/lang/String;)Ljava/lang/String;
+      36: ifnull        46
+      39: ldc_w         #291                // String MICROSOFT_FOUNDRY_API_KEY
+      42: invokestatic  #205                // Method java/lang/System.getenv:(Ljava/lang/String;)Ljava/lang/String;
+      45: areturn
+      46: aload_0
+      47: getstatic     #129                // Field org/springframework/ai/openai/setup/OpenAiSetup$ModelProvider.MICROSOFT_FOUNDRY:Lorg/springframework/ai/openai/setup/OpenAiSetup$ModelProvider;
+      50: if_acmpne     69
+      53: ldc_w         #289                // String OPENAI_API_KEY
+      56: invokestatic  #205                // Method java/lang/System.getenv:(Ljava/lang/String;)Ljava/lang/String;
+      59: ifnull        69
+      62: ldc_w         #289                // String OPENAI_API_KEY
+      65: invokestatic  #205                // Method java/lang/System.getenv:(Ljava/lang/String;)Ljava/lang/String;
+      68: areturn
+      69: aload_0
+      70: getstatic     #226                // Field org/springframework/ai/openai/setup/OpenAiSetup$ModelProvider.GITHUB_MODELS:Lorg/springframework/ai/openai/setup/OpenAiSetup$ModelProvider;
+      73: if_acmpne     92
+      76: ldc_w         #293                // String GITHUB_TOKEN
+      79: invokestatic  #205                // Method java/lang/System.getenv:(Ljava/lang/String;)Ljava/lang/String;
+      82: ifnull        92
+      85: ldc_w         #293                // String GITHUB_TOKEN
+      88: invokestatic  #205                // Method java/lang/System.getenv:(Ljava/lang/String;)Ljava/lang/String;
+      91: areturn
+      92: aconst_null
+      93: areturn
+
+  private static java.util.List lambda$buildNoAuthClientOptions$2(java.util.Map$Entry);
+    Code:
+       0: aload_0
+       1: invokeinterface #295,  1          // InterfaceMethod java/util/Map$Entry.getValue:()Ljava/lang/Object;
+       6: checkcast     #22                 // class java/lang/String
+       9: invokestatic  #300                // Method java/util/Collections.singletonList:(Ljava/lang/Object;)Ljava/util/List;
+      12: areturn
+
+  private static okhttp3.Response lambda$buildNoAuthClientOptions$1(okhttp3.Interceptor$Chain) throws java.io.IOException;
+    Code:
+       0: aload_0
+       1: aload_0
+       2: invokeinterface #306,  1          // InterfaceMethod okhttp3/Interceptor$Chain.request:()Lokhttp3/Request;
+       7: invokevirtual #312                // Method okhttp3/Request.newBuilder:()Lokhttp3/Request$Builder;
+      10: ldc_w         #318                // String Authorization
+      13: invokevirtual #320                // Method okhttp3/Request$Builder.removeHeader:(Ljava/lang/String;)Lokhttp3/Request$Builder;
+      16: invokevirtual #326                // Method okhttp3/Request$Builder.build:()Lokhttp3/Request;
+      19: invokeinterface #328,  2          // InterfaceMethod okhttp3/Interceptor$Chain.proceed:(Lokhttp3/Request;)Lokhttp3/Response;
+      24: areturn
+
+  private static java.util.List lambda$buildClientOptions$0(java.util.Map$Entry);
+    Code:
+       0: aload_0
+       1: invokeinterface #295,  1          // InterfaceMethod java/util/Map$Entry.getValue:()Ljava/lang/Object;
+       6: checkcast     #22                 // class java/lang/String
+       9: invokestatic  #300                // Method java/util/Collections.singletonList:(Ljava/lang/Object;)Ljava/util/List;
+      12: areturn
+
+  static {};
+    Code:
+       0: ldc           #8                  // class org/springframework/ai/openai/setup/OpenAiSetup
+       2: invokestatic  #332                // Method org/apache/commons/logging/LogFactory.getLog:(Ljava/lang/Class;)Lorg/apache/commons/logging/Log;
+       5: putstatic     #210                // Field logger:Lorg/apache/commons/logging/Log;
+       8: return
+}

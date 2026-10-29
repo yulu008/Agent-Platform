@@ -1,0 +1,928 @@
+package com.luyu.agent.rpg.planner.service;
+
+import java.nio.file.Path;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.NoSuchElementException;
+import java.util.Optional;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.springframework.http.codec.ServerSentEvent;
+
+import com.luyu.agent.rpg.planner.config.RpgPlannerProperties;
+import com.luyu.agent.rpg.planner.engine.StageGenerationService;
+import com.luyu.agent.rpg.planner.engine.StoryGraphGenerationService;
+import com.luyu.agent.rpg.planner.model.PipelineManifest;
+import com.luyu.agent.rpg.planner.model.PipelineRun;
+import com.luyu.agent.rpg.planner.model.PipelineStage;
+import com.luyu.agent.rpg.planner.repository.PipelineRunRepository;
+import com.luyu.agent.rpg.story.engine.StoryGraphParser;
+import com.luyu.agent.rpg.story.engine.StoryGraphStitcher;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import reactor.core.publisher.Flux;
+
+/**
+ * {@link StageGateService} 门操作编排测试（tasks 4.2-4.5，spec
+ * planner-confirm-gates「L1 编辑门草稿编辑�?「确认稿幂等锁定�?「返工动作」）�?
+ * <p>
+ * repository mock + 真实工作区（@TempDir�? 真实 {@link PipelineRunService}
+ * ——守卫链�?04 / 锁定�?/ 非当前阶�?/ S6 只读 / L2 逐卡）、编辑保�?
+ * 产物与版本快照落盘、整稿通过 pending 前置与锁定推进、回退解锁存档
+ * 保留与逐级约束均为全链路真实断言。S4.5 整稿通过拼接（story-graph-
+ * authoring 2.5）与幕级 L2 返工门（2.6：reworkStage S4.5 路由 /
+ * reworkAct 单幕返工 / unlockAct 回退解锁）用真实 parser/stitcher
+ * （真链路断言：候选解析→拼接→全�?JSON 落盘）�?
+ */
+class StageGateServiceTest {
+
+    @TempDir
+    Path tempDir;
+
+    private PipelineRunRepository runRepository;
+    private PlannerWorkspaceStore workspaceStore;
+    private StageGenerationService generationService;
+    private StoryGraphGenerationService storyGraphGeneration;
+    private StageGateService service;
+
+    /** 单幕候选夹具（�?S4.5 生成链落盘形态一致：<story_graph> 块单�?JSON�?*/
+    private static final String STITCH_ACT1 = """
+            <story_graph>
+            {
+              "id": "act1", "theme": "潜入与结�?,
+              "state_schema": {"trust_信长": {"type": "number"}},
+              "nodes": [
+                {"id": "n1_01", "type": "scene", "beat": "夜探织田�?},
+                {"id": "n1_05", "type": "anchor", "beat": "拿到密信"}
+              ],
+              "edges": [{"id": "e1_01", "from": "n1_01", "to": "n1_05", "label": "潜入"}]
+            }
+            </story_graph>
+            """;
+
+    private static final String STITCH_ACT2 = """
+            <story_graph>
+            {
+              "id": "act2", "theme": "分裂与択�?,
+              "nodes": [
+                {"id": "n2_01", "type": "scene", "beat": "清洲会议"},
+                {"id": "n2_04", "type": "anchor", "beat": "摊牌"}
+              ],
+              "edges": [{"id": "e2_01", "from": "n2_01", "to": "n2_04", "label": "试探"}]
+            }
+            </story_graph>
+            """;
+
+    @BeforeEach
+    void setUp() {
+        runRepository = mock(PipelineRunRepository.class);
+        workspaceStore = new PlannerWorkspaceStore(() -> tempDir);
+        generationService = mock(StageGenerationService.class);
+        storyGraphGeneration = mock(StoryGraphGenerationService.class);
+        service = new StageGateService(
+                new PipelineRunService(runRepository, workspaceStore, new RpgPlannerProperties()), workspaceStore,
+                runRepository, generationService, storyGraphGeneration,
+                new StoryGraphParser(), new StoryGraphStitcher());
+    }
+
+    /** 真实创建 run（工作区 manifest + source 落盘），返回 runId�?*/
+    private String newRun() {
+        PipelineRun run = new PipelineRunService(runRepository, workspaceStore, new RpgPlannerProperties())
+                .createRun("text", "faithful", "原始输入", null, null);
+        return run.getId();
+    }
+
+    /** �?run 摆到指定阶段待确认门（manifest 状�?+ 库表�?stub）�?*/
+    private void stageAwaiting(String runId, String stageCode, int version) {
+        PipelineManifest manifest = workspaceStore.readManifest(runId);
+        manifest.setStatus("AWAITING");
+        manifest.setCurrentStage(stageCode);
+        manifest.stage(stageCode).setStatus("AWAITING_CONFIRM");
+        manifest.stage(stageCode).setVersion(version);
+        workspaceStore.writeManifest(runId, manifest);
+        when(runRepository.findById(runId))
+                .thenReturn(Optional.of(dbRun(runId, stageCode, "AWAITING")));
+    }
+
+    private static PipelineRun dbRun(String id, String currentStage, String status) {
+        PipelineRun run = new PipelineRun();
+        run.setId(id);
+        run.setName("库表�?);
+        run.setSourceMode("text");
+        run.setStyleMode("faithful");
+        run.setCurrentStage(currentStage);
+        run.setStatus(status);
+        run.setCreatedAt(LocalDateTime.now());
+        run.setUpdatedAt(LocalDateTime.now());
+        return run;
+    }
+
+    // ===== L1 草稿编辑保存（tasks 4.2�?=====
+
+    @Test
+    void L1编辑保存覆盖产物并递增版本() {
+        String runId = newRun();
+        stageAwaiting(runId, "S2", 1);
+        workspaceStore.writeStageArtifact(runId, PipelineStage.S2_WORLD_SETTING, "S2 首稿");
+
+        Map<String, Object> result = service.saveL1Draft(
+                runId, PipelineStage.S2_WORLD_SETTING, "编辑后内�?);
+
+        assertEquals("S2", result.get("stage"));
+        assertEquals(2, result.get("version"));
+        // spec「编辑后的版本覆盖工作区文件�?
+        assertEquals("编辑后内�?,
+                workspaceStore.readStageArtifact(runId, PipelineStage.S2_WORLD_SETTING));
+        // 同版本号快照落盘（原�?v1 经版本历史回看由生成时快照承担）
+        assertEquals("编辑后内�?,
+                workspaceStore.readVersionSnapshot(runId, PipelineStage.S2_WORLD_SETTING, 2));
+        // manifest 版本递增、阶段状态不变（仍待确认，可再编辑或整稿通过�?
+        PipelineManifest manifest = workspaceStore.readManifest(runId);
+        assertEquals(2, manifest.stage("S2").getVersion());
+        assertEquals("AWAITING_CONFIRM", manifest.stage("S2").getStatus());
+        assertEquals("S2", manifest.getCurrentStage());
+    }
+
+    @Test
+    void 锁定态编辑拒绝并提示回退解锁() {
+        String runId = newRun();
+        stageAwaiting(runId, "S2", 1);
+        workspaceStore.writeStageArtifact(runId, PipelineStage.S2_WORLD_SETTING, "原稿");
+        // 整稿通过锁定后再收到编辑请求（spec「锁定后不可静默改」）
+        service.confirmStage(runId, PipelineStage.S2_WORLD_SETTING);
+
+        IllegalStateException e = assertThrows(IllegalStateException.class,
+                () -> service.saveL1Draft(runId, PipelineStage.S2_WORLD_SETTING, "越权改稿"));
+        assertThat(e.getMessage()).contains("回退解锁");
+        // 零副作用：产物与版本不动
+        assertEquals("原稿",
+                workspaceStore.readStageArtifact(runId, PipelineStage.S2_WORLD_SETTING));
+        assertEquals(1, workspaceStore.readManifest(runId).stage("S2").getVersion());
+    }
+
+    @Test
+    void S6只读预览拒绝编辑() {
+        String runId = newRun();
+        stageAwaiting(runId, "S6", 1);
+
+        IllegalStateException e = assertThrows(IllegalStateException.class,
+                () -> service.saveL1Draft(runId, PipelineStage.S6_INSTALL, "改稿"));
+        assertThat(e.getMessage()).contains("只读");
+    }
+
+    @Test
+    void L2阶段编辑拒绝走逐卡操作() {
+        String runId = newRun();
+        stageAwaiting(runId, "S3", 1);
+
+        IllegalStateException e = assertThrows(IllegalStateException.class,
+                () -> service.saveL1Draft(runId, PipelineStage.S3_CHARACTERS, "整稿改写"));
+        assertThat(e.getMessage()).contains("逐卡");
+        // S3 产物是候选集目录，不允许全稿覆盖�?
+        assertThat(workspaceStore.readStageCandidates(runId, PipelineStage.S3_CHARACTERS)).isEmpty();
+    }
+
+    @Test
+    void 漂移防御非当前阶段拒绝操�?) {
+        String runId = newRun();
+        stageAwaiting(runId, "S3", 1);
+        // �?manifest：S2 手工�?AWAITING_CONFIRM �?currentStage=S3
+        // （正常状态机不可达，防御性复核钉住不越权�?
+        PipelineManifest manifest = workspaceStore.readManifest(runId);
+        manifest.stage("S2").setStatus("AWAITING_CONFIRM");
+        workspaceStore.writeManifest(runId, manifest);
+
+        IllegalStateException e = assertThrows(IllegalStateException.class,
+                () -> service.saveL1Draft(runId, PipelineStage.S2_WORLD_SETTING, "改稿"));
+        assertThat(e.getMessage()).contains("非当前阶�?);
+    }
+
+    @Test
+    void run不存在编辑保�?04() {
+        when(runRepository.findById("run-x")).thenReturn(Optional.empty());
+
+        NoSuchElementException e = assertThrows(NoSuchElementException.class,
+                () -> service.saveL1Draft("run-x", PipelineStage.S2_WORLD_SETTING, "�?));
+        assertThat(e.getMessage()).contains("不存�?);
+    }
+
+    // ===== 整稿通过（tasks 4.2，L2 pending 前置一并钉住） =====
+
+    @Test
+    void 整稿通过锁定阶段并推进当前阶�?) {
+        String runId = newRun();
+        stageAwaiting(runId, "S2", 1);
+
+        Map<String, Object> result = service.confirmStage(runId, PipelineStage.S2_WORLD_SETTING);
+
+        assertEquals("S2", result.get("stage"));
+        assertEquals(1, result.get("confirmedVersion"));
+        assertEquals("S3", result.get("nextStage"));
+        PipelineManifest manifest = workspaceStore.readManifest(runId);
+        assertEquals("CONFIRMED", manifest.stage("S2").getStatus());
+        assertEquals(1, manifest.stage("S2").getConfirmedVersion());
+        assertEquals("S3", manifest.getCurrentStage());
+        // 库表同步（D3 后写�?
+        verify(runRepository).updateProgress(runId, "S3", "AWAITING");
+    }
+
+    @Test
+    void 待定候选阻止整稿通过() {
+        String runId = newRun();
+        stageAwaiting(runId, "S3", 1);
+        // 3 候选：1 已确认�? 已毙�? 待定（spec「整稿通过前置校验」）
+        PipelineManifest manifest = workspaceStore.readManifest(runId);
+        manifest.stage("S3").setCandidates(List.of(
+                new PipelineManifest.CandidateState("candidate-01", "人物 1：甲", "CONFIRMED"),
+                new PipelineManifest.CandidateState("candidate-02", "人物 2：乙", "REJECTED"),
+                new PipelineManifest.CandidateState("candidate-03", "人物 3：丙", "PENDING")));
+        workspaceStore.writeManifest(runId, manifest);
+
+        IllegalStateException e = assertThrows(IllegalStateException.class,
+                () -> service.confirmStage(runId, PipelineStage.S3_CHARACTERS));
+        assertThat(e.getMessage()).contains("待定");
+        // 零副作用：状态不动、库表不推进
+        assertEquals("AWAITING_CONFIRM",
+                workspaceStore.readManifest(runId).stage("S3").getStatus());
+        verify(runRepository, never()).updateProgress(any(), any(), any());
+    }
+
+    @Test
+    void 候选全部处置后整稿通过放行() {
+        String runId = newRun();
+        stageAwaiting(runId, "S3", 2);
+        PipelineManifest manifest = workspaceStore.readManifest(runId);
+        manifest.stage("S3").setCandidates(List.of(
+                new PipelineManifest.CandidateState("candidate-01", "人物 1：甲", "CONFIRMED"),
+                new PipelineManifest.CandidateState("candidate-02", "人物 2：乙", "REJECTED")));
+        workspaceStore.writeManifest(runId, manifest);
+
+        Map<String, Object> result = service.confirmStage(runId, PipelineStage.S3_CHARACTERS);
+
+        assertEquals("S4", result.get("nextStage"));
+        assertEquals("CONFIRMED",
+                workspaceStore.readManifest(runId).stage("S3").getStatus());
+        assertEquals(2, workspaceStore.readManifest(runId).stage("S3").getConfirmedVersion());
+    }
+
+    @Test
+    void S6整稿通过走安装端点语义拒�?) {
+        String runId = newRun();
+        stageAwaiting(runId, "S6", 1);
+
+        IllegalStateException e = assertThrows(IllegalStateException.class,
+                () -> service.confirmStage(runId, PipelineStage.S6_INSTALL));
+        assertThat(e.getMessage()).contains("安装");
+        verify(runRepository, never()).updateProgress(any(), any(), any());
+    }
+
+    // ===== S4.5 整稿通过跨幕拼接（story-graph-authoring tasks 2.5�?=====
+
+    /** �?S4.5 待确认门 + 两幕候选（状态可配）+ 候选文件落盘�?*/
+    private void stageWithGraphCandidates(String runId, String act1Status, String act2Status) {
+        stageAwaiting(runId, "S4.5", 1);
+        PipelineManifest manifest = workspaceStore.readManifest(runId);
+        manifest.stage("S4.5").setCandidates(List.of(
+                new PipelineManifest.CandidateState("candidate-01", "�?1 幕「潜入与结识�?, act1Status),
+                new PipelineManifest.CandidateState("candidate-02", "�?2 幕「分裂与択択�?, act2Status)));
+        workspaceStore.writeManifest(runId, manifest);
+        workspaceStore.writeCandidateItem(runId, PipelineStage.S4P5_STORY_GRAPH, "candidate-01", STITCH_ACT1);
+        workspaceStore.writeCandidateItem(runId, PipelineStage.S4P5_STORY_GRAPH, "candidate-02", STITCH_ACT2);
+    }
+
+    @Test
+    void S4_5整稿通过执行跨幕拼接并落盘全�?) {
+        String runId = newRun();
+        stageWithGraphCandidates(runId, "CONFIRMED", "CONFIRMED");
+
+        Map<String, Object> result = service.confirmStage(runId, PipelineStage.S4P5_STORY_GRAPH);
+
+        assertEquals("S4.5", result.get("stage"));
+        assertEquals("S5", result.get("nextStage"));
+        assertEquals("CONFIRMED", workspaceStore.readManifest(runId).stage("S4.5").getStatus());
+        // 拼接全图落盘 stage artifact：块协议包裹 + 两幕 + 引擎拼接�?+ 词汇�?
+        String graph = workspaceStore.readStageArtifact(runId, PipelineStage.S4P5_STORY_GRAPH);
+        assertThat(graph).contains("<story_graph>");
+        assertThat(graph).contains("\"acts\"");
+        assertThat(graph).contains("\"id\" : \"act1\"").contains("\"id\" : \"act2\"");
+        // 出口�?n1_05 �?下幕入口 n2_01 的引擎拼接边（确定�?ID�?
+        assertThat(graph).contains("\"id\" : \"x1_01\"").contains("\"from\" : \"n1_05\"")
+                .contains("\"to\" : \"n2_01\"");
+        // �?1 幕产出的词汇表随全图携带
+        assertThat(graph).contains("state_schema").contains("trust_信长");
+        // 幕内模型边保�?
+        assertThat(graph).contains("\"id\" : \"e1_01\"");
+    }
+
+    @Test
+    void 坏幕候选拒绝整稿通过零副作用() {
+        String runId = newRun();
+        stageWithGraphCandidates(runId, "CONFIRMED", "CONFIRMED");
+        // �?1 候选被手工改坏（后续编辑端点接线后的防御场景）
+        workspaceStore.writeCandidateItem(runId, PipelineStage.S4P5_STORY_GRAPH,
+                "candidate-01", "<story_graph>{�?JSON");
+
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> service.confirmStage(runId, PipelineStage.S4P5_STORY_GRAPH));
+        assertThat(e.getMessage()).contains("解析失败").contains("candidate-01");
+        // 零副作用：阶段仍待确认、无拼接产物落盘、库表不推进
+        assertEquals("AWAITING_CONFIRM",
+                workspaceStore.readManifest(runId).stage("S4.5").getStatus());
+        assertThat(workspaceStore.readStageArtifact(runId, PipelineStage.S4P5_STORY_GRAPH)).isNull();
+        verify(runRepository, never()).updateProgress(any(), any(), any());
+    }
+
+    @Test
+    void 全毙幕候选拒绝整稿通过() {
+        String runId = newRun();
+        stageWithGraphCandidates(runId, "REJECTED", "REJECTED");
+
+        IllegalStateException e = assertThrows(IllegalStateException.class,
+                () -> service.confirmStage(runId, PipelineStage.S4P5_STORY_GRAPH));
+        assertThat(e.getMessage()).contains("无可用幕候�?).contains("返工重生�?);
+        assertEquals("AWAITING_CONFIRM",
+                workspaceStore.readManifest(runId).stage("S4.5").getStatus());
+        verify(runRepository, never()).updateProgress(any(), any(), any());
+    }
+
+    @Test
+    void 被毙幕候选不进拼�?) {
+        String runId = newRun();
+        // �?1 被毙：拼接只含幕 2（单幕无跨幕对，无拼接边�?
+        stageWithGraphCandidates(runId, "REJECTED", "CONFIRMED");
+
+        service.confirmStage(runId, PipelineStage.S4P5_STORY_GRAPH);
+
+        String graph = workspaceStore.readStageArtifact(runId, PipelineStage.S4P5_STORY_GRAPH);
+        // D7 口径：被毙候选不进确认稿聚合（幕 1 节点/边不出现�?
+        assertThat(graph).doesNotContain("act1").doesNotContain("n1_");
+        assertThat(graph).contains("\"id\" : \"act2\"");
+        // 单幕无跨幕对：无引擎拼接�?
+        assertThat(graph).doesNotContain("x1_");
+    }
+
+    @Test
+    void 非待确认态整稿通过拒绝() {
+        String runId = newRun();
+        when(runRepository.findById(runId))
+                .thenReturn(Optional.of(dbRun(runId, "S2", "RUNNING")));
+        // currentStage=S2 �?S2 尚在生成中（RUNNING 态无门可过）
+        PipelineManifest manifest = workspaceStore.readManifest(runId);
+        manifest.setStatus("RUNNING");
+        manifest.setCurrentStage("S2");
+        manifest.stage("S2").setStatus("RUNNING");
+        workspaceStore.writeManifest(runId, manifest);
+
+        IllegalStateException e = assertThrows(IllegalStateException.class,
+                () -> service.confirmStage(runId, PipelineStage.S2_WORLD_SETTING));
+        assertThat(e.getMessage()).contains("不可操作");
+    }
+
+    // ===== L2 门逐卡操作（tasks 4.3�?=====
+
+    /**
+     * S3 待确认门 + 候选集初始化（对齐真实链路：生成完成回�?
+     * initStageCandidates �?PENDING + 候选文件落盘；title 取首行去 ## 前缀）�?
+     */
+    private void stageWithCandidates(String runId, int version, String... cards) {
+        stageAwaiting(runId, "S3", version);
+        PipelineManifest manifest = workspaceStore.readManifest(runId);
+        List<PipelineManifest.CandidateState> fresh = new ArrayList<>(cards.length);
+        for (int i = 0; i < cards.length; i++) {
+            String title = cards[i].lines().findFirst().orElse("")
+                    .replaceFirst("^##\\s*", "");
+            fresh.add(new PipelineManifest.CandidateState(
+                    String.format("candidate-%02d", i + 1), title, "PENDING"));
+        }
+        manifest.stage("S3").setCandidates(fresh);
+        workspaceStore.writeManifest(runId, manifest);
+        workspaceStore.writeStageCandidates(runId, PipelineStage.S3_CHARACTERS, List.of(cards));
+    }
+
+    @Test
+    void 逐卡毙掉置REJECTED且幂等不影响他卡() {
+        String runId = newRun();
+        stageWithCandidates(runId, 1, "## 人物 1：甲\n原稿", "## 人物 2：乙\n原稿");
+
+        Map<String, Object> result = service.rejectCandidate(
+                runId, PipelineStage.S3_CHARACTERS, "candidate-01");
+
+        assertEquals("REJECTED", result.get("status"));
+        List<PipelineManifest.CandidateState> candidates =
+                workspaceStore.readManifest(runId).stage("S3").getCandidates();
+        assertEquals("REJECTED", candidates.get(0).getStatus());
+        // 候选独立状态：其余不受影响
+        assertEquals("PENDING", candidates.get(1).getStatus());
+
+        // 幂等：再点一次零异常、状态不�?
+        service.rejectCandidate(runId, PipelineStage.S3_CHARACTERS, "candidate-01");
+        assertEquals("REJECTED",
+                workspaceStore.readManifest(runId).stage("S3").getCandidates().get(0).getStatus());
+    }
+
+    @Test
+    void 逐卡确认置CONFIRMED且确认后可改�?) {
+        String runId = newRun();
+        stageWithCandidates(runId, 1, "## 人物 1：甲");
+
+        service.confirmCandidate(runId, PipelineStage.S3_CHARACTERS, "candidate-01");
+        assertEquals("CONFIRMED",
+                workspaceStore.readManifest(runId).stage("S3").getCandidates().get(0).getStatus());
+
+        // 确认后可改毙（毙掉优先于早前确认�?
+        service.rejectCandidate(runId, PipelineStage.S3_CHARACTERS, "candidate-01");
+        assertEquals("REJECTED",
+                workspaceStore.readManifest(runId).stage("S3").getCandidates().get(0).getStatus());
+    }
+
+    @Test
+    void 已毙候选不可确认救回走返工() {
+        String runId = newRun();
+        stageWithCandidates(runId, 1, "## 人物 1：甲");
+        service.rejectCandidate(runId, PipelineStage.S3_CHARACTERS, "candidate-01");
+
+        IllegalStateException e = assertThrows(IllegalStateException.class,
+                () -> service.confirmCandidate(runId, PipelineStage.S3_CHARACTERS, "candidate-01"));
+        assertThat(e.getMessage()).contains("不可确认");
+        // 状态不动（REJECTED 终态）
+        assertEquals("REJECTED",
+                workspaceStore.readManifest(runId).stage("S3").getCandidates().get(0).getStatus());
+    }
+
+    @Test
+    void 未知候选id拒绝400() {
+        String runId = newRun();
+        stageWithCandidates(runId, 1, "## 人物 1：甲");
+
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> service.rejectCandidate(runId, PipelineStage.S3_CHARACTERS, "candidate-99"));
+        assertThat(e.getMessage()).contains("候选不存在");
+    }
+
+    @Test
+    void L1阶段无候选级操作() {
+        String runId = newRun();
+        stageAwaiting(runId, "S2", 1);
+
+        IllegalStateException e = assertThrows(IllegalStateException.class,
+                () -> service.rejectCandidate(runId, PipelineStage.S2_WORLD_SETTING, "candidate-01"));
+        assertThat(e.getMessage()).contains("L1 编辑�?);
+    }
+
+    @Test
+    void 逐卡编辑覆盖单卡并递增版本落语义快�?) {
+        String runId = newRun();
+        stageWithCandidates(runId, 1, "## 人物 1：甲\n原稿", "## 人物 2：乙\n原稿");
+        // 第二卡已毙：语义快照不应包含�?
+        service.rejectCandidate(runId, PipelineStage.S3_CHARACTERS, "candidate-02");
+
+        Map<String, Object> result = service.saveCandidateEdit(
+                runId, PipelineStage.S3_CHARACTERS, "candidate-01", "## 人物 1：甲\n编辑�?);
+
+        assertEquals(2, result.get("version"));
+        // 单卡覆盖写（另一卡不动）
+        assertEquals("## 人物 1：甲\n编辑�?,
+                workspaceStore.readCandidateItem(runId, PipelineStage.S3_CHARACTERS, "candidate-01"));
+        assertEquals("## 人物 2：乙\n原稿",
+                workspaceStore.readCandidateItem(runId, PipelineStage.S3_CHARACTERS, "candidate-02"));
+        // 语义快照：非毙候选聚合（被毙�?candidate-02 不进，口径同语义全稿�?
+        assertEquals("## 人物 1：甲\n编辑�?,
+                workspaceStore.readVersionSnapshot(runId, PipelineStage.S3_CHARACTERS, 2));
+        // manifest 版本递增、候选状态不�?
+        assertEquals(2, workspaceStore.readManifest(runId).stage("S3").getVersion());
+        assertEquals("PENDING",
+                workspaceStore.readManifest(runId).stage("S3").getCandidates().get(0).getStatus());
+    }
+
+    @Test
+    void 已毙候选不可编�?) {
+        String runId = newRun();
+        stageWithCandidates(runId, 1, "## 人物 1：甲\n原稿");
+        service.rejectCandidate(runId, PipelineStage.S3_CHARACTERS, "candidate-01");
+
+        IllegalStateException e = assertThrows(IllegalStateException.class,
+                () -> service.saveCandidateEdit(
+                        runId, PipelineStage.S3_CHARACTERS, "candidate-01", "越权改卡"));
+        assertThat(e.getMessage()).contains("不可编辑");
+        // 零副作用：文件与版本不动
+        assertEquals("## 人物 1：甲\n原稿",
+                workspaceStore.readCandidateItem(runId, PipelineStage.S3_CHARACTERS, "candidate-01"));
+        assertEquals(1, workspaceStore.readManifest(runId).stage("S3").getVersion());
+    }
+
+    @Test
+    void 锁定态逐卡操作拒绝() {
+        String runId = newRun();
+        stageWithCandidates(runId, 1, "## 人物 1：甲", "## 人物 2：乙");
+        // 全部处置后整稿通过锁定
+        service.confirmCandidate(runId, PipelineStage.S3_CHARACTERS, "candidate-01");
+        service.confirmCandidate(runId, PipelineStage.S3_CHARACTERS, "candidate-02");
+        service.confirmStage(runId, PipelineStage.S3_CHARACTERS);
+
+        IllegalStateException e = assertThrows(IllegalStateException.class,
+                () -> service.rejectCandidate(runId, PipelineStage.S3_CHARACTERS, "candidate-01"));
+        assertThat(e.getMessage()).contains("回退解锁");
+    }
+
+    // ===== L2 返工（tasks 4.4�?=====
+
+    @Test
+    void 返工记账轮次并委托生成流() {
+        String runId = newRun();
+        stageAwaiting(runId, "S3", 1);
+        when(generationService.generateStage(runId, "S3"))
+                .thenReturn(Flux.just(ServerSentEvent.<Object>builder().data("[DONE]").build()));
+
+        Flux<ServerSentEvent<Object>> flux = service.reworkStage(
+                runId, PipelineStage.S3_CHARACTERS, "光秀要更悲情的野心家");
+
+        // 反馈记账�?manifest（rounds 真源：反馈历�?+ 版本树跨天回看）
+        List<PipelineManifest.ReRound> rounds =
+                workspaceStore.readManifest(runId).stage("S3").getRounds();
+        assertEquals(1, rounds.size());
+        assertEquals(1, rounds.get(0).getRound());
+        assertEquals("光秀要更悲情的野心家", rounds.get(0).getFeedback());
+        // 委托生成流（v N+1 与返�?prompt 注入�?StageGenerationService 承担�?
+        List<ServerSentEvent<Object>> events = flux.collectList().block();
+        assertThat(events).isNotNull();
+        assertThat(events.get(events.size() - 1).data()).isEqualTo("[DONE]");
+        verify(generationService).generateStage(runId, "S3");
+    }
+
+    @Test
+    void 二轮返工轮号递增() {
+        String runId = newRun();
+        stageAwaiting(runId, "S3", 1);
+        when(generationService.generateStage(anyString(), anyString()))
+                .thenReturn(Flux.just(ServerSentEvent.<Object>builder().data("[DONE]").build()));
+
+        service.reworkStage(runId, PipelineStage.S3_CHARACTERS, "第一轮反�?);
+        service.reworkStage(runId, PipelineStage.S3_CHARACTERS, "第二轮反�?);
+
+        List<PipelineManifest.ReRound> rounds =
+                workspaceStore.readManifest(runId).stage("S3").getRounds();
+        assertEquals(2, rounds.size());
+        assertEquals(2, rounds.get(1).getRound());
+        assertEquals("第二轮反�?, rounds.get(1).getFeedback());
+    }
+
+    @Test
+    void L1阶段返工拒绝走编辑保�?) {
+        String runId = newRun();
+        stageAwaiting(runId, "S2", 1);
+
+        IllegalStateException e = assertThrows(IllegalStateException.class,
+                () -> service.reworkStage(runId, PipelineStage.S2_WORLD_SETTING, "反馈"));
+        assertThat(e.getMessage()).contains("L1 编辑�?).contains("无返工动�?);
+        // 零副作用：不记账、不触发生成
+        assertThat(workspaceStore.readManifest(runId).stage("S2").getRounds()).isEmpty();
+        verify(generationService, never()).generateStage(anyString(), anyString());
+    }
+
+    @Test
+    void S6返工拒绝只读预览() {
+        String runId = newRun();
+
+        IllegalStateException e = assertThrows(IllegalStateException.class,
+                () -> service.reworkStage(runId, PipelineStage.S6_INSTALL, "反馈"));
+        assertThat(e.getMessage()).contains("只读预览");
+        verify(generationService, never()).generateStage(anyString(), anyString());
+    }
+
+    @Test
+    void 锁定态返工拒绝并零副作用() {
+        String runId = newRun();
+        stageWithCandidates(runId, 1, "## 人物 1：甲");
+        service.confirmCandidate(runId, PipelineStage.S3_CHARACTERS, "candidate-01");
+        service.confirmStage(runId, PipelineStage.S3_CHARACTERS);
+
+        IllegalStateException e = assertThrows(IllegalStateException.class,
+                () -> service.reworkStage(runId, PipelineStage.S3_CHARACTERS, "锁定后反�?));
+        assertThat(e.getMessage()).contains("回退解锁");
+        // 零副作用：rounds 不记账、生成不触发（spec「锁定后不可静默改」）
+        assertThat(workspaceStore.readManifest(runId).stage("S3").getRounds()).isEmpty();
+        verify(generationService, never()).generateStage(anyString(), anyString());
+    }
+
+    @Test
+    void run不存在返工拒�?) {
+        when(runRepository.findById("run-x")).thenReturn(Optional.empty());
+
+        NoSuchElementException e = assertThrows(NoSuchElementException.class,
+                () -> service.reworkStage("run-x", PipelineStage.S3_CHARACTERS, "反馈"));
+        assertThat(e.getMessage()).contains("run 不存�?);
+        verify(generationService, never()).generateStage(anyString(), anyString());
+    }
+
+    @Test
+    void 非当前阶段返工拒绝零副作�?) {
+        String runId = newRun();
+        stageAwaiting(runId, "S3", 1);
+        // �?manifest：S5 手工�?AWAITING_CONFIRM �?currentStage=S3
+        PipelineManifest manifest = workspaceStore.readManifest(runId);
+        manifest.stage("S5").setStatus("AWAITING_CONFIRM");
+        workspaceStore.writeManifest(runId, manifest);
+
+        IllegalStateException e = assertThrows(IllegalStateException.class,
+                () -> service.reworkStage(runId, PipelineStage.S5_BRANCH_DESIGN, "越权反馈"));
+        assertThat(e.getMessage()).contains("非当前阶�?);
+        assertThat(workspaceStore.readManifest(runId).stage("S3").getRounds()).isEmpty();
+        verify(generationService, never()).generateStage(anyString(), anyString());
+    }
+
+    // ===== 幕级 L2 返工门（story-graph-authoring tasks 2.6�?=====
+
+    @Test
+    void S4_5整轮返工路由到幕级生成编�?) {
+        String runId = newRun();
+        stageAwaiting(runId, "S4.5", 1);
+        when(storyGraphGeneration.generateActs(runId, "整轮反馈", null))
+                .thenReturn(Flux.just(ServerSentEvent.<Object>builder().data("[DONE]").build()));
+
+        service.reworkStage(runId, PipelineStage.S4P5_STORY_GRAPH, "整轮反馈");
+
+        // 反馈记账�?manifest + 路由幕级编排（targetAct=null 整轮），不走通用 generateStage
+        assertThat(workspaceStore.readManifest(runId).stage("S4.5").getRounds()).hasSize(1);
+        verify(storyGraphGeneration).generateActs(runId, "整轮反馈", null);
+        verify(generationService, never()).generateStage(anyString(), anyString());
+    }
+
+    @Test
+    void 幕级返工复活被毙幕并仅重生目标幕() {
+        String runId = newRun();
+        // spec Scenario「单幕返工不波及他幕」：�?2 被毙返工，幕 1 确认状态不�?
+        stageWithGraphCandidates(runId, "CONFIRMED", "REJECTED");
+        when(storyGraphGeneration.generateActs(eq(runId), anyString(), eq(2)))
+                .thenReturn(Flux.just(ServerSentEvent.<Object>builder().data("[DONE]").build()));
+
+        service.reworkAct(runId, "candidate-02", "�?2 节奏太拖");
+
+        // REJECTED 复活 PENDING（D5 救回通道的单幕具体化）；�?1 状态不�?
+        List<PipelineManifest.CandidateState> candidates =
+                workspaceStore.readManifest(runId).stage("S4.5").getCandidates();
+        assertEquals("PENDING", candidates.get(1).getStatus());
+        assertEquals("CONFIRMED", candidates.get(0).getStatus());
+        // 返工轮记�?+ 委托单幕生成（幕号从候�?ID 尾部数字解析�?
+        assertThat(workspaceStore.readManifest(runId).stage("S4.5").getRounds()).hasSize(1);
+        verify(storyGraphGeneration).generateActs(runId, "�?2 节奏太拖", 2);
+    }
+
+    @Test
+    void 幕级返工已确认幕拒绝须先解锁() {
+        String runId = newRun();
+        stageWithGraphCandidates(runId, "PENDING", "CONFIRMED");
+
+        IllegalStateException e = assertThrows(IllegalStateException.class,
+                () -> service.reworkAct(runId, "candidate-02", "反馈"));
+        assertThat(e.getMessage()).contains("先回退解锁");
+        // 零副作用：候选状态不动、不记账、不触发生成
+        assertEquals("CONFIRMED",
+                workspaceStore.readManifest(runId).stage("S4.5").getCandidates().get(1).getStatus());
+        assertThat(workspaceStore.readManifest(runId).stage("S4.5").getRounds()).isEmpty();
+        verify(storyGraphGeneration, never()).generateActs(anyString(), any(), any());
+    }
+
+    @Test
+    void 幕级返工未知幕候选拒�?) {
+        String runId = newRun();
+        stageWithGraphCandidates(runId, "PENDING", "PENDING");
+
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> service.reworkAct(runId, "candidate-99", "反馈"));
+        assertThat(e.getMessage()).contains("幕候选不存在");
+        assertThat(workspaceStore.readManifest(runId).stage("S4.5").getRounds()).isEmpty();
+        verify(storyGraphGeneration, never()).generateActs(anyString(), any(), any());
+    }
+
+    @Test
+    void 幕级解锁复位确认幕并删除拼接图待重拼() {
+        String runId = newRun();
+        // spec Scenario「已确认幕显式回退解锁」：先整稿通过产出拼接图，
+        // 阶段级解锁回 AWAITING_CONFIRM 后，�?1 解锁且拼接图失效待重�?
+        stageWithGraphCandidates(runId, "CONFIRMED", "CONFIRMED");
+        service.confirmStage(runId, PipelineStage.S4P5_STORY_GRAPH);
+        service.unlockStage(runId, PipelineStage.S4P5_STORY_GRAPH);
+        assertThat(workspaceStore.readStageArtifact(runId, PipelineStage.S4P5_STORY_GRAPH)).isNotNull();
+
+        Map<String, Object> result = service.unlockAct(runId, "candidate-01");
+
+        assertEquals("S4.5", result.get("stage"));
+        assertEquals("PENDING", result.get("status"));
+        assertEquals(true, result.get("graphInvalidated"));
+        // 拼接图删除：readStageArtifact null 即下游衔接待重拼语义（重确认时重拼）
+        assertThat(workspaceStore.readStageArtifact(runId, PipelineStage.S4P5_STORY_GRAPH)).isNull();
+        // �?1 解锁复位 PENDING；幕 2 状态不变（其他幕不动）
+        List<PipelineManifest.CandidateState> candidates =
+                workspaceStore.readManifest(runId).stage("S4.5").getCandidates();
+        assertEquals("PENDING", candidates.get(0).getStatus());
+        assertEquals("CONFIRMED", candidates.get(1).getStatus());
+    }
+
+    @Test
+    void 幕级解锁非已确认幕拒�?) {
+        String runId = newRun();
+        stageWithGraphCandidates(runId, "PENDING", "REJECTED");
+
+        IllegalStateException e = assertThrows(IllegalStateException.class,
+                () -> service.unlockAct(runId, "candidate-01"));
+        assertThat(e.getMessage()).contains("仅已确认候�?);
+        // 零副作用：候选状态不�?
+        assertEquals("PENDING",
+                workspaceStore.readManifest(runId).stage("S4.5").getCandidates().get(0).getStatus());
+    }
+
+    @Test
+    void 幕级解锁未知幕候选拒�?) {
+        String runId = newRun();
+        stageWithGraphCandidates(runId, "CONFIRMED", "CONFIRMED");
+
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> service.unlockAct(runId, "candidate-99"));
+        assertThat(e.getMessage()).contains("幕候选不存在");
+    }
+
+    // ===== 回退解锁（tasks 4.5�?=====
+
+    @Test
+    void 解锁翻转状态回退currentStage且存档保�?) {
+        String runId = newRun();
+        stageAwaiting(runId, "S2", 1);
+        workspaceStore.writeStageArtifact(runId, PipelineStage.S2_WORLD_SETTING, "原稿 v1");
+        service.confirmStage(runId, PipelineStage.S2_WORLD_SETTING);
+
+        Map<String, Object> result = service.unlockStage(runId, PipelineStage.S2_WORLD_SETTING);
+
+        assertEquals("S2", result.get("stage"));
+        assertEquals("AWAITING_CONFIRM", result.get("status"));
+        assertEquals(1, result.get("archivedVersion"));
+        assertEquals("S2", result.get("currentStage"));
+        PipelineManifest manifest = workspaceStore.readManifest(runId);
+        assertEquals("AWAITING_CONFIRM", manifest.stage("S2").getStatus());
+        assertEquals("S2", manifest.getCurrentStage());
+        // spec「回退解锁保留存档」：confirmedVersion 不清除（v1 快照已落盘，可回看）
+        assertEquals(1, manifest.stage("S2").getConfirmedVersion());
+        // 解锁本身不递增版本（新一�?v(N+1) 由解锁后的编�?生成承担�?
+        assertEquals(1, manifest.stage("S2").getVersion());
+        verify(runRepository).updateProgress(runId, "S2", "AWAITING");
+    }
+
+    @Test
+    void 解锁后恢复可编辑且新编辑版本递增() {
+        String runId = newRun();
+        stageAwaiting(runId, "S2", 1);
+        workspaceStore.writeStageArtifact(runId, PipelineStage.S2_WORLD_SETTING, "原稿 v1");
+        service.confirmStage(runId, PipelineStage.S2_WORLD_SETTING);
+        service.unlockStage(runId, PipelineStage.S2_WORLD_SETTING);
+
+        Map<String, Object> result = service.saveL1Draft(
+                runId, PipelineStage.S2_WORLD_SETTING, "解锁后新�?);
+
+        // spec「解锁生成新一轮（版本号递增）」由解锁后的第一次编辑承�?
+        assertEquals(2, result.get("version"));
+        assertEquals("解锁后新�?,
+                workspaceStore.readStageArtifact(runId, PipelineStage.S2_WORLD_SETTING));
+    }
+
+    @Test
+    void L2阶段解锁走完整确认回退循环() {
+        String runId = newRun();
+        stageWithCandidates(runId, 2, "## 人物 1：甲");
+        service.confirmCandidate(runId, PipelineStage.S3_CHARACTERS, "candidate-01");
+        service.confirmStage(runId, PipelineStage.S3_CHARACTERS);   // currentStage �?S4
+
+        Map<String, Object> result = service.unlockStage(runId, PipelineStage.S3_CHARACTERS);
+
+        assertEquals(2, result.get("archivedVersion"));
+        PipelineManifest manifest = workspaceStore.readManifest(runId);
+        assertEquals("AWAITING_CONFIRM", manifest.stage("S3").getStatus());
+        assertEquals("S3", manifest.getCurrentStage());
+        // 候选状态不受解锁影响（仍可逐卡编辑/再毙，锁定语义只在阶段级�?
+        assertEquals("CONFIRMED", manifest.stage("S3").getCandidates().get(0).getStatus());
+    }
+
+    @Test
+    void 未锁定阶段解锁拒�?) {
+        String runId = newRun();
+        stageAwaiting(runId, "S2", 1);
+
+        IllegalStateException e = assertThrows(IllegalStateException.class,
+                () -> service.unlockStage(runId, PipelineStage.S2_WORLD_SETTING));
+        assertThat(e.getMessage()).contains("仅锁定阶�?);
+        // 零副作用：状态与 currentStage 不动、无库表推进
+        PipelineManifest manifest = workspaceStore.readManifest(runId);
+        assertEquals("AWAITING_CONFIRM", manifest.stage("S2").getStatus());
+        assertEquals("S2", manifest.getCurrentStage());
+        verify(runRepository, never()).updateProgress(any(), any(), any());
+    }
+
+    @Test
+    void 跨级解锁拒绝提示先解锁下�?) {
+        String runId = newRun();
+        stageAwaiting(runId, "S2", 1);
+        // 合法不变式摆位：S2 �?S3 均已确认，currentStage 推进 S4
+        PipelineManifest manifest = workspaceStore.readManifest(runId);
+        manifest.stage("S2").setStatus("CONFIRMED");
+        manifest.stage("S3").setStatus("CONFIRMED");
+        manifest.setCurrentStage("S4");
+        workspaceStore.writeManifest(runId, manifest);
+
+        IllegalStateException e = assertThrows(IllegalStateException.class,
+                () -> service.unlockStage(runId, PipelineStage.S2_WORLD_SETTING));
+        assertThat(e.getMessage()).contains("先回退解锁下游");
+        // 零副作用：跨级回退会造成 S2 解锁�?S3 �?CONFIRMED 的脏 manifest
+        PipelineManifest after = workspaceStore.readManifest(runId);
+        assertEquals("S4", after.getCurrentStage());
+        assertEquals("CONFIRMED", after.stage("S2").getStatus());
+        verify(runRepository, never()).updateProgress(any(), any(), any());
+    }
+
+    @Test
+    void S6解锁拒绝终态只�?) {
+        String runId = newRun();
+
+        IllegalStateException e = assertThrows(IllegalStateException.class,
+                () -> service.unlockStage(runId, PipelineStage.S6_INSTALL));
+        assertThat(e.getMessage()).contains("终�?).contains("不可回退解锁");
+        verify(runRepository, never()).updateProgress(any(), any(), any());
+    }
+
+    @Test
+    void run不存在解锁拒�?) {
+        when(runRepository.findById("run-x")).thenReturn(Optional.empty());
+
+        NoSuchElementException e = assertThrows(NoSuchElementException.class,
+                () -> service.unlockStage("run-x", PipelineStage.S2_WORLD_SETTING));
+        assertThat(e.getMessage()).contains("run 不存�?);
+    }
+
+    @Test
+    void 下游生成中解锁拒绝防产物撕裂() {
+        String runId = newRun();
+        stageAwaiting(runId, "S2", 1);
+        service.confirmStage(runId, PipelineStage.S2_WORLD_SETTING);   // currentStage �?S3
+        // 下游 S3 生成中（run RUNNING）——并发回退与生成会造成产物撕裂
+        PipelineManifest manifest = workspaceStore.readManifest(runId);
+        manifest.setStatus("RUNNING");
+        workspaceStore.writeManifest(runId, manifest);
+
+        IllegalStateException e = assertThrows(IllegalStateException.class,
+                () -> service.unlockStage(runId, PipelineStage.S2_WORLD_SETTING));
+        assertThat(e.getMessage()).contains("run 当前状态不匹配");
+        // 零副作用：S2 仍锁定、currentStage �?S3
+        PipelineManifest after = workspaceStore.readManifest(runId);
+        assertEquals("CONFIRMED", after.stage("S2").getStatus());
+        assertEquals("S3", after.getCurrentStage());
+    }
+
+    // ===== 引擎单测补全（tasks 4.7：幂等分支） =====
+
+    @Test
+    void 锁定后重复整稿通过拒绝防重�?) {
+        String runId = newRun();
+        stageAwaiting(runId, "S2", 1);
+        service.confirmStage(runId, PipelineStage.S2_WORLD_SETTING);
+
+        // spec「确认稿幂等锁定」：锁定后重复确认不二次推进（门层锁定态守卫拦下，
+        // 提示须先回退解锁�?
+        IllegalStateException e = assertThrows(IllegalStateException.class,
+                () -> service.confirmStage(runId, PipelineStage.S2_WORLD_SETTING));
+        assertThat(e.getMessage()).contains("回退解锁");
+        // 零副作用：currentStage 不二次推进、版本不递增
+        PipelineManifest manifest = workspaceStore.readManifest(runId);
+        assertEquals("CONFIRMED", manifest.stage("S2").getStatus());
+        assertEquals("S3", manifest.getCurrentStage());
+        assertEquals(1, manifest.stage("S2").getVersion());
+    }
+
+    @Test
+    void 已确认候选再确认幂等零重�?) {
+        String runId = newRun();
+        stageWithCandidates(runId, 1, "## 人物 1：甲", "## 人物 2：乙");
+        service.confirmCandidate(runId, PipelineStage.S3_CHARACTERS, "candidate-01");
+        String updatedAt = workspaceStore.readManifest(runId).getUpdatedAt();
+
+        service.confirmCandidate(runId, PipelineStage.S3_CHARACTERS, "candidate-01");
+
+        // 幂等分支：同状态再点零重写（manifest 未落盘，updatedAt 不变�?
+        PipelineManifest manifest = workspaceStore.readManifest(runId);
+        assertEquals(updatedAt, manifest.getUpdatedAt());
+        assertEquals("CONFIRMED", manifest.stage("S3").getCandidates().get(0).getStatus());
+        // 他卡不受幂等重入影响
+        assertEquals("PENDING", manifest.stage("S3").getCandidates().get(1).getStatus());
+    }
+}

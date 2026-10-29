@@ -5,6 +5,11 @@
 :root {
     /* 玩家气泡：品牌红渐变底 + 白字（与 RPG 主题红一致） */
     --bg-bubble-user: linear-gradient(145deg, #e94560 0%, #c73650 100%);
+    /* 招式树三态配色（rpg-technique-tree-data 7.3，浅色主题调色板）：
+       已学=品牌红 / 可悟=琥珀棕 / 封印=灰，均为浅色底上的可读色值 */
+    --tech-learned: #c73650;
+    --tech-unlockable: #b54708;
+    --tech-sealed: #98a2b3;
 }
 
 /* hidden 属性守卫：防止作者 display 规则压过 hidden 的隐藏语义 */
@@ -16,47 +21,30 @@ body {
     color: #1f2329;
 }
 
-/* ========== 顶部标题栏 ========== */
-.rpg-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 12px 24px;
+/* ========== 上下文工具行（unified-global-topbar D5）==========
+   原 .rpg-header / .header-btn / .header-actions / .header-info 随顶栏退役删除；
+   世界|角色信息下移为本行，仅游戏模式显示（hidden 由既有逻辑控制） */
+.rpg-context-row {
+    padding: 8px 24px;
     background: #ffffff;
     border-bottom: 1px solid #e4e7ec;
-    box-shadow: 0 2px 8px rgba(16,24,40,0.06);
-}
-.rpg-header h1 {
-    font-size: 18px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-.logo-dot {
-    width: 10px; height: 10px;
-    background: #e94560;
-    border-radius: 50%;
-    display: inline-block;
-}
-.header-info { font-size: 14px; opacity: 0.8; }
-.header-actions { display: flex; gap: 8px; }
-.header-btn {
-    padding: 6px 14px;
-    background: #f2f4f7;
-    border: 1px solid #d0d5dd;
-    border-radius: 6px;
-    color: #344054;
-    cursor: pointer;
     font-size: 13px;
-    text-decoration: none;
+    color: #667085;
 }
-.header-btn:hover { background: #e4e7ec; }
 
-/* ========== 工坊模式 ========== */
-.workshop-mode {
+/* ========== 创建作品模式（works-view-and-world-publish D7：home ⊕ workshop 合一）========== */
+.works-mode {
+    /* 宽幅自适应容器（conversation-grid-alignment D2 同构）：作品墙首屏与根首页橱窗同宽同列；
+       编辑视图内部用 .workshop-edit 收窄阅读宽度 */
+    width: min(1280px, 94%); /* 94vw→94%：侧栏占位后改按内容列留边，免 94vw 溢出横向滚动 */
+    margin: 0 auto;
+    padding: 24px 0;
+}
+
+/* 工坊编辑视图：窄幅阅读宽度（两级视图拆分后从 workshop-mode 继承的旧约束） */
+.workshop-edit {
     max-width: 800px;
     margin: 0 auto;
-    padding: 24px 16px;
 }
 
 .workshop-tabs {
@@ -119,6 +107,21 @@ body {
 }
 .form-row textarea { resize: vertical; min-height: 230px; }
 
+/* HUD 主题 token / 自定义内容块编辑（rpg-hud-bubble-components 4.1、rpg-hud-custom-blocks 2.1）：矮 textarea + 白名单小字提示 */
+#worldThemeTokensInput, #worldCustomBlocksInput { min-height: 0; font-family: Consolas, "Courier New", monospace; font-size: 13px; }
+.theme-tokens-hint { font-size: 12px; color: #98a2b3; line-height: 1.6; }
+
+/* 公历生日年/月/日联动 select（preset-birthdate-input）：三 select 同一行内横排；
+   边框/圆角/focus 红边均由上方 .form-row select 规则继承，与出生时辰等下拉视觉一致 */
+.date-trio {
+    display: flex;
+    gap: 8px;
+}
+.date-trio select {
+    flex: 1;
+    min-width: 0;
+}
+
 .form-actions {
     display: flex;
     gap: 10px;
@@ -168,58 +171,171 @@ body {
 }
 .llm-input textarea { resize: vertical; min-height: 140px; }
 
+/* ========== 星命推演结果展示（预设向导步骤② 复用）========== */
+/* 折叠面板已随 preset-rpg-entry 拆除，星命推演唯一入口是 /rpg?preset= 向导 */
+/* 推演结果卡片：浅色面板（旧深色内联样式在浅色主题下会导致深字深底不可见） */
+.origin-result {
+    margin-top: 0.5em;
+    padding: 12px 14px;
+    background: #f9fafb;
+    border: 1px solid #e4e7ec;
+    border-left: 3px solid #e94560;
+    border-radius: 6px;
+    font-size: 13px;
+    line-height: 1.7;
+    color: #344054;
+}
+.origin-result strong { color: #1f2329; }
+/* 属性行间距；排除招式行，它们由 .origin-tech 自己控制间距 */
+.origin-result > div:not(.origin-tech):not(.origin-tech-empty) { margin-bottom: 0.3em; }
+.origin-tech-title { margin-top: 0.4em; }
+.origin-tech {
+    margin-left: 1em;
+    margin-bottom: 6px;
+}
+.origin-tech-name {
+    color: #c73650;
+    font-weight: 600;
+}
+.origin-tech-src {
+    font-size: 0.85em;
+    color: #98a2b3;
+    margin-left: 4px;
+}
+.origin-tech-desc {
+    font-size: 0.85em;
+    color: #667085;
+    margin-left: 1em;
+}
+.origin-tech-empty {
+    margin-left: 1em;
+    color: #98a2b3;
+}
+/* 招式树三态（rpg-technique-tree-data 7.1/7.3）：缩进由 tier 内联控制，这里只管配色 */
+.origin-tech.tech-learned .origin-tech-name { color: var(--tech-learned); }
+.origin-tech.tech-unlockable .origin-tech-name { color: var(--tech-unlockable); }
+.origin-tech.tech-locked .origin-tech-name { color: var(--tech-sealed); font-weight: 500; }
+.origin-tech.tech-locked .origin-tech-desc { color: #b8c0cc; }
+/* 已学熟练度徽章：品牌红浅底，浅色主题下不刺眼 */
+.origin-tech-prof {
+    margin-left: 6px;
+    padding: 0 4px;
+    border-radius: 4px;
+    font-size: 0.8em;
+    color: var(--tech-learned);
+    background: #fdeef1;
+}
+/* 未学前置说明：可悟琥珀 / 封印灰 */
+.origin-tech-prereq {
+    margin-left: 6px;
+    font-size: 0.8em;
+    color: var(--tech-sealed);
+}
+.origin-tech.tech-unlockable .origin-tech-prereq { color: var(--tech-unlockable); }
 
-
-/* ========== 首页（rpg-home-entry：唯一落地视图，存档卡片网格 + 新开冒险）========== */
-.home-mode {
-    max-width: 960px;
+/* ========== 预设冒险向导（preset-rpg-entry：星命推演 → 命定身份 → 入世）========== */
+/* 比 .works-mode 窄：向导是单列长表单，720px 以上会让输入框拉得太长 */
+.preset-mode {
+    max-width: 720px;
     margin: 0 auto;
     padding: 24px 16px;
 }
-.home-count {
-    font-size: 14px;
-    color: #475467;
-    margin-bottom: 16px;
-}
-.home-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-    gap: 12px;
-}
-.new-adventure-card {
-    margin-bottom: 24px;
-    padding: 20px;
-    background: #ffffff;
-    border: 1.5px dashed #d0d5dd;
-    border-radius: 8px;
-    text-align: center;
-}
-.new-adventure-title {
-    font-size: 16px;
-    font-weight: 600;
-    color: #c73650;
-    margin-bottom: 14px;
-}
-.new-adventure-form {
+/* 步骤指示条：当前步高亮，未到步骤压灰 */
+.preset-steps {
     display: flex;
-    gap: 10px;
-    justify-content: center;
     align-items: center;
-    flex-wrap: wrap;
-}
-.new-adventure-form select {
-    padding: 8px 12px;
-    background: #ffffff;
-    border: 1px solid #d0d5dd;
-    border-radius: 6px;
-    color: #1f2329;
-    min-width: 180px;
-}
-.new-adventure-hint {
-    margin-top: 12px;
-    font-size: 12px;
+    gap: 10px;
+    margin-bottom: 16px;
+    font-size: 13px;
     color: #98a2b3;
 }
+.preset-step {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+/* 序号圆圈：<i> 只是借它的斜体重置，不是真的强调 */
+.preset-step i {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    background: #ffffff;
+    border: 1px solid #d0d5dd;
+    border-radius: 50%;
+    font-size: 12px;
+    font-style: normal;
+}
+.preset-step.active {
+    color: #c73650;
+    font-weight: 600;
+}
+.preset-step.active i {
+    background: #e94560;
+    border-color: #e94560;
+    color: #ffffff;
+}
+.preset-step-arrow { color: #d0d5dd; }
+/* 步骤引导文案 */
+.preset-lead {
+    margin-bottom: 16px;
+    font-size: 13px;
+    line-height: 1.7;
+    color: #667085;
+}
+/* 引导文案 + LLM 改写按钮同排（preset-llm-identity-trio）：外距下移到行容器，按钮不随文案拉伸 */
+.preset-lead-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+.preset-lead-row .preset-lead { flex: 1; margin-bottom: 0; }
+.preset-lead-row .btn-secondary { flex-shrink: 0; padding: 6px 12px; font-size: 13px; }
+/* 小宇宙只读行（rpg-cosmo-sense）：沿用推演结果卡的浅色面板观感，值在左、重 roll 按钮在右 */
+.preset-cosmo-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 0.5em 0 16px;
+    padding: 10px 14px;
+    background: #f9fafb;
+    border: 1px solid #e4e7ec;
+    border-left: 3px solid #e94560;
+    border-radius: 6px;
+    font-size: 13px;
+    color: #344054;
+}
+.preset-cosmo-row .preset-cosmo-label { flex: 1; }
+.preset-cosmo-row .preset-cosmo-label b { color: #1f2329; }
+.preset-cosmo-row .btn-secondary { flex-shrink: 0; padding: 6px 12px; font-size: 13px; }
+/* 向导里的 textarea 只是微调预填值，不需要工坊那种 230px 从零创作的高度 */
+.preset-panel .form-row textarea { min-height: 90px; }
+
+/* 命定身份锁定徽标（preset-destined-figures design D6）：预绑人物锁定阵营时显示于 label 行内，
+   红系配色对齐 .preset-cosmo-row 的左红条视觉语言 */
+.preset-lock-badge {
+    margin-left: 6px;
+    padding: 1px 8px;
+    background: #fef3f2;
+    border: 1px solid #fda29b;
+    border-radius: 999px;
+    font-size: 11px;
+    color: #b42318;
+}
+/* 命定身份锁定时姓名/阵营的弱化观感（readonly / disabled 的语义补充，仅限向导面板） */
+.preset-panel .form-row input[readonly],
+.preset-panel .form-row select:disabled {
+    background: #f9fafb;
+    color: #98a2b3;
+    cursor: not-allowed;
+}
+
+/* （works-view-and-world-publish D7：home 视图已并入 .works-mode，
+   .home-mode 及旧存档网格样式随视图合并移除） */
 
 /* ========== 游戏模式 ========== */
 .game-mode {
@@ -376,6 +492,224 @@ body {
     margin: 16px 0;
 }
 
+/* ========== GM 气泡富组件（rpg-hud-bubble-components）==========
+   HUD 头 / 主角·NPC 卡 / 心理气泡 / 选项按钮。组件围绕叙述气泡挂载（HUD 头在前、
+   卡片与选项在后，插在 actions 行之前），叙述流式 innerHTML 重写逻辑零改动（D5）。
+   全部数据经 textContent 绑定（D9），字段缺失缺省不渲染（D8）。
+   调色板映射（demo 深色金辉 → 浅色可读）：金 #b58a2e / 靓 #4f6fe0 / 琥珀 #b54708 / 青 #0e7490。
+   默认值定义在 :root（4.2）：作者 themeTokens 经 hud.js 校验后 body.style.setProperty 注入
+   （继承链 html → body inline → GM 组件，覆盖默认值）；var() 引用仅在 GM 组件规则，
+   视觉作用域仍限 .rpg-message.gm，注入即白名单（D10） */
+:root {
+    --hud-gold: #b58a2e;
+    --hero-accent: #4f6fe0;
+    --npc-accent: #b54708;
+    --panel-bg: #ffffff;
+    --hud-mind-accent: #0e7490;
+}
+/* wrap 为 flex 容器：组件块占满整行依次换行（同 .rpg-msg-actions 先例） */
+.rpg-message.gm > .hud-head,
+.rpg-message.gm > .hud-cards,
+.rpg-message.gm > .hud-custom-blocks,
+.rpg-message.gm > .hud-choices {
+    flex-basis: 100%;
+    min-width: 0;
+}
+
+/* HUD 头：地点 + 在场名单的轻量行内条（demo 顶部条轻量版） */
+.hud-head {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px 16px;
+    padding: 8px 14px;
+    margin-bottom: 6px;
+    background: linear-gradient(180deg, #fdfaf1 0%, #ffffff 100%);
+    border: 1px solid rgba(181, 138, 46, 0.35);
+    border-left: 3px solid var(--hud-gold);
+    border-radius: 10px;
+    font-size: 13px;
+    line-height: 1.6;
+}
+.hud-loc { color: var(--hud-gold); font-weight: 600; letter-spacing: 1px; }
+.hud-cast { color: #667085; }
+
+/* 卡片行：主角卡（靓调）+ NPC 卡（琥珀调），自适应双列、窄屏单列 */
+.hud-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 10px;
+    margin-top: 6px;
+}
+.hud-card {
+    background: var(--panel-bg);
+    border-radius: 12px;
+    padding: 12px 14px;
+    box-shadow: 0 2px 8px rgba(16,24,40,0.06);
+}
+.hud-card.hero { border: 1px solid rgba(79,111,224,0.35); border-left: 3px solid var(--hero-accent); }
+.hud-card.npc  { border: 1px solid rgba(181,71,8,0.30);  border-left: 3px solid var(--npc-accent); }
+.hud-card-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-bottom: 8px;
+    margin-bottom: 8px;
+    border-bottom: 1px dashed rgba(16,24,40,0.10);
+}
+.hud-card.hero .hud-card-head { border-bottom-color: rgba(79,111,224,0.25); }
+.hud-card.npc  .hud-card-head { border-bottom-color: rgba(181,71,8,0.22); }
+.hud-card-name { font-size: 15px; font-weight: 700; letter-spacing: 1px; color: #1f2329; }
+.hud-card.hero .hud-card-name { color: #3b5bdb; }
+.hud-card.npc  .hud-card-name { color: var(--npc-accent); }
+.hud-status-badge {
+    margin-left: auto;
+    font-size: 12px;
+    color: #667085;
+    background: #f2f4f7;
+    border: 1px solid #e4e7ec;
+    border-radius: 999px;
+    padding: 1px 10px;
+    white-space: nowrap;
+}
+.hud-row { display: flex; gap: 10px; padding: 3px 0; font-size: 13.5px; line-height: 1.6; }
+.hud-row-k { flex: none; width: 56px; color: #667085; }
+.hud-row-v { flex: 1; color: #344054; word-break: break-word; }
+
+/* 心理活动气泡：青调左边线 + 斜体独白（demo .mind 的浅色版） */
+.hud-mind {
+    margin-top: 8px;
+    padding: 8px 12px;
+    border-left: 3px solid var(--hud-mind-accent);
+    background: rgba(14,116,144,0.06);
+    border-radius: 0 10px 10px 0;
+    font-size: 13px;
+    line-height: 1.8;
+}
+.hud-mind-tag {
+    display: block;
+    font-style: normal;
+    font-size: 11px;
+    color: var(--hud-mind-accent);
+    letter-spacing: 3px;
+    margin-bottom: 3px;
+}
+.hud-mind-text { font-style: italic; color: #0e7490; }
+
+/* 作者自定义内容块（rpg-hud-custom-blocks D8）：标题行 accent 边框 + 值形态行集，
+   视觉与卡片行同族；accent 复用主题变量白名单（--hud-block-accent 由 hud.js 每块
+   inline 注入 var(<accent>)，缺省 --hud-gold，跟随作者 themeTokens 换肤） */
+.hud-custom-blocks {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 10px;
+    margin-top: 6px;
+}
+.hud-custom-block {
+    background: var(--panel-bg);
+    border: 1px solid rgba(181, 138, 46, 0.30);
+    border-left: 3px solid var(--hud-block-accent, var(--hud-gold));
+    border-radius: 12px;
+    padding: 12px 14px;
+    box-shadow: 0 2px 8px rgba(16,24,40,0.06);
+}
+.hud-custom-block-title {
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    color: var(--hud-block-accent, var(--hud-gold));
+    padding-bottom: 6px;
+    margin-bottom: 6px;
+    border-bottom: 1px dashed rgba(16,24,40,0.10);
+}
+.hud-custom-row { padding: 2px 0; font-size: 13.5px; line-height: 1.7; color: #344054; word-break: break-word; }
+.hud-custom-row::before { content: '· '; color: var(--hud-block-accent, var(--hud-gold)); font-weight: 700; }
+.hud-custom-row.done { color: #98a2b3; text-decoration: line-through; }
+
+/* 选项组：卡片式按钮（序号圆点 + label 主文本 + hint 副文本 + 箭头） */
+.hud-choices {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 8px;
+}
+.hud-choice {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    text-align: left;
+    cursor: pointer;
+    background: #ffffff;
+    border: 1px solid #e4e7ec;
+    border-radius: 10px;
+    color: #344054;
+    font-size: 14.5px;
+    font-family: inherit;
+    line-height: 1.6;
+    transition: border-color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
+}
+.hud-choice:hover:not(:disabled) {
+    border-color: var(--hud-gold);
+    transform: translateX(4px);
+    box-shadow: 0 2px 12px rgba(181,138,46,0.18);
+}
+.hud-choice:disabled { opacity: 0.45; cursor: not-allowed; }
+.hud-choice.stale { opacity: 0.5; cursor: not-allowed; }
+.hud-choice-no {
+    flex: none;
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    border: 1px solid var(--hud-gold);
+    color: var(--hud-gold);
+    font-size: 13px;
+    font-weight: 700;
+}
+.hud-choice-main { flex: 1; min-width: 0; }
+.hud-choice-label { display: block; }
+.hud-choice-hint {
+    display: block;
+    color: #98a2b3;
+    font-size: 12.5px;
+    margin-top: 2px;
+}
+.hud-choice-arrow { color: var(--hud-gold); opacity: 0; transition: opacity 0.18s ease; }
+.hud-choice:hover:not(:disabled) .hud-choice-arrow { opacity: 1; }
+
+/* 图边选项组（story-graph 4.5）：与 GM 即兴 choices 同构，序号圆点与箭头用
+   主角色色区分「图边路线」与「金色即兴」；渲染在 GM choices 之前 */
+.hud-choices.graph .hud-choice-no {
+    border-color: var(--hero-accent);
+    color: var(--hero-accent);
+}
+.hud-choices.graph .hud-choice-arrow { color: var(--hero-accent); }
+
+/* 尾包淡入（D5）：组件后到，还原 demo「打字机剧情 → 选项淡入」节奏 */
+@keyframes hudFadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+.hud-fade-in { animation: hudFadeIn 0.45s ease; }
+
+/* hudStyle 变体（D10，body 级 class，默认 classic 无类）：
+   compact = 紧凑密度（缩小边距字号）；minimal = 极简（仅 HUD 头与选项，卡片不显示） */
+body.hud-compact .hud-head { padding: 5px 10px; font-size: 12px; }
+body.hud-compact .hud-card { padding: 8px 10px; }
+body.hud-compact .hud-card-head { padding-bottom: 4px; margin-bottom: 4px; }
+body.hud-compact .hud-card-name { font-size: 13.5px; }
+body.hud-compact .hud-row { font-size: 12.5px; padding: 2px 0; }
+body.hud-compact .hud-mind { margin-top: 5px; padding: 5px 9px; font-size: 12px; }
+body.hud-compact .hud-choices { gap: 6px; }
+body.hud-compact .hud-choice { padding: 7px 12px; font-size: 13.5px; }
+body.hud-compact .hud-choice-no { width: 22px; height: 22px; font-size: 12px; }
+body.hud-compact .hud-custom-block { padding: 8px 10px; }
+body.hud-compact .hud-custom-block-title { font-size: 13px; padding-bottom: 4px; margin-bottom: 4px; }
+body.hud-compact .hud-custom-row { font-size: 12.5px; padding: 1px 0; }
+body.hud-minimal .hud-cards { display: none; }
+body.hud-minimal .hud-custom-blocks { display: none; }   /* minimal 语义：仅 HUD 头与选项（rpg-hud-custom-blocks spec） */
+body.hud-minimal .hud-head { border-left: none; background: transparent; border-color: rgba(181,138,46,0.25); }
+
 /* 状态面板 */
 .status-panel {
     position: fixed;
@@ -403,7 +737,18 @@ body {
 }
 .status-item label { color: #667085; }
 .status-item span { color: #1f2329; }
-/* 全量花名册折叠区（rpg-scene-cast）：NPC 行只显示当前场景班底，此处折叠展示已结识全部 NPC */
+/* NPC 在场名单竖排：每个 NPC 一行（game.js 用 \n join，pre-line 保留换行渲染）；
+   标签置顶、名单左对齐逐行排，不再与 label 左右两端排 */
+.status-item-npc {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+}
+.status-item-npc span {
+    white-space: pre-line;
+}
+/* 全量花名册折叠区（rpg-scene-cast）：NPC 行只显示当前场景班底，此处折叠展示已结识全部 NPC；
+   名单同款竖排（\n join + pre-line） */
 .status-roster {
     margin: 2px 0 6px;
     font-size: 12px;
@@ -421,18 +766,8 @@ body {
     line-height: 1.7;
     word-break: break-all;
     padding: 2px 0 4px 10px;
+    white-space: pre-line;
 }
-.status-subheader {
-    font-size: 12px;
-    font-weight: bold;
-    color: #98a2b3;
-    margin: 10px 0 2px;
-    padding-top: 8px;
-    border-top: 1px dashed #e4e7ec;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-}
-
 /* 输入区域 */
 .input-area {
     padding: 12px 32px;
@@ -517,54 +852,8 @@ body {
     overflow-y: auto;
 }
 .load-dialog h3 { margin-bottom: 16px; color: #c73650; }
-/* .save-dialog / .save-list 已随 loadOverlay 弹窗移除（rpg-home-entry）：
-   存档卡片渲染迁移至首页 .home-grid，卡片本体样式 .save-card* 不变 */
-.save-card {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    padding: 14px;
-    background: #f9fafb;
-    border: 1px solid #e4e7ec;
-    border-radius: 8px;
-}
-.save-card-head {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    gap: 8px;
-}
-.save-card-world {
-    font-weight: 600;
-    color: #1d2939;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-.save-card-time { font-size: 11px; color: #98a2b3; flex-shrink: 0; }
-.save-card-char { font-size: 13px; color: #475467; }
-.save-card-char .save-card-location { color: #98a2b3; }
-.save-card-meta { font-size: 12px; color: #667085; }
-.save-card-actions { display: flex; gap: 8px; margin-top: 4px; }
-.save-card-btn {
-    flex: 1;
-    padding: 6px 0;
-    border: none;
-    border-radius: 6px;
-    font-size: 13px;
-    cursor: pointer;
-}
-.save-card-btn.continue { background: #e94560; color: white; }
-.save-card-btn.continue:hover { background: #c73650; }
-.save-card-btn.delete { background: #f2f4f7; color: #d92d20; }
-.save-card-btn.delete:hover { background: #fee4e2; }
-.save-empty {
-    padding: 32px 0;
-    text-align: center;
-    color: #98a2b3;
-    font-size: 13px;
-    margin-top: 16px;
-}
+/* .save-dialog / .save-list 已随 loadOverlay 弹窗移除（rpg-home-entry）；
+   .save-card* 卡片样式已随存档网格迁出至 conversations.css（rpg-conversation-list） */
 
 /* ========== 上下文用量进度条（参考 chat.css，RPG 浅色红调） ========== */
 .context-bar {
@@ -825,7 +1114,623 @@ body {
 }
 .btn-danger:hover { background: #e94560; color: #ffffff; }
 
+/* ===== 「你的作品」卡（world-wall.css 卡片体系的作品墙扩展） ===== */
+/* 悬浮钮族（D7）：右上角 ▶开局 / 🗑️删除（小图标不占卡高，点卡本体仍是进编辑） */
+.workshop-works .world-card { position: relative; }
+/* ▶开局钮：删除钮左侧，绿色行动语义；触发展开角色 chips 复用开局链路 */
+.works-start-btn {
+    position: absolute;
+    top: 8px;
+    right: 84px;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    font-size: 12px;
+    border-radius: 6px;
+    border: 1px solid rgba(111, 187, 137, 0.9);
+    background: rgba(255, 255, 255, 0.92);
+    color: #1d7a4f;
+    cursor: pointer;
+    box-shadow: 0 1px 4px rgba(16, 24, 40, 0.18);
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.works-start-btn:hover { background: #2f9e68; border-color: #2f9e68; color: #ffffff; }
+/* 🚀发布钮（未发布卡）/ ⬇撤销钮（已发布卡，works-view-and-world-publish 5.1）：
+   删除钮与开局钮之间，发布蓝色 / 撤销橙色动作语义 */
+.works-publish-btn {
+    position: absolute;
+    top: 8px;
+    right: 46px;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    font-size: 13px;
+    border-radius: 6px;
+    border: 1px solid rgba(130, 152, 240, 0.9);
+    background: rgba(255, 255, 255, 0.92);
+    color: #35409a;
+    cursor: pointer;
+    box-shadow: 0 1px 4px rgba(16, 24, 40, 0.18);
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.works-publish-btn:hover { background: #4f5eb0; border-color: #4f5eb0; color: #ffffff; }
+.works-revoke-btn {
+    position: absolute;
+    top: 8px;
+    right: 46px;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    font-size: 13px;
+    border-radius: 6px;
+    border: 1px solid rgba(236, 170, 90, 0.9);
+    background: rgba(255, 255, 255, 0.92);
+    color: #b2580a;
+    cursor: pointer;
+    box-shadow: 0 1px 4px rgba(16, 24, 40, 0.18);
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.works-revoke-btn:hover { background: #d97c1e; border-color: #d97c1e; color: #ffffff; }
+/* 已发布徽章（5.1：已发布卡 blurb 下方绿色小字行） */
+.works-published-flag {
+    margin: 0;
+    font-size: 0.72rem;
+    color: #1d7a4f;
+    font-weight: 600;
+}
+.works-del-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    font-size: 14px;
+    border-radius: 6px;
+    border: 1px solid rgba(253, 162, 155, 0.9);
+    background: rgba(255, 255, 255, 0.92);
+    color: #b42337;
+    cursor: pointer;
+    box-shadow: 0 1px 4px rgba(16, 24, 40, 0.18);
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.works-del-btn:hover { background: #e94560; border-color: #e94560; color: #ffffff; }
+/* 「＋ 新建」卡：墙尾常驻入口，高度由网格 stretch 拉齐同行作品卡 */
+.works-new-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    min-height: 180px;
+    border: 1.5px dashed #d0d5dd;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.55);
+    color: #667085;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.works-new-card:hover {
+    border-color: #e94560;
+    color: #e94560;
+    background: #ffffff;
+}
+.works-new-plus {
+    font-size: 34px;
+    font-weight: 300;
+    line-height: 1;
+}
+.works-new-label {
+    font-size: 13px;
+}
+
+/* 作品两级视图（作品选择首屏 ↔ 编辑视图）：选择屏头部与编辑屏返回按钮 */
+.works-select-header {
+    margin: 0 0 18px;
+}
+.works-select-header h2 {
+    margin: 0 0 6px;
+    font-size: 20px;
+    color: #101828;
+}
+.works-select-hint {
+    margin: 0;
+    font-size: 13px;
+    color: #667085;
+}
+.works-back-btn {
+    display: block;
+    padding: 6px 14px;
+    margin: 0 0 14px;
+    background: #ffffff;
+    border: 1px solid #e4e7ec;
+    border-radius: 6px;
+    color: #667085;
+    cursor: pointer;
+    font-size: 13px;
+    transition: border-color 0.12s, color 0.12s;
+}
+.works-back-btn:hover {
+    border-color: #e94560;
+    color: #e94560;
+}
+
+/* ===== 编辑视图一键试玩（works-playtest-entry D2）：顶部工具行 + 就地选角 chips 行 ===== */
+.works-edit-toolbar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 14px;
+}
+.works-edit-toolbar .works-back-btn { margin: 0; }
+/* ▶试玩钮：与作品墙「▶」同一开局绿色行动语义（works-start-btn 同源配色） */
+.works-playtest-btn {
+    padding: 6px 14px;
+    background: #ffffff;
+    border: 1px solid rgba(111, 187, 137, 0.9);
+    border-radius: 6px;
+    color: #1d7a4f;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.works-playtest-btn:hover { background: #2f9e68; border-color: #2f9e68; color: #ffffff; }
+/* 试玩选角 chips 行：复用 world-wall.css 的 .world-chip 单项视觉；
+   flex 布局会盖过 [hidden] 默认 display:none，需显式兑底 */
+.works-playtest-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 0 0 14px;
+}
+.works-playtest-chips[hidden] { display: none; }
+
 /* 删除二次确认：叠在记忆弹窗之上，故 z-index 更高 */
 .memory-confirm-overlay { z-index: 110; }
 .memory-confirm { width: 360px; }
 .memory-confirm p { font-size: 13px; color: #667085; margin-bottom: 4px; }
+
+/* ========== 世界书面板（设定集只读，star-lorebook D6）========== */
+.lorebook-dialog {
+    width: min(720px, 92vw);
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+.lorebook-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding-top: 14px;
+}
+.lorebook-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+/* 设定集分类分组标题（add-star-lorebook-category D4）：复用 memory-group-title 风格惯例，
+   弹窗列表/共享包发布勾选组/详情列表三处共用 */
+.lorebook-group-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: #667085;
+    margin: 2px 0 -4px;
+}
+.lorebook-entry {
+    padding: 12px 14px;
+    background: #f9fafb;
+    border: 1px solid #e4e7ec;
+    border-radius: 8px;
+    font-size: 13px;
+    color: #344054;
+}
+/* 已揭示（sticky 常驻，存档级）：轻红边框 */
+.lorebook-entry.revealed { border-color: rgba(233, 69, 96, 0.3); }
+/* 抢星条目（星归玩家）：视觉最重——红调加粗边框 + 淡红底 */
+.lorebook-entry.claimed {
+    border-color: rgba(233, 69, 96, 0.6);
+    background: rgba(233, 69, 96, 0.05);
+}
+.lorebook-entry-head {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+.lorebook-entry-title {
+    font-weight: 600;
+    color: #1d2939;
+}
+.lorebook-badge {
+    padding: 1px 10px;
+    border-radius: 10px;
+    font-size: 11px;
+    border: 1px solid #e4e7ec;
+    background: #f2f4f7;
+    color: #667085;
+    white-space: nowrap;
+}
+/* 不可命中（天兽/天魔）：紫色系区分，不可被推演命中 */
+.lorebook-badge.npc { background: rgba(109, 40, 217, 0.08); border-color: rgba(109, 40, 217, 0.3); color: #5925dc; }
+/* 已揭示：轻红调 */
+.lorebook-badge.revealed { background: rgba(233, 69, 96, 0.08); border-color: rgba(233, 69, 96, 0.3); color: #c73650; }
+/* 星归玩家（抢星）：重红调 + 加粗 */
+.lorebook-badge.claimed { background: rgba(233, 69, 96, 0.15); border-color: #e94560; color: #c73650; font-weight: 600; }
+.lorebook-entry-lore {
+    line-height: 1.7;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+.lorebook-entry-aliases { margin-top: 4px; font-size: 12px; color: #98a2b3; }
+.lorebook-hint { font-size: 13px; color: #98a2b3; padding: 8px 2px; }
+
+/* ========== 双轨就地编辑器（add-rpg-lorebook-sets D10）========== */
+.lorebook-source-line { margin-top: 10px; font-size: 12px; color: #667085; line-height: 1.5; }
+.lorebook-source-line.unmaterialized { color: #b54708; }
+.lorebook-source-line strong { color: #1d2939; }
+.lorebook-source-meta { color: #98a2b3; }
+.lorebook-tabs {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+    border-bottom: 1px solid #e4e7ec;
+}
+.lorebook-tab {
+    padding: 8px 16px;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: #667085;
+    font-size: 13px;
+    cursor: pointer;
+    margin-bottom: -1px;
+}
+.lorebook-tab:hover { color: #c73650; }
+.lorebook-tab.active { color: #c73650; border-bottom-color: #e94560; font-weight: 600; }
+.lorebook-browse { display: flex; flex-direction: column; }
+.lorebook-track-toolbar { display: flex; gap: 8px; margin-bottom: 10px; }
+.lorebook-track-toolbar .btn-secondary { padding: 6px 12px; font-size: 13px; }
+.lorebook-track-toolbar .btn-secondary:disabled { opacity: 0.5; cursor: not-allowed; }
+.lorebook-track-hint {
+    font-size: 12px;
+    color: #b54708;
+    background: rgba(249, 168, 37, 0.1);
+    border: 1px solid rgba(249, 168, 37, 0.3);
+    border-radius: 6px;
+    padding: 6px 10px;
+    margin-bottom: 10px;
+}
+.lorebook-entry.editable { position: relative; }
+.lorebook-entry.disabled { opacity: 0.55; }
+.lorebook-entry-actions { margin-left: auto; display: flex; gap: 6px; }
+.lorebook-mini-btn {
+    padding: 2px 10px;
+    background: #ffffff;
+    border: 1px solid #d0d5dd;
+    border-radius: 6px;
+    color: #667085;
+    font-size: 12px;
+    cursor: pointer;
+}
+.lorebook-mini-btn:hover { background: #f2f4f7; color: #c73650; border-color: #e94560; }
+.lorebook-mini-btn.danger:hover { background: #e94560; color: #ffffff; }
+.lorebook-badge.off { background: #f2f4f7; border-color: #d0d5dd; color: #98a2b3; }
+.lorebook-entry-form { display: flex; flex-direction: column; }
+.lorebook-form-title { font-size: 14px; font-weight: 600; color: #1d2939; margin-bottom: 12px; }
+.lorebook-entry-form .form-row textarea { min-height: auto; }
+.lorebook-import-drawer { display: flex; flex-direction: column; }
+.lorebook-import-head { display: flex; align-items: center; gap: 12px; }
+.lorebook-import-title { flex: 1; font-size: 14px; font-weight: 600; color: #1d2939; }
+.lorebook-import-hint { font-size: 12px; color: #98a2b3; line-height: 1.6; margin: 6px 0 12px; }
+.lorebook-import-toolbar { display: flex; gap: 8px; margin-bottom: 10px; }
+.lorebook-import-toolbar .btn-secondary,
+.lorebook-import-toolbar .btn-primary { padding: 6px 14px; font-size: 13px; }
+.lorebook-import-list { display: flex; flex-direction: column; gap: 12px; }
+.lorebook-import-group { display: flex; flex-direction: column; gap: 4px; }
+.lorebook-import-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    background: #f9fafb;
+    border: 1px solid #e4e7ec;
+    border-radius: 6px;
+    font-size: 13px;
+    color: #344054;
+    cursor: pointer;
+}
+.lorebook-import-item:hover { background: #f2f4f7; }
+.lorebook-import-item input[type="checkbox"] { width: auto; margin: 0; }
+
+/* ========== 开局「资料来源」单选列表（preset 三步向导 / 沙盒选择弹窗共用，D10）========== */
+.lorebook-source-list { display: flex; flex-direction: column; gap: 8px; }
+.lorebook-source-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: #f9fafb;
+    border: 1px solid #e4e7ec;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 13px;
+}
+.lorebook-source-item:hover { background: #f2f4f7; }
+.lorebook-source-item.selected {
+    background: rgba(233, 69, 96, 0.06);
+    border-color: rgba(233, 69, 96, 0.5);
+}
+.lorebook-source-marker { color: #e94560; font-size: 15px; flex-shrink: 0; }
+
+/* ===== 图上回溯分叉点弹窗 + 开局故事图选择（story-graph-authoring 4.10）===== */
+.lorebook-source-item.fork-item { cursor: pointer; }
+.lorebook-source-item.fork-item:hover { background: #f2f4f7; }
+.fork-type-badge {
+    flex-shrink: 0; margin-left: auto; padding: 2px 10px; border-radius: 999px;
+    font-size: 12px; color: #6b7280; border: 1px solid #d0d5dd; white-space: nowrap;
+}
+.fork-type-badge.anchor { color: #b8860b; border-color: #d4af37; }
+.fork-type-badge.ending { color: #c0392b; border-color: #e74c3c; }
+.sandbox-story-block { margin: 4px 0 12px; }
+.sandbox-story-block .lorebook-import-hint { margin: 0 0 6px; }
+.sandbox-story-select {
+    width: 100%; padding: 8px 10px; border-radius: 8px;
+    border: 1px solid #d0d5dd; background: #fff; color: inherit; font-size: 13px;
+}
+.lorebook-source-body { flex: 1; min-width: 0; }
+.lorebook-source-name { font-weight: 600; color: #1d2939; }
+.lorebook-source-item .lorebook-source-meta {
+    font-size: 11px;
+    margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* ========== 工坊世界观 tab 的只读名录块（与弹窗共用 .lorebook-list / .lorebook-entry）========== */
+.lorebook-workshop-block {
+    margin-top: 18px;
+    padding: 14px 16px;
+    background: #f9fafb;
+    border: 1px dashed #d0d5dd;
+    border-radius: 8px;
+}
+.lorebook-workshop-block h3 { margin: 0 0 4px; color: #1d2939; }
+.lorebook-workshop-hint { margin: 0 0 10px; font-size: 12px; color: #98a2b3; }
+
+/* ========== 工坊世界书 tab（add-rpg-worldbook D7）：编辑区提示 + LLM 草稿卡 ========== */
+.editor-hint { margin: 0 0 12px; font-size: 12px; color: #98a2b3; line-height: 1.6; }
+.checkbox-inline {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: #344054;
+    cursor: pointer;
+}
+.checkbox-inline input[type="checkbox"] { width: auto; margin: 0; }
+.worldbook-drafts {
+    margin-top: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.worldbook-drafts-heading { font-size: 12px; color: #98a2b3; }
+.worldbook-draft-card {
+    padding: 12px 14px;
+    background: #f9fafb;
+    border: 1px solid #e4e7ec;
+    border-radius: 8px;
+    font-size: 13px;
+    color: #344054;
+}
+.worldbook-draft-title { font-weight: 600; color: #1d2939; margin-bottom: 4px; }
+.worldbook-draft-kw { font-size: 12px; color: #98a2b3; margin-bottom: 6px; }
+.worldbook-draft-content {
+    line-height: 1.7;
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin-bottom: 8px;
+}
+
+/* ========== 世界卡片墙样式已抽至 world-wall.css（橱窗/工作台两层共用）========== */
+
+/* ========== 工坊封面上传控件（world-card-gallery 9.1）========== */
+.cover-editor {
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+}
+
+.cover-preview {
+    position: relative;
+    width: 96px;
+    aspect-ratio: 2 / 3;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #eef1f5;
+    border: 1px solid #e4e7ec;
+    flex: none;
+}
+
+.cover-preview img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.cover-preview-empty {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    color: #98a2b3;
+}
+
+.cover-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    font-size: 12px;
+    color: #667085;
+}
+
+.cover-controls input[type="file"] { font-size: 12px; }
+
+/* ========== 共享世界书库（add-shared-worldbook-publish D8）：入口行 + 画廊卡片墙 + 详情消息块 ========== */
+/* 工坊世界书 tab 的发布/浏览入口行（叠在既有 form-actions 之下） */
+.shared-pack-entry { margin-top: 10px; }
+
+/* 画廊态：在架包卡片墙（名称/简介/发布者/条数/更新时间，整卡点开详情） */
+.shared-gallery-list { display: flex; flex-direction: column; gap: 10px; }
+.shared-pack-card {
+    padding: 12px 14px;
+    background: #f9fafb;
+    border: 1px solid #e4e7ec;
+    border-radius: 8px;
+    cursor: pointer;
+}
+.shared-pack-card:hover { background: #f2f4f7; border-color: rgba(233, 69, 96, 0.5); }
+.shared-pack-name { font-size: 14px; font-weight: 600; color: #1d2939; }
+.shared-pack-blurb {
+    margin: 4px 0 0;
+    font-size: 13px;
+    color: #344054;
+    line-height: 1.6;
+}
+.shared-pack-meta { margin-top: 6px; font-size: 12px; color: #98a2b3; }
+
+/* 详情态：抬头块（名称/简介/发布者/出处/条数/更新时间） */
+.shared-detail-head { margin-bottom: 12px; }
+
+/* 导入/撤回结果文案：400（preset- 目标拒绝）/409（同名星冲突清单）与成功回执均在此呈现 */
+.shared-detail-msg {
+    font-size: 12px;
+    line-height: 1.6;
+    border-radius: 6px;
+    padding: 8px 10px;
+    margin-top: 10px;
+}
+.shared-detail-msg.error {
+    color: #b42318;
+    background: rgba(233, 69, 96, 0.08);
+    border: 1px solid rgba(233, 69, 96, 0.3);
+}
+.shared-detail-msg.ok {
+    color: #067647;
+    background: rgba(18, 183, 106, 0.08);
+    border: 1px solid rgba(18, 183, 106, 0.3);
+}
+
+/* ========== ����ͼ�༭����story-graph-authoring 3.2����Ļ��Ƭ + ���嵥�������ǻ����� ========== */
+
+/* Ļ��Ƭ���༭���ڵĶ�����Ļ������ͷ�ֶ� + ���/�ڵ�/���������嵥�� */
+.sg-act-card {
+    border: 1px solid #d0d5dd;
+    border-radius: 8px;
+    background: #fcfcfd;
+    padding: 12px 14px;
+    margin: 12px 0;
+}
+.sg-act-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sg-act-badge {
+    flex: none;
+    font-size: 12px;
+    font-weight: 700;
+    color: #e94560;
+    background: rgba(233, 69, 96, 0.08);
+    border-radius: 999px;
+    padding: 2px 10px;
+}
+.sg-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; margin-top: 10px; }
+.sg-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #475467; }
+.sg-field-full { grid-column: 1 / -1; }
+.sg-field input, .sg-field textarea, .sg-field select {
+    border: 1px solid #d0d5dd;
+    border-radius: 6px;
+    padding: 5px 8px;
+    font-size: 13px;
+}
+.sg-field textarea { resize: vertical; min-height: 0; font-family: Consolas, monospace; }
+.sg-check { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #475467; margin-top: 18px; }
+
+/* ���嵥�飨���/�ڵ�/�ߣ����б༭�� */
+.sg-sub { margin-top: 12px; border-top: 1px dashed #eaecf0; padding-top: 10px; }
+.sg-sub-title { font-size: 12px; font-weight: 600; color: #667085; margin-bottom: 6px; }
+.sg-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 4px 0; }
+.sg-inline {
+    border: 1px solid #d0d5dd;
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 13px;
+    width: 120px;
+}
+.sg-inline.sg-wide { width: 240px; }
+.sg-row select { border: 1px solid #d0d5dd; border-radius: 6px; padding: 4px 6px; font-size: 13px; }
+.sg-arrow { color: #98a2b3; }
+.sg-mini-btn, .sg-add-btn {
+    border: 1px solid #d0d5dd;
+    background: #fff;
+    color: #475467;
+    border-radius: 6px;
+    font-size: 12px;
+    padding: 3px 8px;
+    cursor: pointer;
+}
+.sg-mini-btn:hover, .sg-add-btn:hover { border-color: #e94560; color: #e94560; }
+
+/* guard ����߼������ڵ�/�� ? չ����������壩 */
+.sg-guard-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.sg-field-name { flex: none; font-size: 12px; font-weight: 600; color: #475467; }
+.sg-more {
+    flex-basis: 100%;
+    border-left: 3px solid #eaecf0;
+    background: #f9fafb;
+    border-radius: 0 6px 6px 0;
+    padding: 8px 10px;
+    margin-top: 6px;
+}
+.sg-variants { margin-top: 8px; border-top: 1px dashed #eaecf0; padding-top: 6px; }
+.sg-empty {
+    text-align: center;
+    color: #98a2b3;
+    font-size: 13px;
+    padding: 18px 0;
+    border: 1px dashed #d0d5dd;
+    border-radius: 8px;
+}
+
+/* JSON �ֶΰ��Ʒ��죨input ���ַ� try parse ʧ�ܼ�ʱ������ */
+.sg-json-bad { border-color: #f04438 !important; background: rgba(240, 68, 56, 0.04); }
+
+/* У�鱨����������� / ����� / �޸��� / ͨ���̣��͵�����չʾ���� alert�� */
+.sg-report {
+    border-radius: 8px;
+    border: 1px solid #eaecf0;
+    background: #f9fafb;
+    padding: 10px 12px;
+    margin: 10px 0;
+}
+.sg-report-line { font-size: 13px; line-height: 1.7; padding: 1px 0; }
+.sg-report-err { color: #b42318; }
+.sg-report-warn { color: #b54708; }
+.sg-report-rep { color: #175cd3; }
+.sg-report-ok { color: #067647; font-weight: 600; }

@@ -52,6 +52,9 @@ public class SessionController {
     public List<Map<String, Object>> listSessions() {
         return sessionRepository.findByUserId(TenantContext.requireTenantId())
                 .stream()
+                // RPG 会话不进主会话列表（separate-rpg-chat-sessions spec）：kind 过滤；
+                // 存量未打标会话由 AiSessionKindBackfill 启动回填按 GameState 引用治理
+                .filter(s -> s.metadata() == null || !"rpg".equals(s.metadata().get("kind")))
                 .sorted(Comparator.comparing(Session::createdAt).reversed())
                 .map(s -> {
                     String title = s.metadata() != null

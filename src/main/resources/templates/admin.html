@@ -4,23 +4,24 @@
     <meta charset="UTF-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
     <title>管理端 · 计量与配额 - Agent Platform</title>
+    <link rel="stylesheet" th:href="@{/css/sidebar.css(v=${#dates.createNow().time})}"/>
     <link rel="stylesheet" th:href="@{/css/admin.css(v=${#dates.createNow().time})}"/>
+    <link rel="stylesheet" th:href="@{/css/eval-admin.css(v=${#dates.createNow().time})}"/>
 </head>
 <body>
 
-<header class="admin-header">
-    <a href="/" class="back-btn" title="返回首页">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M19 12H5M12 19l-7-7 7-7" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-    </a>
-    <h1><span class="logo-dot"></span>平台管理端 · 计量与配额</h1>
-    <div class="admin-header-meta" id="windowMeta"></div>
-</header>
+<!-- 全局侧边栏（global-sidebar-nav，承接 unified-global-topbar）：单源 fragment 三件套；
+     📊 管理端为当前页高亮（本页仅 platform_admin 可达，AdminAccessInterceptor） -->
+<div class="app-shell">
+    <aside th:replace="~{fragments/sidebar :: sidebar('admin', ${isPlatformAdmin}, ${currentUserEmail})}"></aside>
+    <div th:replace="~{fragments/sidebar :: mobileTop}"></div>
+    <div th:replace="~{fragments/sidebar :: mask}"></div>
+    <div class="app-content">
 
 <nav class="admin-tabs">
     <button class="admin-tab active" data-tab="usage">用量看板</button>
     <button class="admin-tab" data-tab="pricing">档位单价</button>
+    <button class="admin-tab" data-tab="eval">评估中心</button>
 </nav>
 
 <main class="admin-main">
@@ -36,6 +37,7 @@
             </label>
             <button class="btn" id="refreshUsage">刷新</button>
             <span class="hint" id="quotaHint"></span>
+            <div class="admin-header-meta" id="windowMeta"></div>
         </div>
 
         <table class="admin-table" id="usageTable">
@@ -55,13 +57,15 @@
             </tbody>
         </table>
 
-        <!-- 租户详情（分解 + 预算 + 明细） -->
+        <!-- 租户详情（分解 + 预算 + 明细）：收起只折叠 tenantDetailBody（头部常驻），
+             展开入口不再只剩上方表格行「查看」（收起后可能滚出视口） -->
         <div class="tenant-detail" id="tenantDetail" hidden>
             <div class="tenant-detail-head">
                 <h2 id="tenantDetailTitle">租户详情</h2>
-                <button class="btn ghost" id="closeDetail">收起</button>
+                <button class="btn ghost" id="closeDetail" aria-expanded="true">收起</button>
             </div>
 
+            <div id="tenantDetailBody">
             <div class="budget-row">
                 <span>当期已用：<b id="usedYuan">-</b> 元</span>
                 <span>生效预算：<b id="budgetYuan">-</b> 元</span>
@@ -100,6 +104,7 @@
                 <span id="pageInfo">-</span>
                 <button class="btn ghost" id="nextPage">下一页</button>
             </div>
+            </div><!-- /#tenantDetailBody -->
         </div>
     </section>
 
@@ -115,11 +120,108 @@
             </tbody>
         </table>
     </section>
+
+    <!-- ============ 评估中心（content-eval-admin-ui：纯前端消费 /rpg/eval/** 既有端点） ============ -->
+    <section class="admin-panel" id="panel-eval" hidden>
+        <!-- 批跑触发表单 -->
+        <div class="admin-toolbar">
+            <label>层
+                <select id="evalLayer">
+                    <option value="static">静态层（设定）</option>
+                    <option value="dynamic">动态层（会话回搜）</option>
+                </select>
+            </label>
+            <label id="evalWorldRow">世界
+                <select id="evalWorldSelect"><option value="">（选择世界）</option></select>
+            </label>
+            <label id="evalSaveRow" hidden>存档
+                <select id="evalSaveSelect"><option value="">（选择存档）</option></select>
+            </label>
+            <label id="evalTurnsRow" hidden>回搜窗
+                <input type="number" id="evalWindowTurns" min="1" step="1" placeholder="默认"/>
+            </label>
+            <button class="btn" id="evalRunBtn" disabled>触发批跑</button>
+            <span class="hint" id="evalTriggerHint"></span>
+        </div>
+        <div class="eval-config-alert" id="evalConfigAlert" hidden></div>
+
+        <!-- run 列表 -->
+        <h3 class="eval-h">批跑 run 列表</h3>
+        <div class="admin-toolbar">
+            <button class="btn ghost" id="evalRunsRefresh">刷新</button>
+            <span class="hint" id="evalRunsMeta"></span>
+        </div>
+        <table class="admin-table" id="evalRunsTable">
+            <thead>
+            <tr><th>时间</th><th>层</th><th>scope</th><th>状态</th><th>judge</th><th class="num">token</th><th class="num">金额(元)</th></tr>
+            </thead>
+            <tbody id="evalRunsBody">
+            <tr><td colspan="7" class="empty">尚未加载</td></tr>
+            </tbody>
+        </table>
+
+        <!-- run 详情（选中后显示）：收起只折叠 evalRunBody（头部常驻），
+             展开入口不再只剩上方 run 列表行 -->
+        <div class="eval-run-detail" id="evalRunDetail" hidden>
+            <div class="eval-run-detail-head">
+                <h2 id="evalRunTitle">run 详情</h2>
+                <button class="btn ghost" id="evalRunClose" aria-expanded="true">收起</button>
+            </div>
+            <div id="evalRunBody">
+            <div class="eval-run-meta" id="evalRunMeta"></div>
+
+            <h3 class="eval-h">分维度汇总</h3>
+            <div id="evalSummary" class="eval-summary"></div>
+
+            <div class="admin-toolbar">
+                <label>verdict
+                    <select id="evalVerdictFilter">
+                        <option value="">全部</option>
+                        <option value="pass">pass</option>
+                        <option value="borderline">borderline</option>
+                        <option value="fail">fail</option>
+                        <option value="invalid">invalid（作废）</option>
+                    </select>
+                </label>
+                <label>subject
+                    <input type="text" id="evalSubjectFilter" placeholder="如 kagetora"/>
+                </label>
+                <button class="btn small" id="evalApplyFilter">过滤</button>
+                <span class="hint">分歧行（judge 间判分不一致）以色条高亮；行尾可展开依据</span>
+            </div>
+            <table class="admin-table small" id="evalRecordsTable">
+                <thead>
+                <tr><th>人物</th><th>子维度</th><th>verdict</th><th>理由</th><th>终裁</th><th></th></tr>
+                </thead>
+                <tbody id="evalRecordsBody"></tbody>
+            </table>
+            </div><!-- /#evalRunBody -->
+        </div>
+
+        <!-- 复核工作台 -->
+        <h3 class="eval-h">人工复核工作台（borderline + 分歧行）</h3>
+        <div class="admin-toolbar">
+            <button class="btn ghost" id="evalQueueRefresh">刷新</button>
+            <span class="hint" id="evalQueueMeta"></span>
+        </div>
+        <table class="admin-table" id="evalQueueTable">
+            <thead>
+            <tr><th>人物</th><th>子维度</th><th>verdict</th><th>理由</th><th>分歧组</th><th>终裁</th><th></th></tr>
+            </thead>
+            <tbody id="evalQueueBody">
+            <tr><td colspan="7" class="empty">尚未加载</td></tr>
+            </tbody>
+        </table>
+    </section>
 </main>
 
 <div class="toast" id="toast" hidden></div>
+</div><!-- /.app-content -->
+</div><!-- /.app-shell -->
 
 <script th:src="@{/js/auth-redirect.js(v=${#dates.createNow().time})}"></script>
 <script th:src="@{/js/admin/admin.js(v=${#dates.createNow().time})}"></script>
+<script th:src="@{/js/admin/eval-admin.js(v=${#dates.createNow().time})}"></script>
+<script th:src="@{/js/sidebar.js(v=${#dates.createNow().time})}"></script>
 </body>
 </html>

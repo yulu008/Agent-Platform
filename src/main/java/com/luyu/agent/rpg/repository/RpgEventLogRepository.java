@@ -31,14 +31,14 @@ public class RpgEventLogRepository {
     }
 
     /**
-     * 插入事件日志（id 自增）
+     * 插入事件日志（id 自增；session_event_id 由尾包时单独回填，此处恒为 NULL）
      */
     public void insert(EventLog log) {
         jdbcTemplate.update(
-                "INSERT INTO rpg_event_log (tenant_id, game_state_id, turn, event_type, content, state_delta) " +
-                        "VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO rpg_event_log (tenant_id, game_state_id, turn, event_type, content, state_delta, session_event_id) " +
+                        "VALUES (?, ?, ?, ?, ?, ?, ?)",
                 tid(), log.getGameStateId(), log.getTurn(), log.getEventType(),
-                log.getContent(), log.getStateDelta());
+                log.getContent(), log.getStateDelta(), log.getSessionEventId());
     }
 
     /**
@@ -66,6 +66,28 @@ public class RpgEventLogRepository {
         return jdbcTemplate.query(
                 "SELECT * FROM rpg_event_log WHERE game_state_id = ? AND turn = ? AND tenant_id = ? ORDER BY id ASC",
                 BeanPropertyRowMapper.newInstance(EventLog.class), gameStateId, turn, tid());
+    }
+
+    /**
+     * 回填对齐键（rpg-hud-bubble-components D4）：turn_persisted 尾包构建时把本局 assistant
+     * 的 session eventId 写入该轮 state_change 行，供 /game/history 按 eventId 精确回填组件快照。
+     *
+     * @return 更新行数（0 = 该轮无 state_change 事件，如 state_delta 未闭合被丢弃）
+     */
+    public int updateSessionEventId(String gameStateId, int turn, String sessionEventId) {
+        return jdbcTemplate.update(
+                "UPDATE rpg_event_log SET session_event_id = ? WHERE game_state_id = ? AND turn = ? AND event_type = 'state_change' AND tenant_id = ?",
+                sessionEventId, gameStateId, turn, tid());
+    }
+
+    /**
+     * 取该存档全部 state_change 事件（历史回填数据源，按落库顺序）。
+     * 旧行 session_event_id 为 NULL（无对齐，前端降级纯叙述）。
+     */
+    public List<EventLog> findStateChangesByGameStateId(String gameStateId) {
+        return jdbcTemplate.query(
+                "SELECT * FROM rpg_event_log WHERE game_state_id = ? AND event_type = 'state_change' AND tenant_id = ? ORDER BY id ASC",
+                BeanPropertyRowMapper.newInstance(EventLog.class), gameStateId, tid());
     }
 
     /**

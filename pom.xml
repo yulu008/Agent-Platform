@@ -52,6 +52,25 @@
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
 
+        <!-- JWT 支持（JwtUtil / JwtAuthFilter） -->
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-api</artifactId>
+            <version>0.12.6</version>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-impl</artifactId>
+            <version>0.12.6</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-jackson</artifactId>
+            <version>0.12.6</version>
+            <scope>runtime</scope>
+        </dependency>
+
         <!-- Jackson 2 JSR-310：Boot 4 自动配置的 ObjectMapper 已切 Jackson 3（tools.jackson），
              com.fasterxml 的 ObjectMapper 无 Bean，需自行注册 JavaTimeModule 序列化 LocalDateTime；
              默认 scope 为 runtime，显式声明为 compile 供代码引用 -->
@@ -64,6 +83,14 @@
         <dependency>
             <groupId>org.springframework.ai</groupId>
             <artifactId>spring-ai-starter-model-openai</artifactId>
+        </dependency>
+
+        <!-- jsoup：HTML 解析与清洗（planner-html-source：用户上传 HTML 资料页→正文
+             清洗文本，~450KB 零传递依赖） -->
+        <dependency>
+            <groupId>org.jsoup</groupId>
+            <artifactId>jsoup</artifactId>
+            <version>1.18.3</version>
         </dependency>
 
         <!-- Spring AI Agent Utils：加载 Skills / SubAgent / Memory 能力 -->

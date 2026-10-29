@@ -1,0 +1,743 @@
+﻿Compiled from "OpenAIClientImpl.kt"
+public final class com.openai.client.OpenAIClientImpl implements com.openai.client.OpenAIClient {
+  private final com.openai.core.ClientOptions clientOptions;
+
+  private final com.openai.core.ClientOptions clientOptionsWithUserAgent;
+
+  private final kotlin.Lazy async$delegate;
+
+  private final kotlin.Lazy withRawResponse$delegate;
+
+  private final kotlin.Lazy completions$delegate;
+
+  private final kotlin.Lazy chat$delegate;
+
+  private final kotlin.Lazy embeddings$delegate;
+
+  private final kotlin.Lazy files$delegate;
+
+  private final kotlin.Lazy images$delegate;
+
+  private final kotlin.Lazy audio$delegate;
+
+  private final kotlin.Lazy moderations$delegate;
+
+  private final kotlin.Lazy models$delegate;
+
+  private final kotlin.Lazy fineTuning$delegate;
+
+  private final kotlin.Lazy graders$delegate;
+
+  private final kotlin.Lazy vectorStores$delegate;
+
+  private final kotlin.Lazy webhooks$delegate;
+
+  private final kotlin.Lazy beta$delegate;
+
+  private final kotlin.Lazy batches$delegate;
+
+  private final kotlin.Lazy uploads$delegate;
+
+  private final kotlin.Lazy admin$delegate;
+
+  private final kotlin.Lazy responses$delegate;
+
+  private final kotlin.Lazy realtime$delegate;
+
+  private final kotlin.Lazy conversations$delegate;
+
+  private final kotlin.Lazy evals$delegate;
+
+  private final kotlin.Lazy containers$delegate;
+
+  private final kotlin.Lazy skills$delegate;
+
+  private final kotlin.Lazy videos$delegate;
+
+  public com.openai.client.OpenAIClientImpl(com.openai.core.ClientOptions);
+    Code:
+       0: aload_1
+       1: ldc           #11                 // String clientOptions
+       3: invokestatic  #17                 // Method kotlin/jvm/internal/Intrinsics.checkNotNullParameter:(Ljava/lang/Object;Ljava/lang/String;)V
+       6: aload_0
+       7: invokespecial #20                 // Method java/lang/Object."<init>":()V
+      10: aload_0
+      11: aload_1
+      12: putfield      #23                 // Field clientOptions:Lcom/openai/core/ClientOptions;
+      15: aload_0
+      16: aload_0
+      17: getfield      #23                 // Field clientOptions:Lcom/openai/core/ClientOptions;
+      20: invokevirtual #29                 // Method com/openai/core/ClientOptions.headers:()Lcom/openai/core/http/Headers;
+      23: invokevirtual #35                 // Method com/openai/core/http/Headers.names:()Ljava/util/Set;
+      26: ldc           #37                 // String User-Agent
+      28: invokeinterface #43,  2           // InterfaceMethod java/util/Set.contains:(Ljava/lang/Object;)Z
+      33: ifeq          43
+      36: aload_0
+      37: getfield      #23                 // Field clientOptions:Lcom/openai/core/ClientOptions;
+      40: goto          89
+      43: aload_0
+      44: getfield      #23                 // Field clientOptions:Lcom/openai/core/ClientOptions;
+      47: invokevirtual #47                 // Method com/openai/core/ClientOptions.toBuilder:()Lcom/openai/core/ClientOptions$Builder;
+      50: ldc           #37                 // String User-Agent
+      52: new           #49                 // class java/lang/StringBuilder
+      55: dup
+      56: invokespecial #50                 // Method java/lang/StringBuilder."<init>":()V
+      59: aload_0
+      60: invokevirtual #54                 // Method java/lang/Object.getClass:()Ljava/lang/Class;
+      63: invokevirtual #60                 // Method java/lang/Class.getSimpleName:()Ljava/lang/String;
+      66: invokevirtual #64                 // Method java/lang/StringBuilder.append:(Ljava/lang/String;)Ljava/lang/StringBuilder;
+      69: ldc           #66                 // String /Java
+      71: invokevirtual #64                 // Method java/lang/StringBuilder.append:(Ljava/lang/String;)Ljava/lang/StringBuilder;
+      74: invokestatic  #71                 // Method com/openai/core/Properties.getPackageVersion:()Ljava/lang/String;
+      77: invokevirtual #64                 // Method java/lang/StringBuilder.append:(Ljava/lang/String;)Ljava/lang/StringBuilder;
+      80: invokevirtual #74                 // Method java/lang/StringBuilder.toString:()Ljava/lang/String;
+      83: invokevirtual #80                 // Method com/openai/core/ClientOptions$Builder.putHeader:(Ljava/lang/String;Ljava/lang/String;)Lcom/openai/core/ClientOptions$Builder;
+      86: invokevirtual #84                 // Method com/openai/core/ClientOptions$Builder.build:()Lcom/openai/core/ClientOptions;
+      89: putfield      #87                 // Field clientOptionsWithUserAgent:Lcom/openai/core/ClientOptions;
+      92: aload_0
+      93: new           #89                 // class com/openai/client/OpenAIClientImpl$async$2
+      96: dup
+      97: aload_0
+      98: invokespecial #92                 // Method com/openai/client/OpenAIClientImpl$async$2."<init>":(Lcom/openai/client/OpenAIClientImpl;)V
+     101: checkcast     #94                 // class kotlin/jvm/functions/Function0
+     104: invokestatic  #100                // Method kotlin/LazyKt.lazy:(Lkotlin/jvm/functions/Function0;)Lkotlin/Lazy;
+     107: putfield      #104                // Field async$delegate:Lkotlin/Lazy;
+     110: aload_0
+     111: new           #106                // class com/openai/client/OpenAIClientImpl$withRawResponse$2
+     114: dup
+     115: aload_0
+     116: invokespecial #107                // Method com/openai/client/OpenAIClientImpl$withRawResponse$2."<init>":(Lcom/openai/client/OpenAIClientImpl;)V
+     119: checkcast     #94                 // class kotlin/jvm/functions/Function0
+     122: invokestatic  #100                // Method kotlin/LazyKt.lazy:(Lkotlin/jvm/functions/Function0;)Lkotlin/Lazy;
+     125: putfield      #110                // Field withRawResponse$delegate:Lkotlin/Lazy;
+     128: aload_0
+     129: new           #112                // class com/openai/client/OpenAIClientImpl$completions$2
+     132: dup
+     133: aload_0
+     134: invokespecial #113                // Method com/openai/client/OpenAIClientImpl$completions$2."<init>":(Lcom/openai/client/OpenAIClientImpl;)V
+     137: checkcast     #94                 // class kotlin/jvm/functions/Function0
+     140: invokestatic  #100                // Method kotlin/LazyKt.lazy:(Lkotlin/jvm/functions/Function0;)Lkotlin/Lazy;
+     143: putfield      #116                // Field completions$delegate:Lkotlin/Lazy;
+     146: aload_0
+     147: new           #118                // class com/openai/client/OpenAIClientImpl$chat$2
+     150: dup
+     151: aload_0
+     152: invokespecial #119                // Method com/openai/client/OpenAIClientImpl$chat$2."<init>":(Lcom/openai/client/OpenAIClientImpl;)V
+     155: checkcast     #94                 // class kotlin/jvm/functions/Function0
+     158: invokestatic  #100                // Method kotlin/LazyKt.lazy:(Lkotlin/jvm/functions/Function0;)Lkotlin/Lazy;
+     161: putfield      #122                // Field chat$delegate:Lkotlin/Lazy;
+     164: aload_0
+     165: new           #124                // class com/openai/client/OpenAIClientImpl$embeddings$2
+     168: dup
+     169: aload_0
+     170: invokespecial #125                // Method com/openai/client/OpenAIClientImpl$embeddings$2."<init>":(Lcom/openai/client/OpenAIClientImpl;)V
+     173: checkcast     #94                 // class kotlin/jvm/functions/Function0
+     176: invokestatic  #100                // Method kotlin/LazyKt.lazy:(Lkotlin/jvm/functions/Function0;)Lkotlin/Lazy;
+     179: putfield      #128                // Field embeddings$delegate:Lkotlin/Lazy;
+     182: aload_0
+     183: new           #130                // class com/openai/client/OpenAIClientImpl$files$2
+     186: dup
+     187: aload_0
+     188: invokespecial #131                // Method com/openai/client/OpenAIClientImpl$files$2."<init>":(Lcom/openai/client/OpenAIClientImpl;)V
+     191: checkcast     #94                 // class kotlin/jvm/functions/Function0
+     194: invokestatic  #100                // Method kotlin/LazyKt.lazy:(Lkotlin/jvm/functions/Function0;)Lkotlin/Lazy;
+     197: putfield      #134                // Field files$delegate:Lkotlin/Lazy;
+     200: aload_0
+     201: new           #136                // class com/openai/client/OpenAIClientImpl$images$2
+     204: dup
+     205: aload_0
+     206: invokespecial #137                // Method com/openai/client/OpenAIClientImpl$images$2."<init>":(Lcom/openai/client/OpenAIClientImpl;)V
+     209: checkcast     #94                 // class kotlin/jvm/functions/Function0
+     212: invokestatic  #100                // Method kotlin/LazyKt.lazy:(Lkotlin/jvm/functions/Function0;)Lkotlin/Lazy;
+     215: putfield      #140                // Field images$delegate:Lkotlin/Lazy;
+     218: aload_0
+     219: new           #142                // class com/openai/client/OpenAIClientImpl$audio$2
+     222: dup
+     223: aload_0
+     224: invokespecial #143                // Method com/openai/client/OpenAIClientImpl$audio$2."<init>":(Lcom/openai/client/OpenAIClientImpl;)V
+     227: checkcast     #94                 // class kotlin/jvm/functions/Function0
+     230: invokestatic  #100                // Method kotlin/LazyKt.lazy:(Lkotlin/jvm/functions/Function0;)Lkotlin/Lazy;
+     233: putfield      #146                // Field audio$delegate:Lkotlin/Lazy;
+     236: aload_0
+     237: new           #148                // class com/openai/client/OpenAIClientImpl$moderations$2
+     240: dup
+     241: aload_0
+     242: invokespecial #149                // Method com/openai/client/OpenAIClientImpl$moderations$2."<init>":(Lcom/openai/client/OpenAIClientImpl;)V
+     245: checkcast     #94                 // class kotlin/jvm/functions/Function0
+     248: invokestatic  #100                // Method kotlin/LazyKt.lazy:(Lkotlin/jvm/functions/Function0;)Lkotlin/Lazy;
+     251: putfield      #152                // Field moderations$delegate:Lkotlin/Lazy;
+     254: aload_0
+     255: new           #154                // class com/openai/client/OpenAIClientImpl$models$2
+     258: dup
+     259: aload_0
+     260: invokespecial #155                // Method com/openai/client/OpenAIClientImpl$models$2."<init>":(Lcom/openai/client/OpenAIClientImpl;)V
+     263: checkcast     #94                 // class kotlin/jvm/functions/Function0
+     266: invokestatic  #100                // Method kotlin/LazyKt.lazy:(Lkotlin/jvm/functions/Function0;)Lkotlin/Lazy;
+     269: putfield      #158                // Field models$delegate:Lkotlin/Lazy;
+     272: aload_0
+     273: new           #160                // class com/openai/client/OpenAIClientImpl$fineTuning$2
+     276: dup
+     277: aload_0
+     278: invokespecial #161                // Method com/openai/client/OpenAIClientImpl$fineTuning$2."<init>":(Lcom/openai/client/OpenAIClientImpl;)V
+     281: checkcast     #94                 // class kotlin/jvm/functions/Function0
+     284: invokestatic  #100                // Method kotlin/LazyKt.lazy:(Lkotlin/jvm/functions/Function0;)Lkotlin/Lazy;
+     287: putfield      #164                // Field fineTuning$delegate:Lkotlin/Lazy;
+     290: aload_0
+     291: new           #166                // class com/openai/client/OpenAIClientImpl$graders$2
+     294: dup
+     295: aload_0
+     296: invokespecial #167                // Method com/openai/client/OpenAIClientImpl$graders$2."<init>":(Lcom/openai/client/OpenAIClientImpl;)V
+     299: checkcast     #94                 // class kotlin/jvm/functions/Function0
+     302: invokestatic  #100                // Method kotlin/LazyKt.lazy:(Lkotlin/jvm/functions/Function0;)Lkotlin/Lazy;
+     305: putfield      #170                // Field graders$delegate:Lkotlin/Lazy;
+     308: aload_0
+     309: new           #172                // class com/openai/client/OpenAIClientImpl$vectorStores$2
+     312: dup
+     313: aload_0
+     314: invokespecial #173                // Method com/openai/client/OpenAIClientImpl$vectorStores$2."<init>":(Lcom/openai/client/OpenAIClientImpl;)V
+     317: checkcast     #94                 // class kotlin/jvm/functions/Function0
+     320: invokestatic  #100                // Method kotlin/LazyKt.lazy:(Lkotlin/jvm/functions/Function0;)Lkotlin/Lazy;
+     323: putfield      #176                // Field vectorStores$delegate:Lkotlin/Lazy;
+     326: aload_0
+     327: new           #178                // class com/openai/client/OpenAIClientImpl$webhooks$2
+     330: dup
+     331: aload_0
+     332: invokespecial #179                // Method com/openai/client/OpenAIClientImpl$webhooks$2."<init>":(Lcom/openai/client/OpenAIClientImpl;)V
+     335: checkcast     #94                 // class kotlin/jvm/functions/Function0
+     338: invokestatic  #100                // Method kotlin/LazyKt.lazy:(Lkotlin/jvm/functions/Function0;)Lkotlin/Lazy;
+     341: putfield      #182                // Field webhooks$delegate:Lkotlin/Lazy;
+     344: aload_0
+     345: new           #184                // class com/openai/client/OpenAIClientImpl$beta$2
+     348: dup
+     349: aload_0
+     350: invokespecial #185                // Method com/openai/client/OpenAIClientImpl$beta$2."<init>":(Lcom/openai/client/OpenAIClientImpl;)V
+     353: checkcast     #94                 // class kotlin/jvm/functions/Function0
+     356: invokestatic  #100                // Method kotlin/LazyKt.lazy:(Lkotlin/jvm/functions/Function0;)Lkotlin/Lazy;
+     359: putfield      #188                // Field beta$delegate:Lkotlin/Lazy;
+     362: aload_0
+     363: new           #190                // class com/openai/client/OpenAIClientImpl$batches$2
+     366: dup
+     367: aload_0
+     368: invokespecial #191                // Method com/openai/client/OpenAIClientImpl$batches$2."<init>":(Lcom/openai/client/OpenAIClientImpl;)V
+     371: checkcast     #94                 // class kotlin/jvm/functions/Function0
+     374: invokestatic  #100                // Method kotlin/LazyKt.lazy:(Lkotlin/jvm/functions/Function0;)Lkotlin/Lazy;
+     377: putfield      #194                // Field batches$delegate:Lkotlin/Lazy;
+     380: aload_0
+     381: new           #196                // class com/openai/client/OpenAIClientImpl$uploads$2
+     384: dup
+     385: aload_0
+     386: invokespecial #197                // Method com/openai/client/OpenAIClientImpl$uploads$2."<init>":(Lcom/openai/client/OpenAIClientImpl;)V
+     389: checkcast     #94                 // class kotlin/jvm/functions/Function0
+     392: invokestatic  #100                // Method kotlin/LazyKt.lazy:(Lkotlin/jvm/functions/Function0;)Lkotlin/Lazy;
+     395: putfield      #200                // Field uploads$delegate:Lkotlin/Lazy;
+     398: aload_0
+     399: new           #202                // class com/openai/client/OpenAIClientImpl$admin$2
+     402: dup
+     403: aload_0
+     404: invokespecial #203                // Method com/openai/client/OpenAIClientImpl$admin$2."<init>":(Lcom/openai/client/OpenAIClientImpl;)V
+     407: checkcast     #94                 // class kotlin/jvm/functions/Function0
+     410: invokestatic  #100                // Method kotlin/LazyKt.lazy:(Lkotlin/jvm/functions/Function0;)Lkotlin/Lazy;
+     413: putfield      #206                // Field admin$delegate:Lkotlin/Lazy;
+     416: aload_0
+     417: new           #208                // class com/openai/client/OpenAIClientImpl$responses$2
+     420: dup
+     421: aload_0
+     422: invokespecial #209                // Method com/openai/client/OpenAIClientImpl$responses$2."<init>":(Lcom/openai/client/OpenAIClientImpl;)V
+     425: checkcast     #94                 // class kotlin/jvm/functions/Function0
+     428: invokestatic  #100                // Method kotlin/LazyKt.lazy:(Lkotlin/jvm/functions/Function0;)Lkotlin/Lazy;
+     431: putfield      #212                // Field responses$delegate:Lkotlin/Lazy;
+     434: aload_0
+     435: new           #214                // class com/openai/client/OpenAIClientImpl$realtime$2
+     438: dup
+     439: aload_0
+     440: invokespecial #215                // Method com/openai/client/OpenAIClientImpl$realtime$2."<init>":(Lcom/openai/client/OpenAIClientImpl;)V
+     443: checkcast     #94                 // class kotlin/jvm/functions/Function0
+     446: invokestatic  #100                // Method kotlin/LazyKt.lazy:(Lkotlin/jvm/functions/Function0;)Lkotlin/Lazy;
+     449: putfield      #218                // Field realtime$delegate:Lkotlin/Lazy;
+     452: aload_0
+     453: new           #220                // class com/openai/client/OpenAIClientImpl$conversations$2
+     456: dup
+     457: aload_0
+     458: invokespecial #221                // Method com/openai/client/OpenAIClientImpl$conversations$2."<init>":(Lcom/openai/client/OpenAIClientImpl;)V
+     461: checkcast     #94                 // class kotlin/jvm/functions/Function0
+     464: invokestatic  #100                // Method kotlin/LazyKt.lazy:(Lkotlin/jvm/functions/Function0;)Lkotlin/Lazy;
+     467: putfield      #224                // Field conversations$delegate:Lkotlin/Lazy;
+     470: aload_0
+     471: new           #226                // class com/openai/client/OpenAIClientImpl$evals$2
+     474: dup
+     475: aload_0
+     476: invokespecial #227                // Method com/openai/client/OpenAIClientImpl$evals$2."<init>":(Lcom/openai/client/OpenAIClientImpl;)V
+     479: checkcast     #94                 // class kotlin/jvm/functions/Function0
+     482: invokestatic  #100                // Method kotlin/LazyKt.lazy:(Lkotlin/jvm/functions/Function0;)Lkotlin/Lazy;
+     485: putfield      #230                // Field evals$delegate:Lkotlin/Lazy;
+     488: aload_0
+     489: new           #232                // class com/openai/client/OpenAIClientImpl$containers$2
+     492: dup
+     493: aload_0
+     494: invokespecial #233                // Method com/openai/client/OpenAIClientImpl$containers$2."<init>":(Lcom/openai/client/OpenAIClientImpl;)V
+     497: checkcast     #94                 // class kotlin/jvm/functions/Function0
+     500: invokestatic  #100                // Method kotlin/LazyKt.lazy:(Lkotlin/jvm/functions/Function0;)Lkotlin/Lazy;
+     503: putfield      #236                // Field containers$delegate:Lkotlin/Lazy;
+     506: aload_0
+     507: new           #238                // class com/openai/client/OpenAIClientImpl$skills$2
+     510: dup
+     511: aload_0
+     512: invokespecial #239                // Method com/openai/client/OpenAIClientImpl$skills$2."<init>":(Lcom/openai/client/OpenAIClientImpl;)V
+     515: checkcast     #94                 // class kotlin/jvm/functions/Function0
+     518: invokestatic  #100                // Method kotlin/LazyKt.lazy:(Lkotlin/jvm/functions/Function0;)Lkotlin/Lazy;
+     521: putfield      #242                // Field skills$delegate:Lkotlin/Lazy;
+     524: aload_0
+     525: new           #244                // class com/openai/client/OpenAIClientImpl$videos$2
+     528: dup
+     529: aload_0
+     530: invokespecial #245                // Method com/openai/client/OpenAIClientImpl$videos$2."<init>":(Lcom/openai/client/OpenAIClientImpl;)V
+     533: checkcast     #94                 // class kotlin/jvm/functions/Function0
+     536: invokestatic  #100                // Method kotlin/LazyKt.lazy:(Lkotlin/jvm/functions/Function0;)Lkotlin/Lazy;
+     539: putfield      #248                // Field videos$delegate:Lkotlin/Lazy;
+     542: return
+
+  private final com.openai.client.OpenAIClientAsync getAsync();
+    Code:
+       0: aload_0
+       1: getfield      #104                // Field async$delegate:Lkotlin/Lazy;
+       4: astore_1
+       5: aload_1
+       6: invokeinterface #258,  1          // InterfaceMethod kotlin/Lazy.getValue:()Ljava/lang/Object;
+      11: checkcast     #260                // class com/openai/client/OpenAIClientAsync
+      14: areturn
+
+  private final com.openai.client.OpenAIClient$WithRawResponse getWithRawResponse();
+    Code:
+       0: aload_0
+       1: getfield      #110                // Field withRawResponse$delegate:Lkotlin/Lazy;
+       4: astore_1
+       5: aload_1
+       6: invokeinterface #258,  1          // InterfaceMethod kotlin/Lazy.getValue:()Ljava/lang/Object;
+      11: checkcast     #264                // class com/openai/client/OpenAIClient$WithRawResponse
+      14: areturn
+
+  private final com.openai.services.blocking.CompletionService getCompletions();
+    Code:
+       0: aload_0
+       1: getfield      #116                // Field completions$delegate:Lkotlin/Lazy;
+       4: astore_1
+       5: aload_1
+       6: invokeinterface #258,  1          // InterfaceMethod kotlin/Lazy.getValue:()Ljava/lang/Object;
+      11: checkcast     #268                // class com/openai/services/blocking/CompletionService
+      14: areturn
+
+  private final com.openai.services.blocking.ChatService getChat();
+    Code:
+       0: aload_0
+       1: getfield      #122                // Field chat$delegate:Lkotlin/Lazy;
+       4: astore_1
+       5: aload_1
+       6: invokeinterface #258,  1          // InterfaceMethod kotlin/Lazy.getValue:()Ljava/lang/Object;
+      11: checkcast     #272                // class com/openai/services/blocking/ChatService
+      14: areturn
+
+  private final com.openai.services.blocking.EmbeddingService getEmbeddings();
+    Code:
+       0: aload_0
+       1: getfield      #128                // Field embeddings$delegate:Lkotlin/Lazy;
+       4: astore_1
+       5: aload_1
+       6: invokeinterface #258,  1          // InterfaceMethod kotlin/Lazy.getValue:()Ljava/lang/Object;
+      11: checkcast     #276                // class com/openai/services/blocking/EmbeddingService
+      14: areturn
+
+  private final com.openai.services.blocking.FileService getFiles();
+    Code:
+       0: aload_0
+       1: getfield      #134                // Field files$delegate:Lkotlin/Lazy;
+       4: astore_1
+       5: aload_1
+       6: invokeinterface #258,  1          // InterfaceMethod kotlin/Lazy.getValue:()Ljava/lang/Object;
+      11: checkcast     #280                // class com/openai/services/blocking/FileService
+      14: areturn
+
+  private final com.openai.services.blocking.ImageService getImages();
+    Code:
+       0: aload_0
+       1: getfield      #140                // Field images$delegate:Lkotlin/Lazy;
+       4: astore_1
+       5: aload_1
+       6: invokeinterface #258,  1          // InterfaceMethod kotlin/Lazy.getValue:()Ljava/lang/Object;
+      11: checkcast     #284                // class com/openai/services/blocking/ImageService
+      14: areturn
+
+  private final com.openai.services.blocking.AudioService getAudio();
+    Code:
+       0: aload_0
+       1: getfield      #146                // Field audio$delegate:Lkotlin/Lazy;
+       4: astore_1
+       5: aload_1
+       6: invokeinterface #258,  1          // InterfaceMethod kotlin/Lazy.getValue:()Ljava/lang/Object;
+      11: checkcast     #288                // class com/openai/services/blocking/AudioService
+      14: areturn
+
+  private final com.openai.services.blocking.ModerationService getModerations();
+    Code:
+       0: aload_0
+       1: getfield      #152                // Field moderations$delegate:Lkotlin/Lazy;
+       4: astore_1
+       5: aload_1
+       6: invokeinterface #258,  1          // InterfaceMethod kotlin/Lazy.getValue:()Ljava/lang/Object;
+      11: checkcast     #292                // class com/openai/services/blocking/ModerationService
+      14: areturn
+
+  private final com.openai.services.blocking.ModelService getModels();
+    Code:
+       0: aload_0
+       1: getfield      #158                // Field models$delegate:Lkotlin/Lazy;
+       4: astore_1
+       5: aload_1
+       6: invokeinterface #258,  1          // InterfaceMethod kotlin/Lazy.getValue:()Ljava/lang/Object;
+      11: checkcast     #296                // class com/openai/services/blocking/ModelService
+      14: areturn
+
+  private final com.openai.services.blocking.FineTuningService getFineTuning();
+    Code:
+       0: aload_0
+       1: getfield      #164                // Field fineTuning$delegate:Lkotlin/Lazy;
+       4: astore_1
+       5: aload_1
+       6: invokeinterface #258,  1          // InterfaceMethod kotlin/Lazy.getValue:()Ljava/lang/Object;
+      11: checkcast     #300                // class com/openai/services/blocking/FineTuningService
+      14: areturn
+
+  private final com.openai.services.blocking.GraderService getGraders();
+    Code:
+       0: aload_0
+       1: getfield      #170                // Field graders$delegate:Lkotlin/Lazy;
+       4: astore_1
+       5: aload_1
+       6: invokeinterface #258,  1          // InterfaceMethod kotlin/Lazy.getValue:()Ljava/lang/Object;
+      11: checkcast     #304                // class com/openai/services/blocking/GraderService
+      14: areturn
+
+  private final com.openai.services.blocking.VectorStoreService getVectorStores();
+    Code:
+       0: aload_0
+       1: getfield      #176                // Field vectorStores$delegate:Lkotlin/Lazy;
+       4: astore_1
+       5: aload_1
+       6: invokeinterface #258,  1          // InterfaceMethod kotlin/Lazy.getValue:()Ljava/lang/Object;
+      11: checkcast     #308                // class com/openai/services/blocking/VectorStoreService
+      14: areturn
+
+  private final com.openai.services.blocking.WebhookService getWebhooks();
+    Code:
+       0: aload_0
+       1: getfield      #182                // Field webhooks$delegate:Lkotlin/Lazy;
+       4: astore_1
+       5: aload_1
+       6: invokeinterface #258,  1          // InterfaceMethod kotlin/Lazy.getValue:()Ljava/lang/Object;
+      11: checkcast     #312                // class com/openai/services/blocking/WebhookService
+      14: areturn
+
+  private final com.openai.services.blocking.BetaService getBeta();
+    Code:
+       0: aload_0
+       1: getfield      #188                // Field beta$delegate:Lkotlin/Lazy;
+       4: astore_1
+       5: aload_1
+       6: invokeinterface #258,  1          // InterfaceMethod kotlin/Lazy.getValue:()Ljava/lang/Object;
+      11: checkcast     #316                // class com/openai/services/blocking/BetaService
+      14: areturn
+
+  private final com.openai.services.blocking.BatchService getBatches();
+    Code:
+       0: aload_0
+       1: getfield      #194                // Field batches$delegate:Lkotlin/Lazy;
+       4: astore_1
+       5: aload_1
+       6: invokeinterface #258,  1          // InterfaceMethod kotlin/Lazy.getValue:()Ljava/lang/Object;
+      11: checkcast     #320                // class com/openai/services/blocking/BatchService
+      14: areturn
+
+  private final com.openai.services.blocking.UploadService getUploads();
+    Code:
+       0: aload_0
+       1: getfield      #200                // Field uploads$delegate:Lkotlin/Lazy;
+       4: astore_1
+       5: aload_1
+       6: invokeinterface #258,  1          // InterfaceMethod kotlin/Lazy.getValue:()Ljava/lang/Object;
+      11: checkcast     #324                // class com/openai/services/blocking/UploadService
+      14: areturn
+
+  private final com.openai.services.blocking.AdminService getAdmin();
+    Code:
+       0: aload_0
+       1: getfield      #206                // Field admin$delegate:Lkotlin/Lazy;
+       4: astore_1
+       5: aload_1
+       6: invokeinterface #258,  1          // InterfaceMethod kotlin/Lazy.getValue:()Ljava/lang/Object;
+      11: checkcast     #328                // class com/openai/services/blocking/AdminService
+      14: areturn
+
+  private final com.openai.services.blocking.ResponseService getResponses();
+    Code:
+       0: aload_0
+       1: getfield      #212                // Field responses$delegate:Lkotlin/Lazy;
+       4: astore_1
+       5: aload_1
+       6: invokeinterface #258,  1          // InterfaceMethod kotlin/Lazy.getValue:()Ljava/lang/Object;
+      11: checkcast     #332                // class com/openai/services/blocking/ResponseService
+      14: areturn
+
+  private final com.openai.services.blocking.RealtimeService getRealtime();
+    Code:
+       0: aload_0
+       1: getfield      #218                // Field realtime$delegate:Lkotlin/Lazy;
+       4: astore_1
+       5: aload_1
+       6: invokeinterface #258,  1          // InterfaceMethod kotlin/Lazy.getValue:()Ljava/lang/Object;
+      11: checkcast     #336                // class com/openai/services/blocking/RealtimeService
+      14: areturn
+
+  private final com.openai.services.blocking.ConversationService getConversations();
+    Code:
+       0: aload_0
+       1: getfield      #224                // Field conversations$delegate:Lkotlin/Lazy;
+       4: astore_1
+       5: aload_1
+       6: invokeinterface #258,  1          // InterfaceMethod kotlin/Lazy.getValue:()Ljava/lang/Object;
+      11: checkcast     #340                // class com/openai/services/blocking/ConversationService
+      14: areturn
+
+  private final com.openai.services.blocking.EvalService getEvals();
+    Code:
+       0: aload_0
+       1: getfield      #230                // Field evals$delegate:Lkotlin/Lazy;
+       4: astore_1
+       5: aload_1
+       6: invokeinterface #258,  1          // InterfaceMethod kotlin/Lazy.getValue:()Ljava/lang/Object;
+      11: checkcast     #344                // class com/openai/services/blocking/EvalService
+      14: areturn
+
+  private final com.openai.services.blocking.ContainerService getContainers();
+    Code:
+       0: aload_0
+       1: getfield      #236                // Field containers$delegate:Lkotlin/Lazy;
+       4: astore_1
+       5: aload_1
+       6: invokeinterface #258,  1          // InterfaceMethod kotlin/Lazy.getValue:()Ljava/lang/Object;
+      11: checkcast     #348                // class com/openai/services/blocking/ContainerService
+      14: areturn
+
+  private final com.openai.services.blocking.SkillService getSkills();
+    Code:
+       0: aload_0
+       1: getfield      #242                // Field skills$delegate:Lkotlin/Lazy;
+       4: astore_1
+       5: aload_1
+       6: invokeinterface #258,  1          // InterfaceMethod kotlin/Lazy.getValue:()Ljava/lang/Object;
+      11: checkcast     #352                // class com/openai/services/blocking/SkillService
+      14: areturn
+
+  private final com.openai.services.blocking.VideoService getVideos();
+    Code:
+       0: aload_0
+       1: getfield      #248                // Field videos$delegate:Lkotlin/Lazy;
+       4: astore_1
+       5: aload_1
+       6: invokeinterface #258,  1          // InterfaceMethod kotlin/Lazy.getValue:()Ljava/lang/Object;
+      11: checkcast     #356                // class com/openai/services/blocking/VideoService
+      14: areturn
+
+  public com.openai.client.OpenAIClientAsync async();
+    Code:
+       0: aload_0
+       1: invokespecial #359                // Method getAsync:()Lcom/openai/client/OpenAIClientAsync;
+       4: areturn
+
+  public com.openai.client.OpenAIClient$WithRawResponse withRawResponse();
+    Code:
+       0: aload_0
+       1: invokespecial #362                // Method getWithRawResponse:()Lcom/openai/client/OpenAIClient$WithRawResponse;
+       4: areturn
+
+  public com.openai.client.OpenAIClient withOptions(java.util.function.Consumer<com.openai.core.ClientOptions$Builder>);
+    Code:
+       0: aload_1
+       1: ldc_w         #367                // String modifier
+       4: invokestatic  #17                 // Method kotlin/jvm/internal/Intrinsics.checkNotNullParameter:(Ljava/lang/Object;Ljava/lang/String;)V
+       7: aload_0
+       8: getfield      #23                 // Field clientOptions:Lcom/openai/core/ClientOptions;
+      11: invokevirtual #47                 // Method com/openai/core/ClientOptions.toBuilder:()Lcom/openai/core/ClientOptions$Builder;
+      14: astore_2
+      15: aload_2
+      16: astore_3
+      17: iconst_0
+      18: istore        4
+      20: aload_1
+      21: aload_3
+      22: invokeinterface #373,  2          // InterfaceMethod java/util/function/Consumer.accept:(Ljava/lang/Object;)V
+      27: aload_2
+      28: invokevirtual #84                 // Method com/openai/core/ClientOptions$Builder.build:()Lcom/openai/core/ClientOptions;
+      31: astore        5
+      33: new           #2                  // class com/openai/client/OpenAIClientImpl
+      36: dup
+      37: aload         5
+      39: invokespecial #375                // Method "<init>":(Lcom/openai/core/ClientOptions;)V
+      42: checkcast     #6                  // class com/openai/client/OpenAIClient
+      45: areturn
+
+  public com.openai.services.blocking.CompletionService completions();
+    Code:
+       0: aload_0
+       1: invokespecial #383                // Method getCompletions:()Lcom/openai/services/blocking/CompletionService;
+       4: areturn
+
+  public com.openai.services.blocking.ChatService chat();
+    Code:
+       0: aload_0
+       1: invokespecial #386                // Method getChat:()Lcom/openai/services/blocking/ChatService;
+       4: areturn
+
+  public com.openai.services.blocking.EmbeddingService embeddings();
+    Code:
+       0: aload_0
+       1: invokespecial #389                // Method getEmbeddings:()Lcom/openai/services/blocking/EmbeddingService;
+       4: areturn
+
+  public com.openai.services.blocking.FileService files();
+    Code:
+       0: aload_0
+       1: invokespecial #392                // Method getFiles:()Lcom/openai/services/blocking/FileService;
+       4: areturn
+
+  public com.openai.services.blocking.ImageService images();
+    Code:
+       0: aload_0
+       1: invokespecial #395                // Method getImages:()Lcom/openai/services/blocking/ImageService;
+       4: areturn
+
+  public com.openai.services.blocking.AudioService audio();
+    Code:
+       0: aload_0
+       1: invokespecial #398                // Method getAudio:()Lcom/openai/services/blocking/AudioService;
+       4: areturn
+
+  public com.openai.services.blocking.ModerationService moderations();
+    Code:
+       0: aload_0
+       1: invokespecial #401                // Method getModerations:()Lcom/openai/services/blocking/ModerationService;
+       4: areturn
+
+  public com.openai.services.blocking.ModelService models();
+    Code:
+       0: aload_0
+       1: invokespecial #404                // Method getModels:()Lcom/openai/services/blocking/ModelService;
+       4: areturn
+
+  public com.openai.services.blocking.FineTuningService fineTuning();
+    Code:
+       0: aload_0
+       1: invokespecial #407                // Method getFineTuning:()Lcom/openai/services/blocking/FineTuningService;
+       4: areturn
+
+  public com.openai.services.blocking.GraderService graders();
+    Code:
+       0: aload_0
+       1: invokespecial #410                // Method getGraders:()Lcom/openai/services/blocking/GraderService;
+       4: areturn
+
+  public com.openai.services.blocking.VectorStoreService vectorStores();
+    Code:
+       0: aload_0
+       1: invokespecial #413                // Method getVectorStores:()Lcom/openai/services/blocking/VectorStoreService;
+       4: areturn
+
+  public com.openai.services.blocking.WebhookService webhooks();
+    Code:
+       0: aload_0
+       1: invokespecial #416                // Method getWebhooks:()Lcom/openai/services/blocking/WebhookService;
+       4: areturn
+
+  public com.openai.services.blocking.BetaService beta();
+    Code:
+       0: aload_0
+       1: invokespecial #419                // Method getBeta:()Lcom/openai/services/blocking/BetaService;
+       4: areturn
+
+  public com.openai.services.blocking.BatchService batches();
+    Code:
+       0: aload_0
+       1: invokespecial #422                // Method getBatches:()Lcom/openai/services/blocking/BatchService;
+       4: areturn
+
+  public com.openai.services.blocking.UploadService uploads();
+    Code:
+       0: aload_0
+       1: invokespecial #425                // Method getUploads:()Lcom/openai/services/blocking/UploadService;
+       4: areturn
+
+  public com.openai.services.blocking.AdminService admin();
+    Code:
+       0: aload_0
+       1: invokespecial #428                // Method getAdmin:()Lcom/openai/services/blocking/AdminService;
+       4: areturn
+
+  public com.openai.services.blocking.ResponseService responses();
+    Code:
+       0: aload_0
+       1: invokespecial #431                // Method getResponses:()Lcom/openai/services/blocking/ResponseService;
+       4: areturn
+
+  public com.openai.services.blocking.RealtimeService realtime();
+    Code:
+       0: aload_0
+       1: invokespecial #434                // Method getRealtime:()Lcom/openai/services/blocking/RealtimeService;
+       4: areturn
+
+  public com.openai.services.blocking.ConversationService conversations();
+    Code:
+       0: aload_0
+       1: invokespecial #437                // Method getConversations:()Lcom/openai/services/blocking/ConversationService;
+       4: areturn
+
+  public com.openai.services.blocking.EvalService evals();
+    Code:
+       0: aload_0
+       1: invokespecial #440                // Method getEvals:()Lcom/openai/services/blocking/EvalService;
+       4: areturn
+
+  public com.openai.services.blocking.ContainerService containers();
+    Code:
+       0: aload_0
+       1: invokespecial #443                // Method getContainers:()Lcom/openai/services/blocking/ContainerService;
+       4: areturn
+
+  public com.openai.services.blocking.SkillService skills();
+    Code:
+       0: aload_0
+       1: invokespecial #446                // Method getSkills:()Lcom/openai/services/blocking/SkillService;
+       4: areturn
+
+  public com.openai.services.blocking.VideoService videos();
+    Code:
+       0: aload_0
+       1: invokespecial #449                // Method getVideos:()Lcom/openai/services/blocking/VideoService;
+       4: areturn
+
+  public void close();
+    Code:
+       0: aload_0
+       1: getfield      #23                 // Field clientOptions:Lcom/openai/core/ClientOptions;
+       4: invokevirtual #452                // Method com/openai/core/ClientOptions.close:()V
+       7: return
+
+  public static final com.openai.core.ClientOptions access$getClientOptions$p(com.openai.client.OpenAIClientImpl);
+    Code:
+       0: aload_0
+       1: getfield      #23                 // Field clientOptions:Lcom/openai/core/ClientOptions;
+       4: areturn
+
+  public static final com.openai.core.ClientOptions access$getClientOptionsWithUserAgent$p(com.openai.client.OpenAIClientImpl);
+    Code:
+       0: aload_0
+       1: getfield      #87                 // Field clientOptionsWithUserAgent:Lcom/openai/core/ClientOptions;
+       4: areturn
+}

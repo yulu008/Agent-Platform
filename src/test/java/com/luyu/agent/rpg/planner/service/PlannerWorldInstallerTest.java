@@ -1,0 +1,435 @@
+package com.luyu.agent.rpg.planner.service;
+
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.NoSuchElementException;
+import java.util.Optional;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.mockito.ArgumentCaptor;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
+
+import com.luyu.agent.rpg.planner.config.RpgPlannerProperties;
+import com.luyu.agent.rpg.planner.engine.PlannerGenerationGuard;
+import com.luyu.agent.rpg.planner.engine.PlannerGenerationGuard;
+import com.luyu.agent.rpg.model.CharacterCard;
+import com.luyu.agent.rpg.model.DestinedFigure;
+import com.luyu.agent.rpg.model.WorldSetting;
+import com.luyu.agent.rpg.model.WorldbookEntry;
+import com.luyu.agent.rpg.planner.model.PipelineManifest;
+import com.luyu.agent.rpg.planner.model.PipelineRun;
+import com.luyu.agent.rpg.planner.model.PipelineRunStatus;
+import com.luyu.agent.rpg.planner.model.PipelineStage;
+import com.luyu.agent.rpg.planner.model.PipelineStageStatus;
+import com.luyu.agent.rpg.planner.repository.PipelineRunRepository;
+import com.luyu.agent.rpg.repository.RpgCharacterCardRepository;
+import com.luyu.agent.rpg.repository.RpgDestinedFigureRepository;
+import com.luyu.agent.rpg.repository.RpgWorldSettingRepository;
+import com.luyu.agent.rpg.repository.RpgWorldbookEntryRepository;
+import com.luyu.agent.rpg.story.engine.StoryGraphParser;
+import com.luyu.agent.rpg.story.engine.StoryGraphValidator;
+import com.luyu.agent.rpg.story.model.StoryGraph;
+import com.luyu.agent.rpg.story.repository.RpgStoryGraphRepository;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+/**
+ * 成稿安装服务测试（add-planner-pipeline tasks 5.1，spec planner-world-install）。
+ * <p>
+ * 钉住：守卫链（前置阶段未全确认 / 终态不可装 / run 不存在 / manifest 缺失 /
+ * 世界名缺失——全部零写入）；物化映射（毖候选隔离、narrative_rules 落列、
+ * 命定档案全量重写）；安装原子性（任一写入失败事务回滚、不收口、run 停
+ * AWAITING 可重试）；重复安装产出独立世界（每次新 world_id）；故事图物化
+ * （story-graph-authoring tasks 5.2：S4.5 拼接产物 → 模板层图行，产物
+ * 缺失/坏 JSON 拒绝零写入）。
+ * <p>
+ * 装配惯例对齐 {@code PipelineRunServiceTest}：repo 全 mock、工作区走真实
+ * 文件（@TempDir）；run 收口走<b>真实</b> PipelineRunService（manifest 真实
+ * 序列化往返）；事务走真实 TransactionTemplate + mock 事务管理器（可断言
+ * commit/rollback 语义而非空转回调）；故事图解析/校验走真实纯组件
+ * （StoryGraphParser/StoryGraphValidator 同链语义）。
+ */
+class PlannerWorldInstallerTest {
+
+    private static final String WORLD_DRAFT = """
+            ## 名称
+            冥星武将录
+            ## 时代
+            战国末期
+            ## 氛围
+            黑暗幻想
+            ## 规则
+            - 星命决定命运
+            ## 世界描述
+            冥星升起的世界。
+            ## 开场白模板
+            你在烽烟中睁开双眼。
+            ## 世界书条目
+            ### 冥星
+            关键词：冥星,天灾
+            条目正文：每隔四十九年现世的灾星。
+            """;
+
+    private static final String PLOT_DRAFT = """
+            ## 主线大纲
+            主线从甲的复仇开始。
+            ## 叙事规则
+            - 每章聚焦一名武将
+            """;
+
+    private static final String CHARACTER_WITH_DESTINED = """
+            ## 人物 1：甲
+            - 身份：军师
+            - 性格：狡黠
+            - 背景：没落贵族之后
+            - 动机：复仇
+            - 说话风格：文雅而毒舌
+            - 知识：星象学,兵法
+            ### 命定档案
+            - faction：织田家
+            - constellation：天魁星
+            - starRank：主星
+            - eraNote：战国末期
+            """;
+
+    private static final String CHARACTER_PLAIN = """
+            ## 人物 2：乙
+            - 身份：浪人
+            - 性格：沉默
+            - 背景：来历不明
+            - 动机：寻刀
+            - 说话风格：寡言
+            - 知识：剑术
+            """;
+
+    private static final String BRANCH_STAR = """
+            ## 分支 1：暗杀线
+            触发词：暗杀,夜袭
+            优先级：10
+            轨位：star
+            注入内容：天魁星的光芒会先一步黯淡。
+            """;
+
+    /** S4.5 拼接产物（stitchAndPersistGraph 落盘形态：<story_graph> 块包裹 + acts + state_schema） */
+    private static final String STORY_GRAPH_ARTIFACT = """
+            <story_graph>
+            {
+              "acts": [
+                {"id": "act1", "theme": "初遇",
+                 "converge_to": [{"orbit": "信任线", "guard": {"key": "trust_信长", "op": ">=", "value": 30}}],
+                 "nodes": [
+                   {"id": "n1_01", "type": "scene", "beat": "夜探织田邸",
+                    "on_enter": {"trust_信长": 10}},
+                   {"id": "n1_03", "type": "scene", "beat": "密谈"},
+                   {"id": "n1_09", "type": "ending", "beat": "终局"}],
+                 "edges": [
+                   {"id": "e1_01", "from": "n1_01", "to": "n1_03", "label": "示好",
+                    "effects": {"trust_信长": 5}},
+                   {"id": "e1_02", "from": "n1_03", "to": "n1_09", "label": "终局",
+                    "effects": {"trust_信长": 3}}]}
+              ],
+              "state_schema": {"trust_信长": {"type": "number"}}
+            }
+            </story_graph>
+            """;
+
+    @TempDir
+    Path tempDir;
+
+    private PipelineRunRepository runRepository;
+    private PlannerWorkspaceStore workspaceStore;
+    private PipelineRunService runService;
+    private RpgWorldSettingRepository worldRepo;
+    private RpgCharacterCardRepository characterRepo;
+    private RpgDestinedFigureRepository destinedFigureRepo;
+    private RpgWorldbookEntryRepository worldbookRepo;
+    private RpgStoryGraphRepository graphRepo;
+    private PlatformTransactionManager transactionManager;
+    private PlannerWorldInstaller installer;
+
+    @BeforeEach
+    void setUp() {
+        runRepository = mock(PipelineRunRepository.class);
+        workspaceStore = new PlannerWorkspaceStore(() -> tempDir);
+        runService = new PipelineRunService(runRepository, workspaceStore,
+                new RpgPlannerProperties(), new PlannerGenerationGuard());
+        worldRepo = mock(RpgWorldSettingRepository.class);
+        characterRepo = mock(RpgCharacterCardRepository.class);
+        destinedFigureRepo = mock(RpgDestinedFigureRepository.class);
+        worldbookRepo = mock(RpgWorldbookEntryRepository.class);
+        graphRepo = mock(RpgStoryGraphRepository.class);
+        transactionManager = mock(PlatformTransactionManager.class);
+        installer = new PlannerWorldInstaller(runRepository, workspaceStore, runService,
+                worldRepo, characterRepo, destinedFigureRepo, worldbookRepo,
+                graphRepo, new StoryGraphParser(), new StoryGraphValidator(),
+                new TransactionTemplate(transactionManager));
+    }
+
+    // ===== 安装成功：物化映射 + 收口 =====
+
+    @Test
+    void 安装成功物化全部实体并收口COMPLETED() {
+        String runId = readyRun();
+
+        PlannerWorldInstaller.InstallResult result = installer.install(runId);
+
+        assertThat(result.worldId()).isNotBlank();
+        assertThat(result.worldName()).isEqualTo("冥星武将录");
+        // 1 世界书条目 + 1 人物卡（乙被毙）+ 1 命定档案 + 1 分支条目
+        assertThat(result.entryCount()).isEqualTo(4);
+
+        ArgumentCaptor<WorldSetting> worldCaptor = ArgumentCaptor.forClass(WorldSetting.class);
+        verify(worldRepo).save(worldCaptor.capture());
+        WorldSetting world = worldCaptor.getValue();
+        assertThat(world.getId()).isEqualTo(result.worldId());
+        assertThat(world.getName()).isEqualTo("冥星武将录");
+        assertThat(world.getLocations()).isEqualTo("[]");
+        assertThat(world.getNarrativeRules()).contains("每章聚焦一名武将");
+        // 覆盖/主题令牌不落值（前端渐变兜底 + 默认 HUD 主题）
+        assertThat(world.getCover()).isNull();
+        assertThat(world.getThemeTokens()).isNull();
+
+        // 毙候选隔离：只物化甲（candidate-01），乙（REJECTED）零写入
+        ArgumentCaptor<CharacterCard> cardCaptor = ArgumentCaptor.forClass(CharacterCard.class);
+        verify(characterRepo, times(1)).save(cardCaptor.capture());
+        assertThat(cardCaptor.getValue().getName()).isEqualTo("甲");
+
+        ArgumentCaptor<List<DestinedFigure>> figureCaptor = ArgumentCaptor.forClass(List.class);
+        verify(destinedFigureRepo).rewriteAll(eq(result.worldId()), figureCaptor.capture());
+        assertThat(figureCaptor.getValue()).hasSize(1);
+        assertThat(figureCaptor.getValue().get(0).getFigureKey()).isEqualTo("甲");
+
+        // 1 世界书条目 + 1 分支条目 = 2 次模板行 INSERT
+        verify(worldbookRepo, times(2)).save(any(WorldbookEntry.class));
+
+        // 故事图物化（tasks 5.2）：S4.5 拼接产物 → 模板层图行（bounded 缺省 +
+        // 修复后 acts + 词汇表），名 = 世界名·主线（工坊下拉可辨）
+        assertThat(result.storyGraphId()).isNotBlank();
+        assertThat(result.storyGraphNodeCount()).isEqualTo(3);
+        ArgumentCaptor<StoryGraph> graphCaptor = ArgumentCaptor.forClass(StoryGraph.class);
+        verify(graphRepo).save(graphCaptor.capture());
+        StoryGraph savedGraph = graphCaptor.getValue();
+        assertThat(savedGraph.getId()).isEqualTo(result.storyGraphId());
+        assertThat(savedGraph.getWorldId()).isEqualTo(result.worldId());
+        assertThat(savedGraph.getName()).isEqualTo("冥星武将录·主线");
+        assertThat(savedGraph.getImproviseMode()).isEqualTo("bounded");
+        assertThat(savedGraph.getStateSchema()).contains("trust_信长");
+        assertThat(savedGraph.getGraphJson()).contains("n1_01").contains("e1_02");
+
+        // 收口：manifest 双状态 + 库表同步（D3 写序）
+        PipelineManifest manifest = workspaceStore.readManifest(runId);
+        assertThat(manifest.getStatus()).isEqualTo(PipelineRunStatus.COMPLETED.name());
+        assertThat(manifest.getCurrentStage()).isEqualTo(PipelineStage.S6_INSTALL.code());
+        assertThat(manifest.stage(PipelineStage.S6_INSTALL.code()).getStatus())
+                .isEqualTo(PipelineStageStatus.CONFIRMED.name());
+        verify(runRepository).updateProgress(runId,
+                PipelineStage.S6_INSTALL.code(), PipelineRunStatus.COMPLETED.name());
+        verify(transactionManager).commit(any());
+    }
+
+    @Test
+    void 重复安装产出独立世界() {
+        String runId = readyRun();
+
+        PlannerWorldInstaller.InstallResult first = installer.install(runId);
+        // 第一次安装后 run 已 COMPLETED——重装守卫放行（spec「重复安装产出独立世界」）
+        PlannerWorldInstaller.InstallResult second = installer.install(runId);
+
+        assertThat(second.worldId()).isNotEqualTo(first.worldId());
+        assertThat(second.worldName()).isEqualTo(first.worldName());
+        verify(worldRepo, times(2)).save(any(WorldSetting.class));
+        // 故事图同样独立：每次安装新图 id（同 world 模板层多图）
+        assertThat(second.storyGraphId()).isNotEqualTo(first.storyGraphId());
+        assertThat(second.storyGraphNodeCount()).isEqualTo(first.storyGraphNodeCount());
+        verify(graphRepo, times(2)).save(any(StoryGraph.class));
+        verify(runRepository, times(2)).updateProgress(runId,
+                PipelineStage.S6_INSTALL.code(), PipelineRunStatus.COMPLETED.name());
+    }
+
+    // ===== 守卫链（全部零写入） =====
+
+    @Test
+    void 前置阶段未全确认拒绝且零写入() {
+        String runId = readyRun();
+        // 回退 S4 为未确认（模拟 S5 确认前的中间态）
+        PipelineManifest manifest = workspaceStore.readManifest(runId);
+        manifest.stage(PipelineStage.S4_PLOT_STRUCTURE.code())
+                .setStatus(PipelineStageStatus.AWAITING_CONFIRM.name());
+        workspaceStore.writeManifest(runId, manifest);
+
+        assertThatThrownBy(() -> installer.install(runId))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("前置阶段未全部确认")
+                .hasMessageContaining("S4");
+        verifyNoWrites();
+    }
+
+    @Test
+    void run不存在返回404语义() {
+        when(runRepository.findById("run-x")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> installer.install("run-x"))
+                .isInstanceOf(NoSuchElementException.class)
+                .hasMessageContaining("run-x");
+        verifyNoWrites();
+    }
+
+    @Test
+    void manifest缺失拒绝() {
+        when(runRepository.findById("run-y")).thenReturn(Optional.of(dbRun("run-y")));
+
+        assertThatThrownBy(() -> installer.install("run-y"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("manifest 缺失");
+        verifyNoWrites();
+    }
+
+    @Test
+    void 已放弃run拒绝安装() {
+        String runId = readyRun();
+        PipelineManifest manifest = workspaceStore.readManifest(runId);
+        manifest.setStatus(PipelineRunStatus.ABANDONED.name());
+        workspaceStore.writeManifest(runId, manifest);
+
+        assertThatThrownBy(() -> installer.install(runId))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("ABANDONED");
+        verifyNoWrites();
+    }
+
+    @Test
+    void 世界名缺失拒绝安装零写入() {
+        String runId = readyRun();
+        workspaceStore.writeStageArtifact(runId, PipelineStage.S2_WORLD_SETTING,
+                "## 时代\n只有时代没有名称小节\n");
+
+        assertThatThrownBy(() -> installer.install(runId))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("名称");
+        verifyNoWrites();
+    }
+
+    // ===== 故事图物化（story-graph-authoring tasks 5.2） =====
+
+    @Test
+    void S45拼接产物缺失拒绝安装零写入() {
+        String runId = readyRun();
+        workspaceStore.writeStageArtifact(runId, PipelineStage.S4P5_STORY_GRAPH, "");
+
+        assertThatThrownBy(() -> installer.install(runId))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("拼接产物缺失");
+        verifyNoWrites();
+    }
+
+    @Test
+    void S45拼接产物坏JSON拒绝安装零写入() {
+        String runId = readyRun();
+        workspaceStore.writeStageArtifact(runId, PipelineStage.S4P5_STORY_GRAPH,
+                "<story_graph>\n不是合法JSON\n</story_graph>");
+
+        assertThatThrownBy(() -> installer.install(runId))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("解析失败");
+        verifyNoWrites();
+    }
+
+    // ===== 安装原子性 =====
+
+    @Test
+    void 物化写入失败整体回滚不收口() {
+        String runId = readyRun();
+        doThrow(new RuntimeException("db down")).when(worldRepo).save(any(WorldSetting.class));
+
+        assertThatThrownBy(() -> installer.install(runId))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("db down");
+
+        // 事务回滚（安装原子性：零残留）；后续写入全部未执行
+        verify(transactionManager).rollback(any());
+        verify(characterRepo, never()).save(any());
+        verify(destinedFigureRepo, never()).rewriteAll(anyString(), anyList());
+        verify(worldbookRepo, never()).save(any());
+        verify(graphRepo, never()).save(any());
+        // 不收口：run 停在 AWAITING 可重试（重试产出新 world_id）
+        verify(runRepository, never()).updateProgress(anyString(), anyString(), anyString());
+        PipelineManifest manifest = workspaceStore.readManifest(runId);
+        assertThat(manifest.getStatus()).isEqualTo(PipelineRunStatus.AWAITING.name());
+        assertThat(manifest.stage(PipelineStage.S6_INSTALL.code()).getStatus())
+                .isEqualTo(PipelineStageStatus.NOT_STARTED.name());
+        verify(transactionManager, never()).commit(any());
+    }
+
+    // ===== 辅助 =====
+
+    /** 造一个可安装的 run：S1-S5 全 CONFIRMED、run AWAITING、产物落盘、S3 候选乙被毙。 */
+    private String readyRun() {
+        PipelineRun run = runService.createRun("text", "faithful", "原文内容", null, null);
+        String runId = run.getId();
+
+        workspaceStore.writeStageArtifact(runId, PipelineStage.S2_WORLD_SETTING, WORLD_DRAFT);
+        workspaceStore.writeStageArtifact(runId, PipelineStage.S4_PLOT_STRUCTURE, PLOT_DRAFT);
+        workspaceStore.writeStageArtifact(runId, PipelineStage.S4P5_STORY_GRAPH,
+                STORY_GRAPH_ARTIFACT);
+        workspaceStore.writeStageCandidates(runId, PipelineStage.S3_CHARACTERS,
+                List.of(CHARACTER_WITH_DESTINED, CHARACTER_PLAIN));
+        workspaceStore.writeStageCandidates(runId, PipelineStage.S5_BRANCH_DESIGN,
+                List.of(BRANCH_STAR));
+
+        PipelineManifest manifest = workspaceStore.readManifest(runId);
+        for (PipelineStage stage : PipelineStage.values()) {
+            if (stage != PipelineStage.S6_INSTALL) {
+                manifest.stage(stage.code()).setStatus(PipelineStageStatus.CONFIRMED.name());
+            }
+        }
+        List<PipelineManifest.CandidateState> s3 = new ArrayList<>();
+        s3.add(new PipelineManifest.CandidateState("candidate-01", "人物 1：甲", "CONFIRMED"));
+        s3.add(new PipelineManifest.CandidateState("candidate-02", "人物 2：乙", "REJECTED"));
+        manifest.stage(PipelineStage.S3_CHARACTERS.code()).setCandidates(s3);
+        List<PipelineManifest.CandidateState> s5 = new ArrayList<>();
+        s5.add(new PipelineManifest.CandidateState("candidate-01", "分支：暗杀线", "CONFIRMED"));
+        manifest.stage(PipelineStage.S5_BRANCH_DESIGN.code()).setCandidates(s5);
+        manifest.setStatus(PipelineRunStatus.AWAITING.name());
+        manifest.setCurrentStage(PipelineStage.S6_INSTALL.code());
+        workspaceStore.writeManifest(runId, manifest);
+
+        when(runRepository.findById(runId)).thenReturn(Optional.of(dbRun(runId)));
+        return runId;
+    }
+
+    /** 库表侧 run 行（守卫只读 id 与存在性）。 */
+    private static PipelineRun dbRun(String runId) {
+        PipelineRun run = new PipelineRun();
+        run.setId(runId);
+        run.setName("测试 run");
+        run.setSourceMode("text");
+        run.setStyleMode("faithful");
+        run.setCurrentStage(PipelineStage.S6_INSTALL.code());
+        run.setStatus(PipelineRunStatus.AWAITING.name());
+        return run;
+    }
+
+    private void verifyNoWrites() {
+        verify(worldRepo, never()).save(any());
+        verify(characterRepo, never()).save(any());
+        verify(destinedFigureRepo, never()).rewriteAll(anyString(), anyList());
+        verify(worldbookRepo, never()).save(any());
+        verify(graphRepo, never()).save(any());
+        verify(runRepository, never()).updateProgress(anyString(), anyString(), anyString());
+    }
+}

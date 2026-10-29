@@ -10,7 +10,9 @@ import org.springframework.core.Ordered;
  * <p>
  * 注册在最高优先级（{@link Ordered#HIGHEST_PRECEDENCE}），确保在所有其他过滤器之前执行。
  */
-@Configuration
+// 已禁用：JwtAuthFilter 期望 Bearer header，与 tenancy.JwtTenantFilter（cookie-based）冲突。
+// 认证过滤器统一由 tenancy.JwtTenantFilter 处理。
+// @Configuration
 public class AuthFilterConfiguration {
 
     @Bean

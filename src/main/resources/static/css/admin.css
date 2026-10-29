@@ -1,6 +1,7 @@
 /* 管理端样式（tenant-token-metering / tasks 8.5）
  * 视觉风格与 RPG 首页保持一致：浅色底 + 白面板 + 品牌红（#e94560 / #c73650）。
- * 设计令牌取自 rpg.css（.rpg-header / .header-btn / .tab-btn / .save-card / .new-adventure-card）。 */
+ * 顶栏已统一至 fragments/sidebar + sidebar.css（global-sidebar-nav，承接 unified-global-topbar），
+ * 原 .admin-header / .back-btn 退役。 */
 :root {
     --bg: #f5f7fa;
     --panel: #ffffff;
@@ -38,25 +39,8 @@ body {
     vertical-align: middle;
 }
 
-.admin-header {
-    display: flex; align-items: center; gap: 14px;
-    padding: 12px 24px;
-    background: var(--panel);
-    border-bottom: 1px solid var(--border);
-    box-shadow: var(--shadow);
-    position: sticky; top: 0; z-index: 10;
-}
-.admin-header h1 { font-size: 18px; margin: 0; font-weight: 600; color: var(--text-strong); display: flex; align-items: center; }
+/* 统计窗口元信息：随顶栏退役下移至用量看板工具行右侧 */
 .admin-header-meta { margin-left: auto; color: var(--faint); font-size: 12px; }
-.back-btn {
-    display: inline-flex; align-items: center; justify-content: center;
-    width: 32px; height: 32px; border-radius: 6px;
-    color: #344054; text-decoration: none;
-    background: #f2f4f7;
-    border: 1px solid var(--border-strong);
-}
-.back-btn:hover { background: var(--border); color: var(--accent-dark); }
-.back-btn svg { width: 18px; height: 18px; }
 
 .admin-tabs {
     display: flex; gap: 4px;

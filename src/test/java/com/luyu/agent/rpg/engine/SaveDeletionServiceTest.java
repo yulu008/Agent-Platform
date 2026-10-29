@@ -4,6 +4,8 @@ import com.luyu.agent.rpg.model.GameState;
 import com.luyu.agent.rpg.repository.RpgEventLogRepository;
 import com.luyu.agent.rpg.repository.RpgGameStateRepository;
 import com.luyu.agent.rpg.repository.RpgGameStateSnapshotRepository;
+import com.luyu.agent.rpg.repository.RpgLorebookSetRepository;
+import com.luyu.agent.rpg.repository.RpgStarIncarnationRuntimeRepository;
 import com.luyu.agent.rpg.repository.RpgTriggerRuntimeRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -33,8 +35,9 @@ import static org.mockito.Mockito.when;
 /**
  * {@link SaveDeletionService} 的单元测试（纯 Mockito + 临时目录）。
  * <p>
- * 钉住删档编排的核心行为：全量级联清理顺序（session 事件 → 版本 bump →
- * 附属表 → 主行最后删）、404/409 语义、事务内互斥复查、文件清理成功与失败降级。
+ * 钉住删档编排的核心行为：全量级联清理顺序（session 事件 → 连壳删
+ * AI_SESSION 行 → 附属表 → 主行最后删）、404/409 语义、事务内互斥复查、
+ * 文件清理成功与失败降级。
  */
 class SaveDeletionServiceTest {
 
@@ -45,7 +48,9 @@ class SaveDeletionServiceTest {
     private RpgGameStateRepository stateRepo;
     private RpgEventLogRepository eventLogRepo;
     private RpgTriggerRuntimeRepository triggerRuntimeRepo;
+    private RpgStarIncarnationRuntimeRepository starRuntimeRepo;
     private RpgGameStateSnapshotRepository snapshotRepo;
+    private RpgLorebookSetRepository lorebookSetRepo;
     private TurnGuardService turnGuardService;
     private SaveDeletionService service;
 
@@ -58,7 +63,9 @@ class SaveDeletionServiceTest {
         stateRepo = mock(RpgGameStateRepository.class);
         eventLogRepo = mock(RpgEventLogRepository.class);
         triggerRuntimeRepo = mock(RpgTriggerRuntimeRepository.class);
+        starRuntimeRepo = mock(RpgStarIncarnationRuntimeRepository.class);
         snapshotRepo = mock(RpgGameStateSnapshotRepository.class);
+        lorebookSetRepo = mock(RpgLorebookSetRepository.class);
         turnGuardService = mock(TurnGuardService.class);
         when(turnGuardService.isInTurn(GS_ID)).thenReturn(false);
 
@@ -71,7 +78,7 @@ class SaveDeletionServiceTest {
         when(stateRepo.findById(GS_ID)).thenReturn(gs);
 
         service = new SaveDeletionService(jdbcTemplate, stateRepo, eventLogRepo,
-                triggerRuntimeRepo, snapshotRepo, turnGuardService,
+                triggerRuntimeRepo, starRuntimeRepo, snapshotRepo, lorebookSetRepo, turnGuardService,
                 mock(PlatformTransactionManager.class), savesRoot);
     }
 
@@ -91,16 +98,45 @@ class SaveDeletionServiceTest {
         int removed = service.deleteSave(GS_ID);
 
         assertThat(removed).isEqualTo(7);
-        InOrder inOrder = inOrder(jdbcTemplate, eventLogRepo, triggerRuntimeRepo, snapshotRepo, stateRepo);
+        InOrder inOrder = inOrder(jdbcTemplate, eventLogRepo, triggerRuntimeRepo, starRuntimeRepo,
+                snapshotRepo, lorebookSetRepo, stateRepo);
         inOrder.verify(jdbcTemplate).update(contains("AI_SESSION_EVENT"), eq(SESSION_ID));
-        inOrder.verify(jdbcTemplate).update(contains("event_version"), eq(SESSION_ID));
+        // 壳后于事件删（separate-rpg-chat-sessions D4）：不留幽灵空壳，无事件顺序倒置
+        inOrder.verify(jdbcTemplate).update(eq("DELETE FROM AI_SESSION WHERE id = ?"), eq(SESSION_ID));
         inOrder.verify(eventLogRepo).deleteByGameStateId(GS_ID);
         inOrder.verify(triggerRuntimeRepo).deleteByGameStateId(GS_ID);
+        inOrder.verify(starRuntimeRepo).deleteByGameStateId(GS_ID);
         inOrder.verify(snapshotRepo).deleteByGameStateId(GS_ID);
+        // 世界书副本孤儿化（add-rpg-lorebook-sets D7）：不级联删，仅解除存档引用
+        inOrder.verify(lorebookSetRepo).orphanizeByGameStateId(GS_ID);
         // 主行最后删
         inOrder.verify(stateRepo).deleteById(GS_ID);
         assertThat(memoryDir).doesNotExist();
         assertThat(snapshotDir).doesNotExist();
+    }
+
+    @Test
+    void 删档连壳删_壳与事件行均执行DELETE且无版本bump残留() {
+        when(jdbcTemplate.update(contains("AI_SESSION_EVENT"), eq(SESSION_ID))).thenReturn(3);
+
+        service.deleteSave(GS_ID);
+
+        // 事件与壳都被同事务 DELETE（separate-rpg-chat-sessions D4：删档零残留）
+        verify(jdbcTemplate).update(contains("AI_SESSION_EVENT"), eq(SESSION_ID));
+        verify(jdbcTemplate).update(eq("DELETE FROM AI_SESSION WHERE id = ?"), eq(SESSION_ID));
+        // 原 bump event_version 已随壳删除移除，不得再出现 UPDATE AI_SESSION
+        verify(jdbcTemplate, never()).update(contains("event_version"), anyString());
+        verify(jdbcTemplate, never()).update(contains("UPDATE AI_SESSION"), anyString());
+    }
+
+    @Test
+    void 删存档时世界书set仅孤儿化_绝不删除set元数据() {
+        service.deleteSave(GS_ID);
+
+        // D7 孤儿存活（5.4）：只解除存档引用（game_state_id=NULL），不删 set、不删双轨条目行，
+        // 删档后该 set 仍可作为新局继承来源
+        verify(lorebookSetRepo).orphanizeByGameStateId(GS_ID);
+        verify(lorebookSetRepo, never()).deleteOrphan(any());
     }
 
     @Test
@@ -176,7 +212,7 @@ class SaveDeletionServiceTest {
     @Test
     void 文件清理失败时降级为成功返回() throws IOException {
         SaveDeletionService failing = new SaveDeletionService(jdbcTemplate, stateRepo, eventLogRepo,
-                triggerRuntimeRepo, snapshotRepo, turnGuardService,
+                triggerRuntimeRepo, starRuntimeRepo, snapshotRepo, lorebookSetRepo, turnGuardService,
                 mock(PlatformTransactionManager.class), savesRoot) {
             @Override
             void deleteDir(Path dir) throws IOException {

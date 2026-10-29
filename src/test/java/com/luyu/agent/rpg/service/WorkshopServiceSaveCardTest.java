@@ -8,11 +8,16 @@ import com.luyu.agent.rpg.repository.RpgCharacterCardRepository;
 import com.luyu.agent.rpg.repository.RpgGameStateRepository;
 import com.luyu.agent.rpg.repository.RpgLocationRepository;
 import com.luyu.agent.rpg.repository.RpgRelationshipRepository;
+import com.luyu.agent.rpg.repository.RpgStarIncarnationRepository;
+import com.luyu.agent.rpg.repository.RpgStarIncarnationRuntimeRepository;
+import com.luyu.agent.rpg.repository.RpgWorldbookEntryRepository;
 import com.luyu.agent.rpg.repository.RpgTriggerRepository;
 import com.luyu.agent.rpg.repository.RpgTriggerRuntimeRepository;
 import com.luyu.agent.rpg.repository.RpgWorldSettingRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.ai.session.SessionRepository;
+import org.springframework.ai.session.SessionService;
 import org.springframework.transaction.PlatformTransactionManager;
 
 import java.time.LocalDateTime;
@@ -43,8 +48,16 @@ class WorkshopServiceSaveCardTest {
         service = new WorkshopService(worldRepo, charRepo,
                 mock(RpgLocationRepository.class), mock(RpgRelationshipRepository.class),
                 mock(RpgTriggerRepository.class), stateRepo,
-                mock(RpgTriggerRuntimeRepository.class), mock(WorkshopLlmGenerator.class),
-                mock(PlatformTransactionManager.class));
+                mock(RpgTriggerRuntimeRepository.class),
+                mock(RpgStarIncarnationRepository.class),
+                mock(RpgStarIncarnationRuntimeRepository.class),
+                mock(WorkshopLlmGenerator.class),
+                mock(CharacterOriginService.class), mock(WorldCoverStorageService.class),
+                mock(PlatformTransactionManager.class),
+                mock(RpgWorldbookEntryRepository.class),
+                mock(LorebookSetService.class),
+                mock(LoreArchiveService.class),
+                mock(SessionService.class), mock(SessionRepository.class));
     }
 
     private GameState gs(String id, String sessionId, String worldId, String playerCharId,

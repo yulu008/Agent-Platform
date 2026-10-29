@@ -5,6 +5,10 @@ package com.luyu.agent.rpg.model;
  * <p>
  * 面向前端存档卡片列表的富化视图：由后端 join 世界名与角色名，
  * 字段缺失时回退占位符 "-"，前端无需二次拼装。
+ * <p>
+ * lastMessage 为读时富化的最近一行可回放对话（conversation-world-title-preview）：
+ * 取数规则与 /game/history 回放一致，服务端限长截断；<b>null 表示无可回放消息</b>
+ * （无 sessionId / 空会话 / 查询失败），是“无内容”语义而非占位符——前端跳过预览行。
  */
 public class SaveCard {
 
@@ -16,6 +20,8 @@ public class SaveCard {
     private String currentLocation;
     private Integer turnCount;
     private java.time.LocalDateTime lastPlayedAt;
+    /** 最近一行可回放对话（读时富化，限长截断）；null = 无可回放消息，前端不渲染预览行 */
+    private String lastMessage;
 
     public SaveCard() {
     }
@@ -56,4 +62,7 @@ public class SaveCard {
 
     public java.time.LocalDateTime getLastPlayedAt() { return lastPlayedAt; }
     public void setLastPlayedAt(java.time.LocalDateTime lastPlayedAt) { this.lastPlayedAt = lastPlayedAt; }
+
+    public String getLastMessage() { return lastMessage; }
+    public void setLastMessage(String lastMessage) { this.lastMessage = lastMessage; }
 }

@@ -4,49 +4,190 @@
     <meta charset="UTF-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
     <title>沙盒角色扮演 RPG</title>
+    <link rel="stylesheet" th:href="@{/css/sidebar.css(v=${#dates.createNow().time})}"/>
     <link rel="stylesheet" th:href="@{/css/rpg.css(v=${#dates.createNow().time})}"/>
+    <link rel="stylesheet" th:href="@{/css/world-wall.css(v=${#dates.createNow().time})}"/>
 </head>
 <body>
 
-<!-- ========== 顶部标题栏 ========== -->
-<header class="rpg-header">
-    <h1><span class="logo-dot"></span>沙盒 RPG</h1>
-    <div class="header-info" id="headerInfo" hidden>
-        <span id="worldName"></span> | <span id="charName"></span>
-    </div>
-    <div class="header-actions">
-        <button class="header-btn" id="homeNavBtn" title="返回首页" hidden>🏠 首页</button>
-        <button class="header-btn" id="workshopNavBtn" title="进入工坊（编辑世界观与角色）">🛠 工坊</button>
-        <a href="/" class="header-btn" title="返回平台主页">←</a>
-    </div>
-</header>
+<!-- 全局侧边栏（global-sidebar-nav，承接 unified-global-topbar）：单源 fragment 三件套；
+     🎨 创建作品单入口高亮由 showView 按视图联动（navRpgLink id 沿用，game.js 拦截零改动） -->
+<div class="app-shell">
+    <aside th:replace="~{fragments/sidebar :: sidebar('rpg', ${isPlatformAdmin}, ${currentUserEmail})}"></aside>
+    <div th:replace="~{fragments/sidebar :: mobileTop}"></div>
+    <div th:replace="~{fragments/sidebar :: mask}"></div>
+    <div class="app-content">
 
-<!-- ========== 首页（唯一落地视图，rpg-home-entry）========== -->
-<main class="home-mode" id="homeMode">
-    <!-- 新开冒险卡片（进入游戏模式的路径②：世界观 + 玩家角色） -->
-    <div class="new-adventure-card" id="newAdventureCard">
-        <div class="new-adventure-title">⚔️ 新开冒险</div>
-        <div class="new-adventure-form">
-            <select id="selectWorld"><option value="">选择世界观...</option></select>
-            <select id="selectPlayer"><option value="">选择玩家角色...</option></select>
-            <button class="btn-primary" id="confirmStartBtn">确认开始</button>
-        </div>
-        <div class="new-adventure-hint">没有合适的世界观或角色？先进工坊创作，再回来开局。</div>
+<!-- 上下文工具行（unified-global-topbar D5）：世界/角色信息仅游戏模式显示 -->
+<div class="rpg-context-row" id="headerInfo" hidden>
+    <span id="worldName"></span> | <span id="charName"></span>
+</div>
+
+<!-- ========== 预设冒险向导（preset-rpg-entry：星命推演 → 命定身份 → 建卡开局）========== -->
+<main class="preset-mode" id="presetMode" hidden>
+    <!-- 步骤指示条 -->
+    <div class="preset-steps">
+        <span class="preset-step active" id="presetStepTag1"><i>1</i>星命推演</span>
+        <span class="preset-step-arrow">→</span>
+        <span class="preset-step" id="presetStepTag2"><i>2</i>命定身份</span>
+        <span class="preset-step-arrow">→</span>
+        <span class="preset-step" id="presetStepTag3"><i>3</i>资料来源</span>
     </div>
-    <div class="home-count" id="homeSaveCount">共 0 个存档</div>
-    <div id="saveList" class="home-grid"></div>
-    <div id="saveEmpty" class="save-empty" hidden>暂无存档，从新开冒险开始你的第一次冒险吧</div>
+
+    <!-- 步骤① 星命推演（原工坊折叠面板迁入，成为星命推演的唯一入口）-->
+    <section class="editor-section preset-panel" id="presetStep1">
+        <h2>⭐ 星命推演</h2>
+        <p class="preset-lead">填入你的生辰，星光会替你选定星座、星阶与命定招式。推演结果会写进本局存档，开场白与 GM 都能读到。</p>
+        <!-- preset-destined-figures：留空 = 无名新人（现行流程零改动）；选项由 preset.js 按物化
+             worldId 拉取 GET /rpg/workshop/destined-figures 渲染（人物名 + 预绑星命一句话）。 -->
+        <div class="form-row">
+            <label>命定身份</label>
+            <select id="presetDestinedFigure">
+                <option value="">无名新人（星命自推）</option>
+            </select>
+        </div>
+        <div class="form-row">
+            <label>姓名</label>
+            <input type="text" id="presetOriginName" placeholder="你的姓名（会写进角色卡名）" autocomplete="off"/>
+        </div>
+        <div class="form-row">
+            <label>性别</label>
+            <select id="presetOriginGender">
+                <option value="male">男</option>
+                <option value="female">女</option>
+            </select>
+        </div>
+        <div class="form-row">
+            <label>公历生日</label>
+            <!-- preset-birthdate-input：年/月/日三联动 select 替代原生 date input；
+                 年与日选项由 preset.js 运行时生成（年范围依赖当前年、日选项随年/月联动），
+                 月选项为静态 1~12；三个 select 均带空占位项、默认未选 -->
+            <div class="date-trio">
+                <select id="presetOriginBirthYear"><option value="">年</option></select>
+                <select id="presetOriginBirthMonth">
+                    <option value="">月</option>
+                    <option value="1">1月</option>
+                    <option value="2">2月</option>
+                    <option value="3">3月</option>
+                    <option value="4">4月</option>
+                    <option value="5">5月</option>
+                    <option value="6">6月</option>
+                    <option value="7">7月</option>
+                    <option value="8">8月</option>
+                    <option value="9">9月</option>
+                    <option value="10">10月</option>
+                    <option value="11">11月</option>
+                    <option value="12">12月</option>
+                </select>
+                <select id="presetOriginBirthDay"><option value="">日</option></select>
+            </div>
+        </div>
+        <div class="form-row">
+            <label>出生时辰</label>
+            <select id="presetOriginTimeIndex">
+                <option value="0">子时 (23:00-01:00)</option>
+                <option value="1">丑时 (01:00-03:00)</option>
+                <option value="2">寅时 (03:00-05:00)</option>
+                <option value="3">卯时 (05:00-07:00)</option>
+                <option value="4">辰时 (07:00-09:00)</option>
+                <option value="5">巳时 (09:00-11:00)</option>
+                <option value="6" selected>午时 (11:00-13:00)</option>
+                <option value="7">未时 (13:00-15:00)</option>
+                <option value="8">申时 (15:00-17:00)</option>
+                <option value="9">酉时 (17:00-19:00)</option>
+                <option value="10">戌时 (19:00-21:00)</option>
+                <option value="11">亥时 (21:00-23:00)</option>
+            </select>
+        </div>
+        <div class="form-row">
+            <label>阵营 <span class="preset-lock-badge" id="presetFactionLockBadge" hidden>由命定人物锁定</span></label>
+            <select id="presetOriginFaction">
+                <option value="saint">圣斗士（88 星座）</option>
+                <option value="specter">冥斗士（108 冥星）</option>
+                <option value="godwarrior">神斗士（7 主星）</option>
+            </select>
+        </div>
+        <div class="form-actions">
+            <button type="button" class="btn-primary" id="presetCalcBtn">⭐ 推演星命</button>
+        </div>
+    </section>
+
+    <!-- 步骤② 命定身份确认 + 角色卡微调（三项已预填，可改）-->
+    <section class="editor-section preset-panel" id="presetStep2" hidden>
+        <h2>🌟 你的命定身份</h2>
+        <div class="origin-result" id="presetOriginResult"></div>
+        <!-- 小宇宙初值只读行（rpg-cosmo-sense）：仅星命推演后显示，不可手改只能重 roll -->
+        <div class="preset-cosmo-row" id="presetCosmoRow" hidden>
+            <span class="preset-cosmo-label">小宇宙：<b id="presetCosmoValue">-</b></span>
+            <button type="button" class="btn-secondary" id="presetCosmoRerollBtn">↻ 重新生成</button>
+        </div>
+        <div class="preset-lead-row">
+            <p class="preset-lead">下面三项已按星命预填，你可以改成自己想要的样子——它们会写进本局的角色卡。</p>
+            <button type="button" class="btn-secondary" id="presetLlmTrioBtn">✨ LLM 改写</button>
+        </div>
+        <div class="form-row">
+            <label>身份</label>
+            <input type="text" id="presetCharIdentity" placeholder="如：白羊座黄金圣斗士" autocomplete="off"/>
+        </div>
+        <div class="form-row">
+            <label>性格</label>
+            <textarea id="presetCharPersonality" rows="4" placeholder="性格描述..." autocomplete="off"></textarea>
+        </div>
+        <div class="form-row">
+            <label>背景</label>
+            <textarea id="presetCharBackground" rows="6" placeholder="背景故事..." autocomplete="off"></textarea>
+        </div>
+        <div class="form-actions">
+            <button type="button" class="btn-secondary" id="presetBackBtn">← 重新推演</button>
+            <button type="button" class="btn-primary" id="presetEnterBtn">下一步：资料来源 →</button>
+        </div>
+    </section>
+
+    <!-- 步骤③ 资料来源（add-rpg-lorebook-sets D4/D10）：世界默认 / 继承本世界任一 set（含孤儿）-->
+    <section class="editor-section preset-panel" id="presetStep3" hidden>
+        <h2>📖 资料来源</h2>
+        <p class="preset-lead">选择本局资料库（设定集 + 通用世界书）的初始来源。开局会复制一份为本存档专属副本，之后在游戏内弹窗就地编辑，与世界模板及其他存档互不影响。</p>
+        <div class="lorebook-source-list" id="presetSourceList"></div>
+        <div class="form-actions">
+            <button type="button" class="btn-secondary" id="presetSourceBackBtn">← 返回身份</button>
+            <button type="button" class="btn-primary" id="presetStartBtn">⚔️ 以此身份入世</button>
+        </div>
+    </section>
 </main>
 
-<!-- ========== 工坊模式 ========== -->
-<main class="workshop-mode" id="workshopMode" hidden>
-    <div class="workshop-tabs">
-        <button class="tab-btn active" data-tab="world">世界观</button>
-        <button class="tab-btn" data-tab="character">角色卡</button>
-        <button class="tab-btn" data-tab="location">地点</button>
-        <button class="tab-btn" data-tab="trigger">触发器</button>
-        <button class="tab-btn" data-tab="relationship">关系</button>
+<!-- ========== 创建作品（works-view-and-world-publish D7：home ⊕ workshop 合一，唯一落地视图）========== -->
+<main class="works-mode" id="worksMode">
+    <!-- 作品选择首屏（默认落地）：只看作品卡；点卡/新建卡进编辑视图，
+         开局走卡上悬浮「▶」钮就地展开角色 chips；数据源 gallery?scope=works 纯沙盒行 -->
+    <div id="worksSelectView">
+        <div class="works-select-header">
+            <h2>你的作品</h2>
+            <p class="works-select-hint">点击作品进入编辑；「▶」试玩选角开局（存档进「📜 存档」）；或点空白卡新建一个世界</p>
+        </div>
+        <div class="world-wall workshop-works" id="worksWorldCards"></div>
     </div>
+
+    <!-- 编辑视图：六个 tab 编辑器（点作品卡或新建卡进入，返回按钮回作品首屏） -->
+    <div id="worksEditView" class="workshop-edit" hidden>
+        <!-- 顶部工具行：返回 + 一键试玩（works-playtest-entry D2/D3：保存各 tab
+             编辑中的表单后就地展开选角 chips，点选即真实开局，存档进「📜 存档」） -->
+        <div class="works-edit-toolbar">
+            <button class="works-back-btn" id="worksBackBtn" type="button">← 返回作品列表</button>
+            <button class="works-playtest-btn" id="worksPlaytestBtn" type="button"
+                    title="保存当前各 tab 编辑中的表单，选角发起真实开局（存档进「📜 存档」）">▶ 试玩（保存并开局）</button>
+        </div>
+        <!-- 试玩选角 chips 行（保存全部成功后就地展开；复用 .world-chip 视觉） -->
+        <div class="works-playtest-chips" id="worksPlaytestChips" hidden></div>
+        <div class="workshop-tabs">
+            <button class="tab-btn active" data-tab="world">世界观</button>
+            <button class="tab-btn" data-tab="character">角色卡</button>
+            <button class="tab-btn" data-tab="location">地点</button>
+            <button class="tab-btn" data-tab="trigger">触发器</button>
+            <button class="tab-btn" data-tab="worldbook">世界书</button>
+            <button class="tab-btn" data-tab="relationship">关系</button>
+            <!-- 故事图（story-graph-authoring 3.2）：分支叙事骨架编辑器，挂 world 模板层一世界多图 -->
+            <button class="tab-btn" data-tab="storygraph">故事图</button>
+        </div>
 
     <!-- 世界观编辑器 -->
     <section class="tab-content active" id="tab-world">
@@ -78,11 +219,48 @@
                 <label>氛围</label>
                 <input type="text" id="worldAtmosphereInput" placeholder="如：灰暗、机械感" autocomplete="off"/>
             </div>
+            <!-- HUD 组件主题（rpg-hud-bubble-components 4.1）：hudStyle 枚举 + CSS 变量 token JSON；
+                 开局注入侧校验白名单（hud.js applyWorldTheme），非法项静默丢弃 -->
+            <div class="form-row">
+                <label>HUD 组件布局（hudStyle）</label>
+                <select id="worldHudStyleInput" title="GM 气泡富组件的布局密度变体">
+                    <option value="classic">classic · 经典（默认）</option>
+                    <option value="compact">compact · 紧凑</option>
+                    <option value="minimal">minimal · 极简（仅 HUD 头与选项）</option>
+                </select>
+            </div>
+            <div class="form-row">
+                <label>HUD 主题 token（JSON，可空 = 默认配色）</label>
+                <textarea id="worldThemeTokensInput" rows="4" placeholder='{"--hud-gold":"#e8c15a","--npc-accent":"#e0a04f"}' autocomplete="off"></textarea>
+                <span class="theme-tokens-hint">可覆盖变量：--hud-gold / --hero-accent / --npc-accent / --panel-bg / --hud-mind-accent；值为 hex 或 rgb[a] 颜色。仅作用于本世界的 GM 气泡组件。</span>
+            </div>
+            <!-- 作者自定义 HUD 内容块（rpg-hud-custom-blocks 2.1）：{title, field, accent?} 数组；
+                 开局提示词按 field 清单动态扩展，GM 气泡固定模板渲染，校验规则见 hint -->
+            <div class="form-row">
+                <label>自定义内容块（JSON 数组，可空 = 不启用）</label>
+                <textarea id="worldCustomBlocksInput" rows="4" placeholder='[{"title":"本幕目标","field":"objectives"},{"title":"传闻","field":"rumors","accent":"--npc-accent"}]' autocomplete="off"></textarea>
+                <span class="theme-tokens-hint">每块 {title, field, accent?}：title 块标题（≤20 字符）；field 模型输出字段名（字母开头，仅字母数字下划线，≤64，如 objectives）；accent 强调色变量（--hud-gold / --hero-accent / --npc-accent / --panel-bg / --hud-mind-accent，缺省 --hud-gold）。最多 5 块；模型每轮经 state_delta 输出 field 对应数据（数组建议每项 {text, done}），块随回合更新。</span>
+            </div>
+            <!-- 封面上传（world-card-gallery 9.1）：预览 + 文件选择 + 上传；仅对已保存世界可用 -->
+            <div class="form-row">
+                <label>封面</label>
+                <div class="cover-editor">
+                    <div class="cover-preview">
+                        <img id="coverPreviewImg" alt="世界封面预览" hidden/>
+                        <span class="cover-preview-empty" id="coverPreviewEmpty">无封面</span>
+                    </div>
+                    <div class="cover-controls">
+                        <input type="file" id="coverFileInput" accept="image/png,image/jpeg,image/webp,image/gif"/>
+                        <button type="button" class="btn-secondary" id="uploadCoverBtn" hidden>上传封面</button>
+                        <span>支持 png/jpeg/webp/gif，≤ 4MB；保存世界后可上传</span>
+                    </div>
+                </div>
+            </div>
             <div class="form-actions">
                 <button class="btn-secondary" id="newWorldBtn" title="清空表单，准备新建世界观">➕ 新建</button>
                 <button class="btn-secondary" id="generateWorldBtn">✨ LLM 生成</button>
                 <button class="btn-primary" id="saveWorldBtn">保存世界观</button>
-                <button class="btn-danger" id="deleteWorldBtn" hidden title="删除当前世界观（旗下有子数据时会被拒绝）">🗑️ 删除</button>
+                <button class="btn-danger" id="deleteWorldBtn" hidden title="删除当前世界观（旗下有存档时会被拒绝；否则级联软删全部子数据）">🗑️ 删除</button>
                 <button class="btn-secondary" id="localizeNamesBtn"
                         title="把本世界含罗马音/英文的角色名（含存档里无角色卡的临时 NPC 拼音名）批量改为汉字名，并把存档引用迁移到角色卡 ID 或汉字名">
                     一键中文化改名
@@ -91,6 +269,12 @@
             <div class="llm-input" id="worldLlmInput" hidden>
                 <textarea id="worldKeywords" rows="6" placeholder="输入关键词，如：蒸汽朋克 失落的魔法 钟表城" autocomplete="off"></textarea>
                 <button type="button" class="btn-primary" id="confirmGenerateWorldBtn">生成</button>
+            </div>
+            <!-- 设定集只读块（star-lorebook D6）：预设世界选中时展示；真源在 md，无编辑控件 -->
+            <div class="lorebook-workshop-block" id="lorebookBlock" hidden>
+                <h3>📖 设定集（世界书）</h3>
+                <p class="lorebook-workshop-hint">本世界的设定集词条（世界模板种子）。此处只读，真源在 preset-adventure.md，重新物化时全量重写；每局开局的专属副本编辑在游戏内「📖 资料库」弹窗。</p>
+                <div class="lorebook-list" id="lorebookWorkshopList"></div>
             </div>
         </div>
     </section>
@@ -129,6 +313,7 @@
                 <label>说话风格</label>
                 <input type="text" id="charSpeechStyleInput" placeholder="如：粗犷" autocomplete="off"/>
             </div>
+
             <div class="form-actions">
                 <button class="btn-secondary" id="newCharBtn" title="清空表单，准备新建角色">➕ 新建</button>
                 <button class="btn-secondary" id="generateCharBtn">✨ LLM 生成</button>
@@ -142,10 +327,16 @@
         </div>
     </section>
 
-    <!-- 地点编辑器 -->
+    <!-- 地点编辑器（workshop-soft-delete-cascade 6.1：补列表选择器与新建/删除，结构对齐角色 tab）-->
     <section class="tab-content" id="tab-location">
         <div class="editor-section">
             <h2>地点</h2>
+            <div class="form-row">
+                <label>已保存地点</label>
+                <select id="locSelect">
+                    <option value="">（新建）</option>
+                </select>
+            </div>
             <div class="form-row">
                 <label>名称</label>
                 <input type="text" id="locNameInput" placeholder="如：客栈"/>
@@ -155,15 +346,24 @@
                 <textarea id="locDescInput" rows="10" placeholder="地点描述..."></textarea>
             </div>
             <div class="form-actions">
+                <button class="btn-secondary" id="newLocBtn" title="清空表单，准备新建地点">➕ 新建</button>
                 <button class="btn-primary" id="saveLocBtn">保存地点</button>
+                <button class="btn-danger" id="deleteLocBtn" hidden title="软删除当前地点">🗑️ 删除</button>
             </div>
         </div>
     </section>
 
-    <!-- 触发器编辑器 -->
+    <!-- 触发器编辑器（workshop-soft-delete-cascade 6.1：补列表选择器与新建/删除，结构对齐角色 tab）-->
     <section class="tab-content" id="tab-trigger">
         <div class="editor-section">
             <h2>触发器</h2>
+            <p class="editor-hint">让 NPC 在条件满足时主动行动（硬条件＋软条件＋概率＋冷却），命中时向 GM 下达行为指令——管“谁在何时做什么”。静态背景用「世界书」，长线设定用「设定集」。需先在「世界观」tab 选定或新建世界。</p>
+            <div class="form-row">
+                <label>已保存触发器</label>
+                <select id="triggerSelect">
+                    <option value="">（新建）</option>
+                </select>
+            </div>
             <div class="form-row">
                 <label>类型</label>
                 <select id="triggerType">
@@ -196,22 +396,128 @@
                 <input type="number" id="triggerProbability" value="0.6" step="0.1" min="0" max="1"/>
             </div>
             <div class="form-actions">
+                <button class="btn-secondary" id="newTriggerBtn" title="清空表单，准备新建触发器">➕ 新建</button>
                 <button class="btn-primary" id="saveTriggerBtn">保存触发器</button>
+                <button class="btn-danger" id="deleteTriggerBtn" hidden
+                        title="软删除当前触发器（对进行中的对局立即停止触发）">🗑️ 删除</button>
             </div>
         </div>
     </section>
 
-    <!-- 关系编辑器 -->
+    <!-- 世界书编辑器（add-rpg-worldbook D7 + workshop-soft-delete-cascade 7.1 双轨：设定集模板 CRUD / 通用世界书）-->
+    <section class="tab-content" id="tab-worldbook">
+        <div class="editor-section">
+            <h2>世界书</h2>
+            <p class="editor-hint">关键词命中时，仅当轮把条目正文注入 GM 叙事，滑出即忘——适合场景背景与氛围补充。需要长线记住的设定（人物、组织、概念）请用「📖 设定集」。需先在「世界观」tab 选定或新建世界。</p>
+            <!-- 双轨切换（workshop-soft-delete-cascade 7.1：形态对齐游戏内弹窗 lorebook-tabs）-->
+            <div class="lorebook-tabs" id="workshopTrackTabs">
+                <button type="button" class="lorebook-tab active" data-track="worldbook">📚 通用世界书</button>
+                <button type="button" class="lorebook-tab" data-track="star">📖 设定集</button>
+            </div>
+            <!-- 设定集轨（7.1：非预设世界可增删改；预设世界只读提示 + 隐藏写按钮，写端点后端另有 400 拒绝保护）-->
+            <div id="starTrackPane" hidden>
+                <p class="lorebook-track-hint" id="starTrackHint" hidden></p>
+                <div class="form-row">
+                    <label>已保存条目</label>
+                    <select id="starSelect">
+                        <option value="">（新建）</option>
+                    </select>
+                </div>
+                <div class="form-row">
+                    <label>标题</label>
+                    <input type="text" id="starNameInput" placeholder="如：天罡星" autocomplete="off"/>
+                </div>
+                <div class="form-row">
+                    <label>名称</label>
+                    <input type="text" id="starWarlordInput" placeholder="如：卢灭朱" autocomplete="off"/>
+                </div>
+                <div class="form-row">
+                    <label>一句话设定</label>
+                    <textarea id="starLoreInput" rows="4" placeholder="一句话设定..." autocomplete="off"></textarea>
+                </div>
+                <div class="form-row">
+                    <label>别名</label>
+                    <input type="text" id="starAliasesInput" placeholder="逗号分隔别名（参与关键词触发）" autocomplete="off"/>
+                </div>
+                <div class="form-row">
+                    <label>分类</label>
+                    <input type="text" id="starCategoryInput" list="starCategoryList" maxlength="20"
+                           placeholder="自定义分类（如：织田家）；留空＝未分类，列表按分类分组" autocomplete="off"/>
+                    <datalist id="starCategoryList"></datalist>
+                </div>
+                <div class="form-row">
+                    <label>可被玩家开局命定命中</label>
+                    <label class="checkbox-inline"><input type="checkbox" id="starRollableInput" checked/> 参与开局命定推演（取消＝不可命中，永不可被玩家抢占）</label>
+                </div>
+                <div class="form-actions" id="starFormActions">
+                    <button class="btn-secondary" id="newStarBtn" title="清空表单，准备新建设定集条目">➕ 新建</button>
+                    <button class="btn-primary" id="saveStarBtn">保存条目</button>
+                    <button class="btn-danger" id="deleteStarBtn" hidden title="软删除当前设定集条目（不影响已开局存档副本）">🗑️ 删除</button>
+                </div>
+            </div>
+            <!-- 通用轨：原有编辑区整体包 pane（默认轨，现状延续）-->
+            <div id="worldbookTrackPane">
+            <div class="form-row">
+                <label>已保存条目</label>
+                <select id="worldbookSelect">
+                    <option value="">（新建）</option>
+                </select>
+            </div>
+            <div class="form-row">
+                <label>标题</label>
+                <input type="text" id="worldbookTitleInput" placeholder="条目主名词，如：钟表城（标题本身也作为关键词）" autocomplete="off"/>
+            </div>
+            <div class="form-row">
+                <label>关键词</label>
+                <input type="text" id="worldbookKeywordsInput" placeholder="逗号分隔触发词，如：钟表城,雾都,齿轮塔" autocomplete="off"/>
+            </div>
+            <div class="form-row">
+                <label>正文</label>
+                <textarea id="worldbookContentInput" rows="10" placeholder="命中时注入给 GM 的设定正文..." autocomplete="off"></textarea>
+            </div>
+            <div class="form-row">
+                <label>启用</label>
+                <label class="checkbox-inline"><input type="checkbox" id="worldbookEnabledInput" checked/> 参与关键词扫描（取消勾选则保留数据但停用）</label>
+            </div>
+            <div class="form-actions">
+                <button class="btn-secondary" id="newWorldbookBtn" title="清空表单，准备新建条目">➕ 新建</button>
+                <button class="btn-secondary" id="generateWorldbookBtn">✨ LLM 生成</button>
+                <button class="btn-primary" id="saveWorldbookBtn">保存条目</button>
+                <button class="btn-danger" id="deleteWorldbookBtn" hidden title="删除当前条目">🗑️ 删除</button>
+            </div>
+            <!-- 共享库入口（add-shared-worldbook-publish D8）：发布当前世界模板快照 / 浏览全平台共享包 -->
+            <div class="form-actions shared-pack-entry">
+                <button class="btn-secondary" id="publishSharedPackBtn" title="勾选当前世界模板条目，打包快照发布到全平台共享库">🚀 发布到共享库</button>
+                <button class="btn-secondary" id="openSharedGalleryBtn" title="浏览全平台已发布的共享世界书包，可导入到当前世界">🌐 共享库</button>
+            </div>
+            <!-- LLM 批量生成草稿区（D6）：返回草稿数组预填，用户逐条确认后再保存，不自动落库 -->
+            <div class="llm-input" id="worldbookLlmInput" hidden>
+                <textarea id="worldbookGenKeywords" rows="6" placeholder="输入要生成的设定关键词，如：钟表城 齿轮塔 雾都密教" autocomplete="off"></textarea>
+                <button type="button" class="btn-primary" id="confirmGenerateWorldbookBtn">生成</button>
+            </div>
+            <!-- 草稿列表：每条「填入编辑区」后可复核再保存 -->
+            <div class="worldbook-drafts" id="worldbookDraftList" hidden></div>
+            </div><!-- /worldbookTrackPane -->
+        </div>
+    </section>
+
+    <!-- 关系编辑器（workshop-soft-delete-cascade 6.1：补列表选择器与新建/删除，结构对齐角色 tab；两端 ID 下拉见 6.3 富化）-->
     <section class="tab-content" id="tab-relationship">
         <div class="editor-section">
             <h2>关系</h2>
             <div class="form-row">
-                <label>角色 A ID</label>
-                <input type="text" id="relCharA" placeholder="角色 A"/>
+                <label>已保存关系</label>
+                <select id="relSelect">
+                    <option value="">（新建）</option>
+                </select>
             </div>
             <div class="form-row">
-                <label>角色 B ID</label>
-                <input type="text" id="relCharB" placeholder="角色 B"/>
+                <label>角色 A</label>
+                <input type="text" id="relCharA" placeholder="角色 A" title="角色 ID；可在角色卡 tab 复制，或从列表选关系后回填"/>
+            </div>
+            <div class="form-row">
+                <label>角色 B</label>
+                <input type="text" id="relCharB" placeholder="角色 B" title="角色 ID；可在角色卡 tab 复制，或从列表选关系后回填"/>
             </div>
             <div class="form-row">
                 <label>态度 (-100~100)</label>
@@ -222,11 +528,64 @@
                 <input type="number" id="relTrust" value="50" min="0" max="100"/>
             </div>
             <div class="form-actions">
+                <button class="btn-secondary" id="newRelBtn" title="清空表单，准备新建关系">➕ 新建</button>
                 <button class="btn-primary" id="saveRelBtn">保存关系</button>
+                <button class="btn-danger" id="deleteRelBtn" hidden title="软删除当前关系">🗑️ 删除</button>
             </div>
         </div>
     </section>
 
+    <!-- 故事图编辑器（story-graph-authoring 3.2）：分幕卡片 + 节点/边/变体清单表单（非画布，design Non-Goal）。
+         保存即校验（语法/词汇表，400 错误就地拆行展示）；整稿通过走全图校验链（拓扑/跨幕对接/可达性），
+         报告逐条定位（errors 红 / warnings 黄 / repairs 蓝）。幕/节点/边行编辑器由 story-graph.js 动态渲染。 -->
+    <section class="tab-content" id="tab-storygraph">
+        <div class="editor-section">
+            <h2>故事图</h2>
+            <p class="editor-hint">分支叙事骨架（幕→节点→边→变体）：节点只存拍子不写正文，正文开局后由 GM 物化。「保存图」即时校验语法与词汇表；「整稿通过」执行全图校验链并确定性修复。需先在「世界观」tab 选定或新建世界。</p>
+            <div class="form-row">
+                <label>已保存故事图</label>
+                <select id="sgSelect">
+                    <option value="">（新建）</option>
+                </select>
+            </div>
+            <div class="form-row">
+                <label>图名</label>
+                <input type="text" id="sgNameInput" placeholder="如：夜雾纪行" autocomplete="off"/>
+            </div>
+            <div class="form-row">
+                <label>即兴模式</label>
+                <select id="sgImproviseSelect" title="作品级即兴档位：off 图边唯一选项 / bounded 混排+引力（默认）/ free 纯沙盒图退化建议">
+                    <option value="bounded">bounded（图边+即兴混排，默认）</option>
+                    <option value="off">off（图边为唯一选项）</option>
+                    <option value="free">free（纯沙盒，图退化为建议）</option>
+                </select>
+            </div>
+            <div class="form-row">
+                <label>即兴深度上限</label>
+                <input type="number" id="sgDepthLimitInput" min="1" max="99" placeholder="5（默认）" autocomplete="off"
+                       title="bounded 模式连续纯即兴轮上限：超过后下一轮注入收敛指令，引导剧情走向当前幕最近锚点；留空 = 默认 5"/>
+            </div>
+            <div class="form-row">
+                <label>状态词汇表（JSON）</label>
+                <textarea id="sgSchemaInput" rows="4" placeholder='guard/effects 可引用的状态键白名单，如：{"trust_信长": "number"}' autocomplete="off"></textarea>
+            </div>
+            <div class="form-actions">
+                <button class="btn-secondary" id="newSgBtn" title="清空表单，准备新建故事图">➕ 新建</button>
+                <button class="btn-primary" id="saveSgBtn" title="图级全量保存：幕/节点/边/变体一并落库，保存即校验（未过不落库）">保存图</button>
+                <button class="btn-secondary" id="finalizeSgBtn" title="先保存再执行全图校验链：拓扑修复落库 / 错误逐条报出不落库">✅ 整稿通过</button>
+                <button class="btn-danger" id="deleteSgBtn" hidden title="删除故事图（存在运行副本时会被拒绝）">🗑️ 删除</button>
+            </div>
+            <!-- 校验报告区（3.2：错误就地展示而非 alert，逐条定位幕/节点/边 ID） -->
+            <div class="sg-report" id="sgReportBox" hidden></div>
+            <!-- 分幕卡片墙（story-graph.js 渲染；增删结构变化全量重渲，字段输入委托写回内存模型） -->
+            <div class="sg-acts" id="sgActsEditor"></div>
+            <div class="form-actions">
+                <button class="btn-secondary" id="addSgActBtn" title="追加一幕（幕是生成/返工/收束的挂点）">＋ 添加幕</button>
+            </div>
+        </div>
+    </section>
+
+    </div><!-- /worksEditView -->
 </main>
 
 <!-- ========== 游戏模式 ========== -->
@@ -241,16 +600,12 @@
         <div class="status-header">状态</div>
         <div class="status-item"><label>位置</label><span id="statusLocation">-</span></div>
         <div class="status-item"><label>轮次</label><span id="statusTurn">0</span></div>
-        <div class="status-item"><label>NPC</label><span id="statusNpcs">-</span></div>
+        <div class="status-item status-item-npc"><label>NPC</label><span id="statusNpcs">-</span></div>
         <!-- 全量花名册（rpg-scene-cast）：NPC 行只显示当前场景班底，此处折叠展示已结识的全部 NPC -->
         <details id="statusRoster" class="status-roster" hidden>
             <summary id="statusRosterSummary">已结识 (0)</summary>
             <span id="statusRosterList" class="status-roster-list"></span>
         </details>
-        <div class="status-subheader">玩家</div>
-        <div class="status-item"><label>金钱</label><span id="statusMoney">-</span></div>
-        <div class="status-item"><label>称号</label><span id="statusTitles">-</span></div>
-        <div class="status-item"><label>能力</label><span id="statusAbilities">-</span></div>
     </aside>
 
     <!-- 输入区域 -->
@@ -270,6 +625,12 @@
             </select>
             <button type="button" class="memory-mgr-btn" id="memoryMgrBtn"
                     title="管理当前存档的 GM 笔记本（增删改查）">📔 记忆管理</button>
+            <!-- 资料库弹窗（add-rpg-lorebook-sets D9/D10）：双轨就地编辑本存档资料库副本 + 揭示/抢星状态 -->
+            <button type="button" class="memory-mgr-btn" id="lorebookBtn"
+                    title="编辑本存档资料库副本（设定集 + 通用世界书，可增删改）">📖 资料库</button>
+            <!-- 分叉点弹窗（story-graph 4.10）：已走分叉点列表，图上回溯入口（未挂图时列表空） -->
+            <button type="button" class="memory-mgr-btn" id="storyForkBtn"
+                    title="查看已走分叉点并回退（状态按保留路径确定性重放，对话保留）">🧭 分叉点</button>
         </div>
         <form id="gameForm" class="game-input-form">
             <input type="text" id="gameInput" placeholder="输入你的行动..." autocomplete="off"/>
@@ -348,6 +709,200 @@
     </div>
 </div>
 
+<!-- ========== 资料库弹窗（双轨就地编辑器，add-rpg-lorebook-sets D9/D10）========== -->
+<div class="load-overlay" id="lorebookOverlay" hidden>
+    <div class="load-dialog lorebook-dialog">
+        <div class="memory-head">
+            <h3>📖 资料库</h3>
+            <button type="button" class="memory-close" id="closeLorebookBtn" title="关闭">✕</button>
+        </div>
+        <!-- 抬头出处行：副本名 + 出处 + 未物化标示（D10） -->
+        <div class="lorebook-source-line" id="lorebookSourceLine"></div>
+        <!-- 双轨切换：设定集（sticky 常驻）/ 通用世界书（瞬时注入） -->
+        <div class="lorebook-tabs" id="lorebookTabs">
+            <button type="button" class="lorebook-tab active" data-track="star">📖 设定集</button>
+            <button type="button" class="lorebook-tab" data-track="worldbook">📚 通用世界书</button>
+        </div>
+        <div class="lorebook-body">
+            <!-- 浏览态：工具栏 + 当前轨条目列表 -->
+            <div class="lorebook-browse" id="lorebookBrowse">
+                <div class="lorebook-track-toolbar">
+                    <button type="button" class="btn-secondary" id="lorebookNewBtn">＋ 新增条目</button>
+                    <button type="button" class="btn-secondary" id="lorebookImportBtn">⬇ 从世界导入</button>
+                </div>
+                <div class="lorebook-track-hint" id="lorebookTrackHint" hidden></div>
+                <div class="lorebook-list" id="lorebookList"></div>
+            </div>
+            <!-- 编辑态：共享条目表单（设定集/通用两套字段，按当前轨显隐） -->
+            <div class="lorebook-entry-form" id="lorebookEntryForm" hidden>
+                <div class="lorebook-form-title" id="lorebookFormTitle">新增条目</div>
+                <div id="lorebookStarFields">
+                    <div class="form-row">
+                        <label>标题</label>
+                        <input type="text" id="lbStarName" placeholder="如：天罡星" autocomplete="off"/>
+                    </div>
+                    <div class="form-row">
+                        <label>名称</label>
+                        <input type="text" id="lbWarlordName" placeholder="如：卢灭朱" autocomplete="off"/>
+                    </div>
+                    <div class="form-row">
+                        <label>一句话设定</label>
+                        <textarea id="lbLore" rows="4" placeholder="一句话设定..." autocomplete="off"></textarea>
+                    </div>
+                    <div class="form-row">
+                        <label>别名</label>
+                        <input type="text" id="lbAliases" placeholder="逗号分隔别名（参与关键词触发）" autocomplete="off"/>
+                    </div>
+                    <div class="form-row">
+                        <label>分类</label>
+                        <input type="text" id="lbCategory" list="lbCategoryList" maxlength="20"
+                               placeholder="自定义分类（如：织田家）；留空＝未分类，列表按分类分组" autocomplete="off"/>
+                        <datalist id="lbCategoryList"></datalist>
+                    </div>
+                    <div class="form-row">
+                        <label>可被玩家开局命定命中</label>
+                        <label class="checkbox-inline"><input type="checkbox" id="lbRollable" checked/> 参与开局命定推演（取消＝不可命中，永不可被玩家抢占）</label>
+                    </div>
+                </div>
+                <div id="lorebookWorldbookFields" hidden>
+                    <div class="form-row">
+                        <label>标题</label>
+                        <input type="text" id="lbTitle" placeholder="条目主名词（标题本身也作为关键词）" autocomplete="off"/>
+                    </div>
+                    <div class="form-row">
+                        <label>关键词</label>
+                        <input type="text" id="lbKeywords" placeholder="逗号分隔触发词，如：钟表城,雾都,齿轮塔" autocomplete="off"/>
+                    </div>
+                    <div class="form-row">
+                        <label>正文</label>
+                        <textarea id="lbContent" rows="8" placeholder="命中时注入给 GM 的设定正文..." autocomplete="off"></textarea>
+                    </div>
+                    <div class="form-row">
+                        <label>启用</label>
+                        <label class="checkbox-inline"><input type="checkbox" id="lbEnabled" checked/> 参与关键词扫描（取消则保留数据但停用）</label>
+                    </div>
+                </div>
+                <div class="memory-actions">
+                    <button type="button" class="btn-primary" id="lorebookSaveBtn">保存</button>
+                    <button type="button" class="btn-secondary" id="lorebookCancelBtn">取消</button>
+                </div>
+            </div>
+            <!-- 导入抽屉：世界模板 → 本副本单向拉取（D6） -->
+            <div class="lorebook-import-drawer" id="lorebookImportDrawer" hidden>
+                <div class="lorebook-import-head">
+                    <span class="lorebook-import-title">从世界模板导入新条目</span>
+                    <button type="button" class="memory-close" id="lorebookImportClose" title="关闭">✕</button>
+                </div>
+                <p class="lorebook-import-hint">单向拉取：仅列出世界模板中尚未进入本副本的条目；导入后成为本存档副本的独立行，可再编辑。</p>
+                <div class="lorebook-import-toolbar">
+                    <button type="button" class="btn-secondary" id="lorebookImportToggleAll">全选/全不选</button>
+                    <button type="button" class="btn-primary" id="lorebookImportConfirm">导入所选</button>
+                </div>
+                <div class="lorebook-import-list" id="lorebookImportList"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ========== 沙盒开局「资料来源」选择弹窗（add-rpg-lorebook-sets D4/D10）========== -->
+<div class="load-overlay" id="sandboxSourceOverlay" hidden>
+    <div class="load-dialog lorebook-dialog">
+        <div class="memory-head">
+            <h3>📖 选择资料来源</h3>
+            <button type="button" class="memory-close" id="closeSandboxSourceBtn" title="关闭">✕</button>
+        </div>
+        <p class="lorebook-import-hint">开局会复制一份为本存档专属副本，之后在游戏内弹窗就地编辑，与世界模板及其他存档互不影响。</p>
+        <div class="lorebook-body">
+            <div class="lorebook-source-list" id="sandboxSourceList"></div>
+            <!-- 故事图选择（story-graph 4.10）：挂图开局（分支剧情按图推进），缺省不挂=自由沙帛 -->
+            <div class="sandbox-story-block">
+                <div class="lorebook-import-hint">可选：挂一张已整稿的故事图开局——分支剧情按图推进、选择确定性结算；不选则保持自由沙帛。</div>
+                <select class="sandbox-story-select" id="sandboxStorySelect">
+                    <option value="">（不挂图 · 自由沙帛）</option>
+                </select>
+            </div>
+            <div class="memory-actions">
+                <button type="button" class="btn-primary" id="sandboxSourceStartBtn">⚔️ 开始冒险</button>
+                <button type="button" class="btn-secondary" id="sandboxSourceCancelBtn">取消</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ========== 图上回溯：分叉点列表弹窗（story-graph-authoring 4.10） ========== -->
+<div class="load-overlay" id="storyForkOverlay" hidden>
+    <div class="load-dialog lorebook-dialog">
+        <div class="memory-head">
+            <h3>🧭 已走分叉点</h3>
+            <button type="button" class="memory-close" id="closeStoryForkBtn" title="关闭">✕</button>
+        </div>
+        <p class="lorebook-import-hint">回退到任意已走分叉点：状态按「初始态 + 保留已走边」确定性重放，被回退的选择不再生效；对话记录保留不删。</p>
+        <div class="lorebook-body">
+            <div class="lorebook-source-list" id="storyForkList"></div>
+            <div class="memory-actions">
+                <button type="button" class="btn-secondary" id="storyForkCancelBtn">关闭</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ========== 共享世界书：发布弹窗（add-shared-worldbook-publish D8/D4）========== -->
+<div class="load-overlay" id="sharedPublishOverlay" hidden>
+    <div class="load-dialog lorebook-dialog">
+        <div class="memory-head">
+            <h3>🚀 发布到共享库</h3>
+            <button type="button" class="memory-close" id="closeSharedPublishBtn" title="关闭">✕</button>
+        </div>
+        <p class="lorebook-import-hint">发布当前世界模板条目（存档副本不可选）的时点快照，全平台登录用户可见可导入。此后源模板增删改不影响包，直到你再次发布覆盖；同世界重复发布会覆盖自己的旧包。</p>
+        <div class="lorebook-body">
+            <div class="form-row">
+                <label>包名 *</label>
+                <input type="text" id="sharedPackNameInput" placeholder="如：钟表城设定集" autocomplete="off"/>
+            </div>
+            <div class="form-row">
+                <label>简介</label>
+                <input type="text" id="sharedPackBlurbInput" placeholder="一句话说明包内容（画廊卡片展示）" autocomplete="off"/>
+            </div>
+            <div class="lorebook-import-toolbar">
+                <button type="button" class="btn-secondary" id="sharedPublishToggleAll">全选/全不选</button>
+            </div>
+            <!-- 双轨勾选 section：拉当前世界模板行（设定集 / 通用世界书） -->
+            <div class="lorebook-import-list" id="sharedPublishList"></div>
+            <div class="memory-actions">
+                <button type="button" class="btn-primary" id="sharedPublishConfirmBtn">发布</button>
+                <button type="button" class="btn-secondary" id="sharedPublishCancelBtn">取消</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ========== 共享世界书：共享库画廊弹窗（add-shared-worldbook-publish D8/D5）========== -->
+<div class="load-overlay" id="sharedGalleryOverlay" hidden>
+    <div class="load-dialog lorebook-dialog">
+        <div class="memory-head">
+            <h3>🌐 共享世界书库</h3>
+            <button type="button" class="memory-close" id="closeSharedGalleryBtn" title="关闭">✕</button>
+        </div>
+        <p class="lorebook-import-hint">全平台登录用户可见的公开内容库。导入后条目成为当前世界的独立模板行，此后与共享包互不影响（快照哲学）。</p>
+        <div class="lorebook-body">
+            <!-- 画廊态：在架包卡片墙（revoked 已过滤） -->
+            <div class="shared-gallery-list" id="sharedGalleryList"></div>
+            <!-- 详情态：包内容只读列表 + 导入/撤回动作 -->
+            <div class="shared-pack-detail" id="sharedPackDetail" hidden>
+                <div class="shared-detail-head" id="sharedDetailHead"></div>
+                <div class="lorebook-list" id="sharedDetailEntries"></div>
+                <!-- 导入/撤回结果文案（含 preset- 目标拒绝与同名星冲突清单） -->
+                <div class="shared-detail-msg" id="sharedDetailMsg" hidden></div>
+                <div class="memory-actions">
+                    <button type="button" class="btn-primary" id="sharedImportBtn">⬇ 导入到当前世界</button>
+                    <button type="button" class="btn-danger" id="sharedRevokeBtn" title="仅发布者可撤回；已导入副本不受影响">撤回下架</button>
+                    <button type="button" class="btn-secondary" id="sharedBackBtn">← 返回列表</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- 删除二次确认（自包含于 rpg.css，不依赖 chat.css 的 .confirm-dialog） -->
 <div class="load-overlay memory-confirm-overlay" id="memoryConfirmOverlay" hidden>
     <div class="load-dialog memory-confirm">
@@ -360,6 +915,9 @@
     </div>
 </div>
 
+</div><!-- /.app-content -->
+</div><!-- /.app-shell -->
+
 <!-- Thymeleaf 注入 sessionId 到 JS 全局变量（RPG 会话由前端生成，此处为兜底注入位，缺省 null） -->
 <script th:inline="javascript">
     window.__SESSION_ID__ = /*[[${sessionId}]]*/ null;
@@ -367,13 +925,20 @@
 <!-- rpg-js-split：按依赖顺序加载，state.js 必须最先、init.js 必须最后 -->
 <script th:src="@{/js/auth-redirect.js(v=${#dates.createNow().time})}"></script>
 <script th:src="@{/js/rpg/state.js(v=${#dates.createNow().time})}"></script>
+<script th:src="@{/js/rpg/gallery.js(v=${#dates.createNow().time})}"></script>
 <script th:src="@{/js/rpg/markdown.js(v=${#dates.createNow().time})}"></script>
+<script th:src="@{/js/rpg/hud.js(v=${#dates.createNow().time})}"></script>
 <script th:src="@{/js/rpg/messages.js(v=${#dates.createNow().time})}"></script>
 <script th:src="@{/js/rpg/backtrack.js(v=${#dates.createNow().time})}"></script>
 <script th:src="@{/js/rpg/workshop.js(v=${#dates.createNow().time})}"></script>
+<script th:src="@{/js/rpg/story-graph.js(v=${#dates.createNow().time})}"></script>
 <script th:src="@{/js/rpg/game.js(v=${#dates.createNow().time})}"></script>
+<script th:src="@{/js/rpg/preset.js(v=${#dates.createNow().time})}"></script>
 <script th:src="@{/js/rpg/saves.js(v=${#dates.createNow().time})}"></script>
 <script th:src="@{/js/rpg/memory-dialog.js(v=${#dates.createNow().time})}"></script>
+<script th:src="@{/js/rpg/lorebook.js(v=${#dates.createNow().time})}"></script>
+<script th:src="@{/js/rpg/shared-packs.js(v=${#dates.createNow().time})}"></script>
 <script th:src="@{/js/rpg/init.js(v=${#dates.createNow().time})}"></script>
+<script th:src="@{/js/sidebar.js(v=${#dates.createNow().time})}"></script>
 </body>
 </html>

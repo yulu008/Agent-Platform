@@ -6,7 +6,8 @@
  *         appendMessage, applyMessageMeta, ensureActionsRow, addBacktrackButton,
  *         addRegenerateButton, markLatestRegenerate, refreshBacktrackButtonStates,
  *         setBacktrackButtonsEnabled, appendOpening, loadHistory
- *   依赖（运行时）：state.js 的全局状态变量；markdown.js 的渲染/过滤函数
+ *   依赖（运行时）：state.js 的全局状态变量；markdown.js 的渲染/过滤函数；
+ *         hud.js 的 attachHudComponents / reviveLatestHudChoices（历史快照组件，D7）
  */
 
 // ===== 消息列表渲染（追加式，不覆盖历史）=====
@@ -28,8 +29,9 @@ function scrollNarrationToBottom() {
  * 追加一条消息气泡（追加式，历史气泡不被触碰）。
  * @param {'user'|'assistant'} role 玩家 / GM
  * @param {string} content 文本内容
- * @param {{synthetic?:boolean, eventId?:string, approxTurn?:number}} [options]
- *        synthetic=true 渲染为被压缩摘要块；eventId 气泡回溯锚点；approxTurn 近似轮次（置灰用）
+ * @param {{synthetic?:boolean, eventId?:string, approxTurn?:number, state?:string}} [options]
+ *        synthetic=true 渲染为被压缩摘要块；eventId 气泡回溯锚点；approxTurn 近似轮次（置灰用）；
+ *        state 该轮 state_change 快照 JSON（assistant 历史 HUD 组件数据源，null = 纯叙述）
  * @returns {HTMLElement|null} 可用于流式更新的内容元素
  */
 function appendMessage(role, content, options = {}) {
@@ -76,6 +78,11 @@ function appendMessage(role, content, options = {}) {
     bubble.className = 'rpg-bubble narration-content';
     bubble.innerHTML = renderMarkdown(filterStateDelta(content || ''));
     wrap.appendChild(bubble);
+    // HUD 富组件（rpg-hud-bubble-components D7 历史快照语义）：state 到达时围绕
+    // 气泡组装（HUD 头在前、卡片与选项在后）；null/坏 JSON 降级纯叙述（D8）
+    if (options.state) {
+        attachHudComponents(wrap, options.state);
+    }
     applyMessageMeta(wrap, options);
     container.appendChild(wrap);
     scrollNarrationToBottom();
@@ -153,9 +160,10 @@ function refreshBacktrackButtonStates() {
     });
 }
 
-/** 流式进行中统一禁用/恢复回溯与重新生成按钮（恢复时按深度重新置灰） */
+/** 流式进行中统一禁用/恢复回溯与重新生成按钮（恢复时按深度重新置灰）；
+ *  HUD 选项按钮一并禁用/恢复（rpg-hud-bubble-components D11），已失效的历史选项（.stale）不在此恢复 */
 function setBacktrackButtonsEnabled(enabled) {
-    document.querySelectorAll('#messagesContainer .rpg-action-btn').forEach(btn => {
+    document.querySelectorAll('#messagesContainer .rpg-action-btn, #messagesContainer .hud-choice:not(.stale)').forEach(btn => {
         btn.disabled = !enabled;
     });
     if (enabled) refreshBacktrackButtonStates();
@@ -207,12 +215,21 @@ async function loadHistory() {
             appendMessage(m.role === 'user' ? 'user' : 'assistant', m.content, {
                 synthetic: m.synthetic === true,
                 eventId: m.eventId,
-                approxTurn: m._turn
+                approxTurn: m._turn,
+                state: m.state || null
             });
         });
-        // 重新生成按钮只落在最新一条带锚点的 GM 气泡上；再按深度刷新置灰
+        // 重新生成按钮只落在最新一条带锚点的 GM 气泡上；再按深度刷新置灰；
+        // HUD 选项仅最新一条 GM 气泡激活（其余置灰，D11）
         markLatestRegenerate();
+        reviveLatestHudChoices();
         refreshBacktrackButtonStates();
+        // 图边按钮重建（story-graph 4.10）：读档恢复最新节点出边（GM choices 已 revive
+        // 激活保留，keepChoices；历史回放本不渲染图边——不补则读档后 off 模式无选项可点）
+        const storyOpts = await fetchStoryOptions();
+        if (storyOpts && Array.isArray(storyOpts.edges) && storyOpts.edges.length > 0) {
+            refreshGraphChoicesAfterBacktrack(storyOpts, sendTurn, {keepChoices: true});
+        }
         return true;
     } catch (e) {
         console.warn('历史重放失败', e);

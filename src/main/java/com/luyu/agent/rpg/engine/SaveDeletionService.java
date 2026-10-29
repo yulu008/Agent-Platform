@@ -4,6 +4,8 @@ import com.luyu.agent.rpg.model.GameState;
 import com.luyu.agent.rpg.repository.RpgEventLogRepository;
 import com.luyu.agent.rpg.repository.RpgGameStateRepository;
 import com.luyu.agent.rpg.repository.RpgGameStateSnapshotRepository;
+import com.luyu.agent.rpg.repository.RpgLorebookSetRepository;
+import com.luyu.agent.rpg.repository.RpgStarIncarnationRuntimeRepository;
 import com.luyu.agent.rpg.repository.RpgTriggerRuntimeRepository;
 import com.luyu.agent.tenancy.TenantPaths;
 import org.slf4j.Logger;
@@ -27,9 +29,10 @@ import java.util.regex.Pattern;
  * <ol>
  *   <li>前置校验：存档存在（404）、回合互斥（409，事务内复查一次堵竞态窗口）</li>
  *   <li>读 sessionId（删除前先取出，主行删后无处可查）</li>
- *   <li>DB 事务：硬删 {@code AI_SESSION_EVENT} 全部事件 + bump {@code AI_SESSION.event_version}
- *       （compact 的 CAS 乐观锁版本，直删必须同步 bump）+ 删附属表（event_log /
- *       trigger_runtime / snapshot）+ 主行最后删</li>
+ *   <li>DB 事务：硬删 {@code AI_SESSION_EVENT} 全部事件 + 连壳删 {@code AI_SESSION} 行
+ *       （separate-rpg-chat-sessions D4：不留幽灵空壳，原 bump event_version 随壳删除移除）
+ *       + 删附属表（event_log /
+ *       trigger_runtime / star_runtime / snapshot）+ 主行最后删</li>
  *   <li>事务提交后文件清理：{@code rpg-saves/<id>/} 与 {@code rpg-saves/.snapshots/<id>/}；
  *       文件 IO 不进事务，失败记 WARN 降级不回滚——DB 真源已删，残留目录不参与任何查询，
  *       避免用户面对"删了又复活"的幽灵存档</li>
@@ -56,7 +59,9 @@ public class SaveDeletionService {
     private final RpgGameStateRepository stateRepo;
     private final RpgEventLogRepository eventLogRepo;
     private final RpgTriggerRuntimeRepository triggerRuntimeRepo;
+    private final RpgStarIncarnationRuntimeRepository starRuntimeRepo;
     private final RpgGameStateSnapshotRepository snapshotRepo;
+    private final RpgLorebookSetRepository lorebookSetRepo;
     private final TurnGuardService turnGuardService;
     private final TransactionTemplate transactionTemplate;
     /** 固定根注入（测试用）；null = 按当前请求租户解析（design D6 / tasks 4.4） */
@@ -67,11 +72,13 @@ public class SaveDeletionService {
                                RpgGameStateRepository stateRepo,
                                RpgEventLogRepository eventLogRepo,
                                RpgTriggerRuntimeRepository triggerRuntimeRepo,
+                               RpgStarIncarnationRuntimeRepository starRuntimeRepo,
                                RpgGameStateSnapshotRepository snapshotRepo,
+                               RpgLorebookSetRepository lorebookSetRepo,
                                TurnGuardService turnGuardService,
                                PlatformTransactionManager transactionManager) {
-        this(jdbcTemplate, stateRepo, eventLogRepo, triggerRuntimeRepo, snapshotRepo,
-                turnGuardService, transactionManager, null);
+        this(jdbcTemplate, stateRepo, eventLogRepo, triggerRuntimeRepo, starRuntimeRepo, snapshotRepo,
+                lorebookSetRepo, turnGuardService, transactionManager, null);
     }
 
     /**
@@ -81,7 +88,9 @@ public class SaveDeletionService {
                         RpgGameStateRepository stateRepo,
                         RpgEventLogRepository eventLogRepo,
                         RpgTriggerRuntimeRepository triggerRuntimeRepo,
+                        RpgStarIncarnationRuntimeRepository starRuntimeRepo,
                         RpgGameStateSnapshotRepository snapshotRepo,
+                        RpgLorebookSetRepository lorebookSetRepo,
                         TurnGuardService turnGuardService,
                         PlatformTransactionManager transactionManager,
                         Path savesRoot) {
@@ -89,7 +98,9 @@ public class SaveDeletionService {
         this.stateRepo = stateRepo;
         this.eventLogRepo = eventLogRepo;
         this.triggerRuntimeRepo = triggerRuntimeRepo;
+        this.starRuntimeRepo = starRuntimeRepo;
         this.snapshotRepo = snapshotRepo;
+        this.lorebookSetRepo = lorebookSetRepo;
         this.turnGuardService = turnGuardService;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.savesRootOverride = savesRoot;
@@ -129,18 +140,24 @@ public class SaveDeletionService {
                 if (turnGuardService.isInTurn(gameStateId)) {
                     throw new IllegalStateException("该存档当前有回合正在进行，请等待其完成或中止后再删除");
                 }
-                // session 事件全删 + 版本号 bump（GameState 与 session 1:1 固定绑定，清理范围确定）
+                // session 事件与壳同事务清理（separate-rpg-chat-sessions D4：GameState 与
+                // session 1:1 固定绑定，清理范围确定；壳行删除不留幽灵空壳，
+                // 原 bump event_version 随壳删除失去意义一并移除）
                 if (sessionId != null && !sessionId.isBlank()) {
                     removedEvents[0] = jdbcTemplate.update(
                             "DELETE FROM AI_SESSION_EVENT WHERE session_id = ?", sessionId);
                     jdbcTemplate.update(
-                            "UPDATE AI_SESSION SET event_version = event_version + 1 WHERE id = ?",
+                            "DELETE FROM AI_SESSION WHERE id = ?",
                             sessionId);
                 }
-                // 附属表清理
+                // 附属表清理（含设定集·已揭示的存档级 runtime 行，star-lorebook）
                 eventLogRepo.deleteByGameStateId(gameStateId);
                 triggerRuntimeRepo.deleteByGameStateId(gameStateId);
+                starRuntimeRepo.deleteByGameStateId(gameStateId);
                 snapshotRepo.deleteByGameStateId(gameStateId);
+                // 世界书副本不级联删（add-rpg-lorebook-sets D7）：仅解除存档引用使其孤儿化，
+                // set 及双轨条目行保留，可被后续开局继承或手动删除
+                lorebookSetRepo.orphanizeByGameStateId(gameStateId);
                 // 主行最后删：事务中途失败时残留行仍能定位孤儿数据
                 stateRepo.deleteById(gameStateId);
             });

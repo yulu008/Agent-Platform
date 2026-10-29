@@ -12,9 +12,13 @@ import com.luyu.agent.rpg.engine.SaveDeletionService;
 import com.luyu.agent.rpg.engine.StateDeltaSanitizer;
 import com.luyu.agent.rpg.engine.StateDeltaStreamFilter;
 import com.luyu.agent.rpg.engine.TurnGuardService;
+import com.luyu.agent.rpg.eval.service.PromptHashService;
+import com.luyu.agent.rpg.model.EventLog;
 import com.luyu.agent.rpg.model.GameState;
 import com.luyu.agent.rpg.model.SaveCard;
+import com.luyu.agent.rpg.repository.RpgEventLogRepository;
 import com.luyu.agent.rpg.service.WorkshopService;
+import com.luyu.agent.rpg.story.engine.StoryRunEngine;
 import com.luyu.agent.tenancy.SessionTenantGuard;
 import com.luyu.agent.tenancy.TenantContext;
 import org.slf4j.Logger;
@@ -55,7 +59,7 @@ import java.util.concurrent.atomic.AtomicReference;
  * - GET  /rpg: 返回 rpg.html 模板
  * - POST /rpg/game/start: 加载 GameState → 组装首轮 system prompt → 开场白 SSE 流式 → GM 接管
  * - POST /rpg/game/turn: 玩家输入 → GameLoopService 执行 → GM 叙述 SSE 流式（过滤 state_delta）
- * - GET  /rpg/game/saves: 存档卡片列表（富化 DTO）
+ * - GET  /rpg/game/saves: 存档卡片列表（富化 DTO，含最近一行可回放对话预览）
  * - DELETE /rpg/game/state/{id}: 删除存档（全量级联清理）
  * - POST /rpg/game/load: 读档
  * - GET  /rpg/game/state: 返回当前 GameState 供前端状态面板更新
@@ -71,6 +75,9 @@ public class RpgGameController {
     /** Reactor context 中存放工具事件 Sink 的 key（与 ResilientToolCallback / ChatStreamController 一致） */
     private static final String TOOL_EVENT_SINK_KEY = "toolEventSink";
 
+    /** 预览行服务端限长（conversation-world-title-preview D3）：前端单行省略仅展示 ~30 字，全量进 JSON 列表响应浪费 */
+    private static final int PREVIEW_MAX_CHARS = 200;
+
     private final ChatClientRegistry chatClientRegistry;
     private final GameLoopService gameLoopService;
     private final OpeningNarrationService openingNarrationService;
@@ -84,6 +91,9 @@ public class RpgGameController {
     private final SessionTenantGuard sessionTenantGuard;
     private final ContentModerationGate moderationGate;
     private final QuotaGuard quotaGuard;
+    private final RpgEventLogRepository eventLogRepository;
+    private final StoryRunEngine storyRunEngine;
+    private final PromptHashService promptHashService;
 
     public RpgGameController(ChatClientRegistry chatClientRegistry,
                              GameLoopService gameLoopService,
@@ -97,7 +107,10 @@ public class RpgGameController {
                              SaveDeletionService saveDeletionService,
                              SessionTenantGuard sessionTenantGuard,
                              ContentModerationGate moderationGate,
-                             QuotaGuard quotaGuard) {
+                             QuotaGuard quotaGuard,
+                             RpgEventLogRepository eventLogRepository,
+                             StoryRunEngine storyRunEngine,
+                             PromptHashService promptHashService) {
         this.chatClientRegistry = chatClientRegistry;
         this.gameLoopService = gameLoopService;
         this.openingNarrationService = openingNarrationService;
@@ -111,6 +124,9 @@ public class RpgGameController {
         this.sessionTenantGuard = sessionTenantGuard;
         this.moderationGate = moderationGate;
         this.quotaGuard = quotaGuard;
+        this.eventLogRepository = eventLogRepository;
+        this.storyRunEngine = storyRunEngine;
+        this.promptHashService = promptHashService;
     }
 
     /**
@@ -159,9 +175,121 @@ public class RpgGameController {
     }
 
     /**
+     * 图选项视图（story-graph-runtime 4.5，spec「选项混排与即兴三档」）：当前节点
+     * 图出边（双守卫过滤后的按钮数据）+ 混排策略（mode/improviseAllowed）。
+     * 前端在 turn_persisted 尾包后拉取本视图混排渲染；未挂图/未开图 → 空视图
+     * （edges 空且 improviseAllowed=true，选项区与现状完全一致零增量）。
+     */
+    @GetMapping("/game/story-options")
+    public ResponseEntity<Object> storyOptions(@RequestParam String gameStateId) {
+        StoryRunEngine.StoryOptionsView view = storyRunEngine.storyOptions(gameStateId);
+        if (view == null) {
+            return ResponseEntity.ok(Map.of(
+                    "mode", "", "nodeId", "", "edges", List.of(), "improviseAllowed", true));
+        }
+        return ResponseEntity.ok(Map.of(
+                "mode", view.mode(),
+                "nodeId", view.nodeId(),
+                "edges", view.edges().stream().map(e -> Map.of(
+                        "id", e.getId() == null ? "" : e.getId(),
+                        "label", e.getLabel() == null ? "" : e.getLabel(),
+                        "quote", e.getQuote() == null ? "" : e.getQuote(),
+                        "hint", e.getHint() == null ? "" : e.getHint())).toList(),
+                "improviseAllowed", view.improviseAllowed()));
+    }
+
+    /**
+     * 已走分叉点列表（story-graph-runtime 4.8，spec「图上回溯与确定性重放」）：
+     * 入口节点 + 各已走边 to 节点（按游走序去重），供回退 UI 选择。未挂图/
+     * 未开图 → 空列表（无回退点零增量；跨租户存档查不到运行副本，同
+     * story-options 归属语义）。
+     */
+    @GetMapping("/game/story-forks")
+    public ResponseEntity<Object> storyForks(@RequestParam String gameStateId) {
+        List<StoryRunEngine.StoryForkView> forks = storyRunEngine.walkedForks(gameStateId);
+        return ResponseEntity.ok(forks.stream().map(f -> Map.of(
+                "nodeId", f.nodeId() == null ? "" : f.nodeId(),
+                "nodeType", f.nodeType() == null ? "" : f.nodeType(),
+                "beat", f.beat() == null ? "" : f.beat(),
+                "arrivedViaLabel", f.arrivedViaLabel() == null ? "" : f.arrivedViaLabel())).toList());
+    }
+
+    /**
+     * 图上回溯（story-graph-runtime 4.8）：回退到任意已走分叉点——确定性重放
+     * （开局基线 + 入口 on_enter + 保留前缀已走边 effects 依次结算）恢复
+     * GameState，被回退边移出已走集合（物化缓存按路径规则自然失效）。
+     * 请求体: {"gameStateId":"xxx","nodeId":"n1_03"}；目标不在已走路径上/未挂图
+     * → 400（对齐选边 IAE 归控形态）。
+     */
+    @PostMapping("/game/story-backtrack")
+    public ResponseEntity<Object> storyBacktrack(@RequestBody Map<String, String> request) {
+        String gameStateId = request.get("gameStateId");
+        String nodeId = request.get("nodeId");
+        if (gameStateId == null || gameStateId.isBlank()
+                || nodeId == null || nodeId.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "gameStateId / nodeId 均不能为空"));
+        }
+        try {
+            StoryRunEngine.BacktrackResult result = storyRunEngine.backtrackToNode(gameStateId, nodeId);
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "nodeId", result.node() != null && result.node().getId() != null
+                            ? result.node().getId() : nodeId,
+                    "playerStates", result.playerStates() == null ? "{}" : result.playerStates()));
+        } catch (IllegalArgumentException e) {
+            log.warn("图上回溯被拒: gameStateId={}, node={}: {}", gameStateId, nodeId, e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            log.error("图上回溯失败: gameStateId={}, node={}", gameStateId, nodeId, e);
+            return ResponseEntity.internalServerError().body(Map.of(
+                    "error", "图上回溯失败: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * 多周目开局（story-graph-runtime 4.9）：通关存档以同模板图开新周目——
+     * 运行副本重置回模板初始态（walkedEdges 清空、回入口、缓存按配置处理），
+     * playerStates 确定性重放回开局基线 + 入口 on_enter。
+     * 请求体: {"gameStateId":"xxx","rematerialize":true|false}——rematerialize
+     * 缺省 false（复用一局物化缓存，同路径重走省 GM 调用）；true 强制重物化
+     * （清空缓存 + 恒不命中，正文贴本局状态）。<br>
+     * 响应: {success:true, nodeId:入口节点, playerStates:重放态}；
+     * 未挂图/未通关 → 400（对齐 backtrack 错误映射）。
+     */
+    @PostMapping("/game/story-new-cycle")
+    public ResponseEntity<Object> storyNewCycle(@RequestBody Map<String, Object> request) {
+        Object gsId = request.get("gameStateId");
+        String gameStateId = gsId == null ? null : String.valueOf(gsId);
+        if (gameStateId == null || gameStateId.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "gameStateId 不能为空"));
+        }
+        boolean rematerialize = Boolean.parseBoolean(String.valueOf(request.get("rematerialize")));
+        try {
+            StoryRunEngine.BacktrackResult result =
+                    storyRunEngine.startNewCycle(gameStateId, rematerialize);
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "nodeId", result.node() != null && result.node().getId() != null
+                            ? result.node().getId() : "",
+                    "playerStates", result.playerStates() == null ? "{}" : result.playerStates()));
+        } catch (IllegalArgumentException e) {
+            log.warn("新周目被拒: gameStateId={}: {}", gameStateId, e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            log.error("新周目开局失败: gameStateId={}", gameStateId, e);
+            return ResponseEntity.internalServerError().body(Map.of(
+                    "error", "新周目开局失败: " + e.getMessage()));
+        }
+    }
+
+    /**
      * 游戏回合：玩家输入 → GameLoopService → GM 叙述 SSE 流式。
      * <p>
-     * 请求体: {"gameStateId":"xxx","sessionId":"yyy","message":"我走进客栈","model":"可选模型名"}
+     * 请求体: {"gameStateId":"xxx","sessionId":"yyy","message":"我走进客栈",
+     * "model":"可选模型名","edgeId":"可选图边 ID"}——edgeId 非空表示本回合由
+     * 图边按钮发起（message 为边 quote，故事图 4.5）：引擎先确定性结算选边
+     * （守卫复验/效果/on_enter/推进运行副本）再组装 prompt 物化目标节点。
      */
     @PostMapping(value = "/game/turn", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<ServerSentEvent<Object>> gameTurn(@RequestBody Map<String, String> request) {
@@ -169,11 +297,15 @@ public class RpgGameController {
         String sessionId = request.get("sessionId");
         String message = request.get("message");
         String model = request.get("model");
+        String edgeId = request.get("edgeId");
 
         // 请求线程捕获租户 ID：SSE 订阅与降级重跑（callGmContent）都在异步线程执行，
         // ThreadLocal 不可靠；租户身份随 GmTurnSpec 显式传播。
         // USER_ID_CONTEXT_KEY：SessionMemoryAdvisor 请求级 userId 覆盖（记忆按租户隔离）。
         final String tenantId = TenantContext.requireTenantId();
+
+        // 本轮是否经图边推进（story-graph 4.6 即兴深度记账标志：走图边即重置计数）
+        final boolean walkedGraphEdge = edgeId != null && !edgeId.isBlank();
 
         // 跨租户会话守卫（session-isolation spec）：回合事件必须写进本租户会话
         if (sessionTenantGuard.isForeign(sessionId)) {
@@ -211,6 +343,25 @@ public class RpgGameController {
                             .build());
         }
 
+        // 选边结算（story-graph-runtime 4.5）：图边按钮点击以边 quote 发起新回合并携带
+        // edgeId；引擎确定性结算（守卫复验/效果/on_enter/推进运行副本）在 prepareTurn
+        // 之前——组 prompt 时 currentNode 已是目标节点，物化块注入新位置。IAE（守卫
+        // 竞态/他边重放等）零写入，SSE error 提前返回（对齐「准备轮次失败」形态）。
+        if (edgeId != null && !edgeId.isBlank()) {
+            try {
+                storyRunEngine.settleEdgeForGame(gameStateId, edgeId);
+            } catch (IllegalArgumentException e) {
+                log.warn("选边失败: gameStateId={}, edge={}, 原因: {}",
+                        gameStateId, edgeId, e.getMessage());
+                return Flux.just(ServerSentEvent.<Object>builder()
+                                .data(Map.of("error", "选边失败: " + e.getMessage()))
+                                .build(),
+                        ServerSentEvent.<Object>builder()
+                                .data("[DONE]")
+                                .build());
+            }
+        }
+
         // 步骤1-4: 准备轮次（触发器扫描、软条件评估、概率检定、GM 上下文组装）
         GameLoopService.TurnContext turnContext;
         try {
@@ -244,7 +395,7 @@ public class RpgGameController {
         AtomicReference<StateDeltaStreamFilter> deltaFilterRef =
                 new AtomicReference<>(new StateDeltaStreamFilter());
         GmTurnSpec spec = new GmTurnSpec(gameStateId, sessionId, chatClient,
-                turnContext, fullResponse, deltaFilterRef, tenantId);
+                turnContext, fullResponse, deltaFilterRef, new AtomicReference<>(), tenantId);
 
         // 工具进度事件 Sink：经 Reactor context 传递给 ResilientToolCallback（与主聊天
         // ChatStreamController 同机制），GM 每次调用工具时向 SSE 流注入 {"tool":"start","name":…}，
@@ -289,16 +440,23 @@ public class RpgGameController {
                         return;
                     }
                     try {
-                        gameLoopService.finalizeTurn(gameStateId, fullResponse.toString(), turnContext);
+                        // 回传产物接力给尾包（rpg-hud-bubble-components D3）：null 容忍（无 delta/存档缺失）
+                        spec.outcomeRef().set(gameLoopService.finalizeTurn(
+                                gameStateId, fullResponse.toString(), turnContext));
                     } catch (Exception e) {
                         log.error("finalizeTurn 失败: gameStateId={}", gameStateId, e);
                     }
+                    // 即兴深度记账（story-graph 4.6）：完整回合才计数（doOnCancel 中止轮半截叙述
+                    // 大概率重试，不计避免误判超限）；走图边轮 settleEdge 已同步置 0，此处幂等兑底
+                    recordTurnOutcomeForTurn(gameStateId, walkedGraphEdge, tenantId);
                 })
                 .doOnCancel(() -> {
-                    // 流式中止：保存已生成的部分
+                    // 流式中止：保存已生成的部分（outcomeRef 照常写入，但取消后尾包不可达，
+                    // 该轮对齐键不回填——刷新后 history 回放降级纯叙述，design D8）
                     if (fullResponse.length() > 0) {
                         try {
-                            gameLoopService.finalizeTurn(gameStateId, fullResponse.toString(), turnContext);
+                            spec.outcomeRef().set(gameLoopService.finalizeTurn(
+                                    gameStateId, fullResponse.toString(), turnContext));
                         } catch (Exception e) {
                             log.error("中止后 finalizeTurn 失败: gameStateId={}", gameStateId, e);
                         }
@@ -311,11 +469,13 @@ public class RpgGameController {
                             ? Flux.<ServerSentEvent<Object>>empty()
                             : Flux.just(contentEvent(tail));
                 }))
-                // 尾包 turn_persisted：回合已落库，回报本局事件 ID 供前端 live 气泡挂载回溯锚点。
+                // 尾包 turn_persisted：回合已落库，回报本局事件 ID + 轮次 + 修复后 state_delta
+                // （rpg-hud-bubble-components D3：state 与 EventLog 快照同源，前端 GM 气泡富组件渲染）。
                 // defer 保证在 doOnComplete/doOnCancel（finalizeTurn）之后才取事件；
                 // 中止路径下流已被取消、尾包无法送达，前端中止后自行刷新历史对账。
                 .concatWith(Flux.defer(() -> {
-                    ServerSentEvent<Object> persisted = turnPersistedEvent(sessionId);
+                    ServerSentEvent<Object> persisted = turnPersistedEvent(
+                            sessionId, gameStateId, spec.outcomeRef().get(), tenantId);
                     return persisted == null
                             ? Flux.<ServerSentEvent<Object>>empty()
                             : Flux.just(persisted);
@@ -345,6 +505,31 @@ public class RpgGameController {
     }
 
     /**
+     * 即兴深度记账包装（story-graph 4.6）：doOnComplete 运行在 SSE 订阅线程
+     * （ThreadLocal 租户不可靠，同 finalizeTurn 的 gm-async 模式）——落库前
+     * 从显式载体恢复租户上下文，恢复者负责 finally 清理；失败只记日志不
+     * 影响回合产物（计数是软记账，不阻塞游戏流）。
+     */
+    private void recordTurnOutcomeForTurn(String gameStateId, boolean walkedGraphEdge, String tenantId) {
+        boolean restored = false;
+        if (!TenantContext.isPresent()) {
+            if (tenantId != null && !tenantId.isBlank()) {
+                TenantContext.set("gm-async", tenantId);
+                restored = true;
+            }
+        }
+        try {
+            storyRunEngine.recordTurnOutcome(gameStateId, walkedGraphEdge);
+        } catch (Exception e) {
+            log.error("即兴深度记账失败: gameStateId={}", gameStateId, e);
+        } finally {
+            if (restored) {
+                TenantContext.clear();
+            }
+        }
+    }
+
+    /**
      * 服务端中止回合（rpg-server-side-abort，design D3）：触发该存档进行中回合
      * （含开场白）的取消信号，回合流随即截断并走既有 doOnCancel/doFinally 收尾
      * （部分叙述落库 + 守卫释放）。
@@ -368,10 +553,15 @@ public class RpgGameController {
     
     // ==================== GM 流式包装与降级重跑（stream-fallback-duplicate-output） ====================
     
-    /** 回合流式记账载体：fullResponse / deltaFilter 随降级重跑整体重置（design D2）。 */
+    /**
+     * 回合流式记账载体：fullResponse / deltaFilter 随降级重跑整体重置（design D2）；
+     * outcomeRef 跨线程接力 finalizeTurn 产物（rpg-hud-bubble-components D3，同 deltaFilterRef
+     * 模式），由 doOnComplete/doOnCancel 写入、turn_persisted 尾包 defer 读取。
+     */
     private record GmTurnSpec(String gameStateId, String sessionId, ChatClient chatClient,
                               GameLoopService.TurnContext turnContext, StringBuilder fullResponse,
                               AtomicReference<StateDeltaStreamFilter> deltaFilterRef,
+                              AtomicReference<GameLoopService.TurnOutcome> outcomeRef,
                               String tenantId) {
     }
     
@@ -478,10 +668,90 @@ public class RpgGameController {
     /**
      * 存档卡片列表：返回富化后的卡片 DTO（世界名/玩家角色名/地点/轮次/最后游玩时间），
      * 按最后游玩时间倒序。字段缺失时为占位符 "-"，前端可直接渲染。
+     * <p>
+     * 读时富化 lastMessage = 最近一行可回放对话（conversation-world-title-preview
+     * D1/D2）：倒序扫描 session 事件取首条可回放消息，过滤规则与 /game/history
+     * 逐条一致，保证卡片预览 = 历史回放最后一条；空档为 null（D6），不中断列表。
      */
     @GetMapping("/game/saves")
     public List<SaveCard> listSaveCards() {
-        return workshopService.listSaveCards();
+        List<SaveCard> cards = workshopService.listSaveCards();
+        for (SaveCard card : cards) {
+            card.setLastMessage(resolveLastMessage(card.getSessionId()));
+        }
+        return cards;
+    }
+
+    /**
+     * 读时富化：取会话中最近一行可回放消息文本。
+     * <p>
+     * 过滤规则与 {@code /game/history} 回放逐条一致（D2）：tool 事件跳过、带
+     * toolCalls 的 assistant 跳过、合成用户提示跳过、synthetic assistant 摘要计入；
+     * 文本清洗复用 {@link RpgHistoryCleaner}（user 抽玩家行动、assistant 剥
+     * state_delta）。倒序扫描找到首条可回放消息即返回（不遍历全表）；回合中止
+     * 悬停时取玩家最后输入（与 history 一致的“停在这里”语义）。空档（无
+     * sessionId / 空会话 / 无可回放消息 / 查询失败）返回 null，不抛错不中断列表（D6）。
+     */
+    private String resolveLastMessage(String sessionId) {
+        if (sessionId == null || sessionId.trim().isEmpty()) {
+            return null;
+        }
+        try {
+            List<SessionEvent> events = sessionService.getEvents(sessionId);
+            for (int i = events.size() - 1; i >= 0; i--) {
+                SessionEvent event = events.get(i);
+                Message msg = event.getMessage();
+                if (msg == null) {
+                    continue;
+                }
+                // 隐藏工具事件（D10）：与 /game/history 相同的过滤规则
+                if (msg instanceof ToolResponseMessage) {
+                    continue;
+                }
+                if (msg instanceof AssistantMessage am && am.hasToolCalls()) {
+                    continue;
+                }
+
+                boolean synthetic = event.isSynthetic();
+                String content = msg.getText();
+
+                if (msg instanceof UserMessage) {
+                    // 合成用户提示（压缩产物）不回放
+                    if (synthetic) {
+                        continue;
+                    }
+                    String cleaned = rpgHistoryCleaner.cleanUserMessage(content);
+                    if (cleaned == null || cleaned.isEmpty()) {
+                        continue;
+                    }
+                    return truncatePreview(cleaned);
+                } else if (msg instanceof AssistantMessage) {
+                    // 叙述正文（合成摘要原样保留）
+                    String cleaned = synthetic
+                            ? (content != null ? content.trim() : "")
+                            : rpgHistoryCleaner.cleanAssistantMessage(content);
+                    if (cleaned == null || cleaned.isEmpty()) {
+                        continue;
+                    }
+                    return truncatePreview(cleaned);
+                }
+                // 其余类型（如 SystemMessage）不回放
+            }
+        } catch (Exception e) {
+            log.warn("富化存档预览失败（降级为空预览）: sessionId={}", sessionId, e);
+        }
+        return null;
+    }
+
+    /** 服务端限长（D3）：超长截断加省略号；null 安全。 */
+    private static String truncatePreview(String text) {
+        if (text == null) {
+            return null;
+        }
+        String trimmed = text.trim();
+        return trimmed.length() <= PREVIEW_MAX_CHARS
+                ? trimmed
+                : trimmed.substring(0, PREVIEW_MAX_CHARS) + "…";
     }
 
     /**
@@ -558,6 +828,10 @@ public class RpgGameController {
                 throw new ResponseStatusException(HttpStatus.NOT_FOUND, "会话不存在或无权访问");
             }
             List<SessionEvent> events = sessionService.getEvents(sessionId);
+            // rpg-hud-bubble-components D4/D7：assistant 气泡富组件按该轮 state_change 快照回填，
+            // session_event_id 与消息 eventId 精确对齐（否决序号推导：中止半轮/压缩摘要破坏单调性）
+            GameState gs = workshopService.getGameStateBySessionId(sessionId);
+            Map<String, String> stateByEventId = stateSnapshotsByEventId(gs);
             for (SessionEvent event : events) {
                 Message msg = event.getMessage();
                 if (msg == null) {
@@ -592,12 +866,12 @@ public class RpgGameController {
                     if (cleaned == null || cleaned.isEmpty()) {
                         continue;
                     }
-                    messages.add(historyEntry("assistant", cleaned, synthetic, event.getId()));
+                    messages.add(historyEntry("assistant", cleaned, synthetic, event.getId(),
+                            stateByEventId.get(event.getId())));
                 }
                 // 其余类型（如 SystemMessage）不回放
             }
             // 顶层 currentTurn：前端按消息序从末尾倒推近似轮次做置灰（D7）
-            GameState gs = workshopService.getGameStateBySessionId(sessionId);
             if (gs != null && gs.getTurnCount() != null) {
                 currentTurn = gs.getTurnCount();
             }
@@ -608,8 +882,17 @@ public class RpgGameController {
         return result;
     }
 
-    /** 构建历史消息条目（含回溯锚点事件 ID）。 */
+    /** 构建历史消息条目（含回溯锚点事件 ID；user 分支无 state）。 */
     private Map<String, Object> historyEntry(String role, String content, boolean synthetic, String eventId) {
+        return historyEntry(role, content, synthetic, eventId, null);
+    }
+
+    /**
+     * 构建历史消息条目。assistant 条目附带 state（rpg-hud-bubble-components D7：该轮
+     * state_change 快照 JSON；null = 无对齐/无快照 → 前端降级纯叙述气泡）。
+     */
+    private Map<String, Object> historyEntry(String role, String content, boolean synthetic,
+                                             String eventId, String state) {
         Map<String, Object> entry = new LinkedHashMap<>();
         entry.put("role", role);
         entry.put("content", content);
@@ -617,7 +900,31 @@ public class RpgGameController {
         if (synthetic) {
             entry.put("synthetic", true);
         }
+        if ("assistant".equals(role)) {
+            entry.put("state", state);
+        }
         return entry;
+    }
+
+    /**
+     * 历史回放 state 快照映射（rpg-hud-bubble-components D4）：session_event_id → state_delta。
+     * 存档缺失（gs=null）或查询异常时返回空映射——全部 assistant 气泡降级纯叙述，不报错。
+     */
+    private Map<String, String> stateSnapshotsByEventId(GameState gs) {
+        Map<String, String> mapping = new LinkedHashMap<>();
+        if (gs == null) {
+            return mapping;
+        }
+        try {
+            for (EventLog stateEvent : eventLogRepository.findStateChangesByGameStateId(gs.getId())) {
+                if (stateEvent.getSessionEventId() != null && stateEvent.getStateDelta() != null) {
+                    mapping.put(stateEvent.getSessionEventId(), stateEvent.getStateDelta());
+                }
+            }
+        } catch (Exception e) {
+            log.warn("历史 state 快照回填失败（降级纯叙述回放）: gameStateId={}", gs.getId(), e);
+        }
+        return mapping;
     }
 
     /**
@@ -730,8 +1037,31 @@ public class RpgGameController {
      * <p>
      * 错误轮（onErrorResume 路径）assistant 事件可能缺失，assistantEventId 为 null；
      * 查询失败时返回 null（尾包缺席，前端靠刷新后拉 history 对账）。包级可见以便单测。
+     * <p>
+     * rpg-hud-bubble-components D3/D4：outcome 非空时载荷扩展 turn 与 state（本轮修复后
+     * state_delta 原文，与 rpg_event_log 落库快照同源同值），并把 assistantEventId 回填到
+     * 该轮 state_change 行的 session_event_id 供 /game/history 精确对齐回填。defer 时序
+     * 保证 finalizeTurn 已先行完成。此处运行在 SSE 订阅线程，租户上下文从请求线程的
+     * 显式载体（tenantId）恢复（同 finalizeTurn 的 gm-async 模式），恢复者负责清理。
      */
-    ServerSentEvent<Object> turnPersistedEvent(String sessionId) {
+    ServerSentEvent<Object> turnPersistedEvent(String sessionId, String gameStateId,
+                                               GameLoopService.TurnOutcome outcome, String tenantId) {
+        boolean restored = false;
+        if (!TenantContext.isPresent() && tenantId != null && !tenantId.isBlank()) {
+            TenantContext.set("gm-async", tenantId);
+            restored = true;
+        }
+        try {
+            return doTurnPersistedEvent(sessionId, gameStateId, outcome);
+        } finally {
+            if (restored) {
+                TenantContext.clear();
+            }
+        }
+    }
+
+    private ServerSentEvent<Object> doTurnPersistedEvent(String sessionId, String gameStateId,
+                                                          GameLoopService.TurnOutcome outcome) {
         try {
             List<SessionEvent> events = sessionService.getEvents(sessionId);
             String userEventId = null;
@@ -757,6 +1087,26 @@ public class RpgGameController {
             data.put("type", "turn_persisted");
             data.put("userEventId", userEventId);
             data.put("assistantEventId", assistantEventId);
+            if (outcome != null) {
+                // 回填对齐键（D4）：失败不阻断尾包——history 回放该轮降级纯叙述即可
+                if (gameStateId != null && assistantEventId != null) {
+                    try {
+                        eventLogRepository.updateSessionEventId(gameStateId, outcome.turn(), assistantEventId);
+                    } catch (Exception ex) {
+                        log.warn("session_event_id 回填失败（该轮回放将降级纯叙述）: gameStateId={}, turn={}",
+                                gameStateId, outcome.turn(), ex);
+                    }
+                }
+                // 版本指纹附着（content-eval tasks 2.2）：本轮 assistant 事件回填 prompt_hash，
+                // 供动态层评估按提示词版本分组统计；服务内部全防御（失败仅 warn 不阻断尾包）
+                if (assistantEventId != null) {
+                    promptHashService.attachToEvent(assistantEventId);
+                }
+                data.put("turn", outcome.turn());
+                if (outcome.stateDeltaJson() != null) {
+                    data.put("state", outcome.stateDeltaJson());
+                }
+            }
             return ServerSentEvent.<Object>builder().data(data).build();
         } catch (Exception e) {
             log.warn("构建 turn_persisted 尾包失败: sessionId={}", sessionId, e);

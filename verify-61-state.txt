@@ -1,0 +1,2 @@
+rpgSessionId=rpg-verify-session-1026111432
+gameStateId=7f9d0213-3548-4954-a1ba-281ed91d9902

@@ -1,0 +1,228 @@
+﻿Compiled from "OpenAiChatModel.java"
+public final class org.springframework.ai.openai.OpenAiChatModel$Builder {
+  private com.openai.client.OpenAIClient openAiClient;
+
+  private com.openai.client.OpenAIClientAsync openAiClientAsync;
+
+  private org.springframework.ai.openai.OpenAiChatOptions options;
+
+  private org.springframework.ai.model.tool.ToolCallingManager toolCallingManager;
+
+  private io.micrometer.observation.ObservationRegistry observationRegistry;
+
+  private io.micrometer.core.instrument.MeterRegistry meterRegistry;
+
+  private java.util.List<org.springframework.ai.openai.http.okhttp.OpenAiHttpClientBuilderCustomizer> httpClientCustomizers;
+
+  private org.springframework.ai.openai.OpenAiChatModel$Builder();
+    Code:
+       0: aload_0
+       1: invokespecial #1                  // Method java/lang/Object."<init>":()V
+       4: aload_0
+       5: new           #7                  // class java/util/ArrayList
+       8: dup
+       9: invokespecial #9                  // Method java/util/ArrayList."<init>":()V
+      12: putfield      #10                 // Field httpClientCustomizers:Ljava/util/List;
+      15: return
+
+  public org.springframework.ai.openai.OpenAiChatModel$Builder openAiClient(com.openai.client.OpenAIClient);
+    Code:
+       0: aload_0
+       1: aload_1
+       2: putfield      #16                 // Field openAiClient:Lcom/openai/client/OpenAIClient;
+       5: aload_0
+       6: areturn
+
+  public org.springframework.ai.openai.OpenAiChatModel$Builder openAiClientAsync(com.openai.client.OpenAIClientAsync);
+    Code:
+       0: aload_0
+       1: aload_1
+       2: putfield      #20                 // Field openAiClientAsync:Lcom/openai/client/OpenAIClientAsync;
+       5: aload_0
+       6: areturn
+
+  public org.springframework.ai.openai.OpenAiChatModel$Builder options(org.springframework.ai.openai.OpenAiChatOptions);
+    Code:
+       0: aload_0
+       1: aload_1
+       2: putfield      #24                 // Field options:Lorg/springframework/ai/openai/OpenAiChatOptions;
+       5: aload_0
+       6: areturn
+
+  public org.springframework.ai.openai.OpenAiChatModel$Builder toolCallingManager(org.springframework.ai.model.tool.ToolCallingManager);
+    Code:
+       0: aload_0
+       1: aload_1
+       2: putfield      #28                 // Field toolCallingManager:Lorg/springframework/ai/model/tool/ToolCallingManager;
+       5: aload_0
+       6: areturn
+
+  public org.springframework.ai.openai.OpenAiChatModel$Builder observationRegistry(io.micrometer.observation.ObservationRegistry);
+    Code:
+       0: aload_0
+       1: aload_1
+       2: putfield      #32                 // Field observationRegistry:Lio/micrometer/observation/ObservationRegistry;
+       5: aload_0
+       6: areturn
+
+  public org.springframework.ai.openai.OpenAiChatModel$Builder meterRegistry(io.micrometer.core.instrument.MeterRegistry);
+    Code:
+       0: aload_0
+       1: aload_1
+       2: putfield      #36                 // Field meterRegistry:Lio/micrometer/core/instrument/MeterRegistry;
+       5: aload_0
+       6: areturn
+
+  public org.springframework.ai.openai.OpenAiChatModel$Builder httpClientBuilderCustomizer(org.springframework.ai.openai.http.okhttp.OpenAiHttpClientBuilderCustomizer);
+    Code:
+       0: aload_1
+       1: ldc           #40                 // String customizer cannot be null
+       3: invokestatic  #42                 // Method org/springframework/util/Assert.notNull:(Ljava/lang/Object;Ljava/lang/String;)V
+       6: aload_0
+       7: getfield      #10                 // Field httpClientCustomizers:Ljava/util/List;
+      10: aload_1
+      11: invokeinterface #48,  2           // InterfaceMethod java/util/List.add:(Ljava/lang/Object;)Z
+      16: pop
+      17: aload_0
+      18: areturn
+
+  public org.springframework.ai.openai.OpenAiChatModel$Builder httpClientBuilderCustomizers(java.util.List<org.springframework.ai.openai.http.okhttp.OpenAiHttpClientBuilderCustomizer>);
+    Code:
+       0: aload_1
+       1: ldc           #54                 // String customizers cannot be null
+       3: invokestatic  #42                 // Method org/springframework/util/Assert.notNull:(Ljava/lang/Object;Ljava/lang/String;)V
+       6: aload_0
+       7: new           #7                  // class java/util/ArrayList
+      10: dup
+      11: aload_1
+      12: invokespecial #56                 // Method java/util/ArrayList."<init>":(Ljava/util/Collection;)V
+      15: putfield      #10                 // Field httpClientCustomizers:Ljava/util/List;
+      18: aload_0
+      19: areturn
+
+  public org.springframework.ai.openai.OpenAiChatModel build();
+    Code:
+       0: aload_0
+       1: getfield      #24                 // Field options:Lorg/springframework/ai/openai/OpenAiChatOptions;
+       4: ifnull        14
+       7: aload_0
+       8: getfield      #24                 // Field options:Lorg/springframework/ai/openai/OpenAiChatOptions;
+      11: goto          20
+      14: invokestatic  #59                 // Method org/springframework/ai/openai/OpenAiChatOptions.builder:()Lorg/springframework/ai/openai/OpenAiChatOptions$Builder;
+      17: invokevirtual #65                 // Method org/springframework/ai/openai/OpenAiChatOptions$Builder.build:()Lorg/springframework/ai/openai/OpenAiChatOptions;
+      20: astore_1
+      21: aload_0
+      22: getfield      #32                 // Field observationRegistry:Lio/micrometer/observation/ObservationRegistry;
+      25: getstatic     #71                 // Field io/micrometer/observation/ObservationRegistry.NOOP:Lio/micrometer/observation/ObservationRegistry;
+      28: invokestatic  #76                 // Method java/util/Objects.requireNonNullElse:(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;
+      31: checkcast     #72                 // class io/micrometer/observation/ObservationRegistry
+      34: astore_2
+      35: aload_0
+      36: getfield      #16                 // Field openAiClient:Lcom/openai/client/OpenAIClient;
+      39: aload_0
+      40: aload_1
+      41: aload_2
+      42: invokedynamic #82,  0             // InvokeDynamic #0:get:(Lorg/springframework/ai/openai/OpenAiChatModel$Builder;Lorg/springframework/ai/openai/OpenAiChatOptions;Lio/micrometer/observation/ObservationRegistry;)Ljava/util/function/Supplier;
+      47: invokestatic  #86                 // Method java/util/Objects.requireNonNullElseGet:(Ljava/lang/Object;Ljava/util/function/Supplier;)Ljava/lang/Object;
+      50: checkcast     #90                 // class com/openai/client/OpenAIClient
+      53: astore_3
+      54: aload_0
+      55: getfield      #20                 // Field openAiClientAsync:Lcom/openai/client/OpenAIClientAsync;
+      58: aload_0
+      59: aload_1
+      60: aload_2
+      61: invokedynamic #92,  0             // InvokeDynamic #1:get:(Lorg/springframework/ai/openai/OpenAiChatModel$Builder;Lorg/springframework/ai/openai/OpenAiChatOptions;Lio/micrometer/observation/ObservationRegistry;)Ljava/util/function/Supplier;
+      66: invokestatic  #86                 // Method java/util/Objects.requireNonNullElseGet:(Ljava/lang/Object;Ljava/util/function/Supplier;)Ljava/lang/Object;
+      69: checkcast     #93                 // class com/openai/client/OpenAIClientAsync
+      72: astore        4
+      74: aload_0
+      75: getfield      #28                 // Field toolCallingManager:Lorg/springframework/ai/model/tool/ToolCallingManager;
+      78: invokestatic  #95                 // InterfaceMethod org/springframework/ai/model/tool/ToolCallingManager.builder:()Lorg/springframework/ai/model/tool/DefaultToolCallingManager$Builder;
+      81: aload_2
+      82: invokevirtual #100                // Method org/springframework/ai/model/tool/DefaultToolCallingManager$Builder.observationRegistry:(Lio/micrometer/observation/ObservationRegistry;)Lorg/springframework/ai/model/tool/DefaultToolCallingManager$Builder;
+      85: invokevirtual #105                // Method org/springframework/ai/model/tool/DefaultToolCallingManager$Builder.build:()Lorg/springframework/ai/model/tool/DefaultToolCallingManager;
+      88: invokestatic  #76                 // Method java/util/Objects.requireNonNullElse:(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;
+      91: checkcast     #96                 // class org/springframework/ai/model/tool/ToolCallingManager
+      94: astore        5
+      96: new           #108                // class org/springframework/ai/openai/OpenAiChatModel
+      99: dup
+     100: aload_3
+     101: aload         4
+     103: aload_1
+     104: aload_2
+     105: aload         5
+     107: invokespecial #110                // Method org/springframework/ai/openai/OpenAiChatModel."<init>":(Lcom/openai/client/OpenAIClient;Lcom/openai/client/OpenAIClientAsync;Lorg/springframework/ai/openai/OpenAiChatOptions;Lio/micrometer/observation/ObservationRegistry;Lorg/springframework/ai/model/tool/ToolCallingManager;)V
+     110: areturn
+
+  private com.openai.client.OpenAIClientAsync lambda$build$1(org.springframework.ai.openai.OpenAiChatOptions, io.micrometer.observation.ObservationRegistry);
+    Code:
+       0: aload_1
+       1: invokevirtual #113                // Method org/springframework/ai/openai/OpenAiChatOptions.getBaseUrl:()Ljava/lang/String;
+       4: aload_1
+       5: invokevirtual #117                // Method org/springframework/ai/openai/OpenAiChatOptions.getApiKey:()Ljava/lang/String;
+       8: aload_1
+       9: invokevirtual #120                // Method org/springframework/ai/openai/OpenAiChatOptions.getCredential:()Lcom/openai/credential/Credential;
+      12: aload_1
+      13: invokevirtual #124                // Method org/springframework/ai/openai/OpenAiChatOptions.getMicrosoftDeploymentName:()Ljava/lang/String;
+      16: aload_1
+      17: invokevirtual #127                // Method org/springframework/ai/openai/OpenAiChatOptions.getMicrosoftFoundryServiceVersion:()Lcom/openai/azure/AzureOpenAIServiceVersion;
+      20: aload_1
+      21: invokevirtual #131                // Method org/springframework/ai/openai/OpenAiChatOptions.getOrganizationId:()Ljava/lang/String;
+      24: aload_1
+      25: invokevirtual #134                // Method org/springframework/ai/openai/OpenAiChatOptions.isMicrosoftFoundry:()Z
+      28: aload_1
+      29: invokevirtual #138                // Method org/springframework/ai/openai/OpenAiChatOptions.isGitHubModels:()Z
+      32: aload_1
+      33: invokevirtual #141                // Method org/springframework/ai/openai/OpenAiChatOptions.getModel:()Ljava/lang/String;
+      36: aload_1
+      37: invokevirtual #144                // Method org/springframework/ai/openai/OpenAiChatOptions.getTimeout:()Ljava/time/Duration;
+      40: aload_1
+      41: invokevirtual #148                // Method org/springframework/ai/openai/OpenAiChatOptions.getMaxRetries:()I
+      44: aload_1
+      45: invokevirtual #152                // Method org/springframework/ai/openai/OpenAiChatOptions.getProxy:()Ljava/net/Proxy;
+      48: aload_1
+      49: invokevirtual #156                // Method org/springframework/ai/openai/OpenAiChatOptions.getCustomHeaders:()Ljava/util/Map;
+      52: aload_2
+      53: aload_0
+      54: getfield      #36                 // Field meterRegistry:Lio/micrometer/core/instrument/MeterRegistry;
+      57: aload_0
+      58: getfield      #10                 // Field httpClientCustomizers:Ljava/util/List;
+      61: invokestatic  #160                // Method org/springframework/ai/openai/setup/OpenAiSetup.setupAsyncClient:(Ljava/lang/String;Ljava/lang/String;Lcom/openai/credential/Credential;Ljava/lang/String;Lcom/openai/azure/AzureOpenAIServiceVersion;Ljava/lang/String;ZZLjava/lang/String;Ljava/time/Duration;ILjava/net/Proxy;Ljava/util/Map;Lio/micrometer/observation/ObservationRegistry;Lio/micrometer/core/instrument/MeterRegistry;Ljava/util/List;)Lcom/openai/client/OpenAIClientAsync;
+      64: areturn
+
+  private com.openai.client.OpenAIClient lambda$build$0(org.springframework.ai.openai.OpenAiChatOptions, io.micrometer.observation.ObservationRegistry);
+    Code:
+       0: aload_1
+       1: invokevirtual #113                // Method org/springframework/ai/openai/OpenAiChatOptions.getBaseUrl:()Ljava/lang/String;
+       4: aload_1
+       5: invokevirtual #117                // Method org/springframework/ai/openai/OpenAiChatOptions.getApiKey:()Ljava/lang/String;
+       8: aload_1
+       9: invokevirtual #120                // Method org/springframework/ai/openai/OpenAiChatOptions.getCredential:()Lcom/openai/credential/Credential;
+      12: aload_1
+      13: invokevirtual #124                // Method org/springframework/ai/openai/OpenAiChatOptions.getMicrosoftDeploymentName:()Ljava/lang/String;
+      16: aload_1
+      17: invokevirtual #127                // Method org/springframework/ai/openai/OpenAiChatOptions.getMicrosoftFoundryServiceVersion:()Lcom/openai/azure/AzureOpenAIServiceVersion;
+      20: aload_1
+      21: invokevirtual #131                // Method org/springframework/ai/openai/OpenAiChatOptions.getOrganizationId:()Ljava/lang/String;
+      24: aload_1
+      25: invokevirtual #134                // Method org/springframework/ai/openai/OpenAiChatOptions.isMicrosoftFoundry:()Z
+      28: aload_1
+      29: invokevirtual #138                // Method org/springframework/ai/openai/OpenAiChatOptions.isGitHubModels:()Z
+      32: aload_1
+      33: invokevirtual #141                // Method org/springframework/ai/openai/OpenAiChatOptions.getModel:()Ljava/lang/String;
+      36: aload_1
+      37: invokevirtual #144                // Method org/springframework/ai/openai/OpenAiChatOptions.getTimeout:()Ljava/time/Duration;
+      40: aload_1
+      41: invokevirtual #148                // Method org/springframework/ai/openai/OpenAiChatOptions.getMaxRetries:()I
+      44: aload_1
+      45: invokevirtual #152                // Method org/springframework/ai/openai/OpenAiChatOptions.getProxy:()Ljava/net/Proxy;
+      48: aload_1
+      49: invokevirtual #156                // Method org/springframework/ai/openai/OpenAiChatOptions.getCustomHeaders:()Ljava/util/Map;
+      52: aload_2
+      53: aload_0
+      54: getfield      #36                 // Field meterRegistry:Lio/micrometer/core/instrument/MeterRegistry;
+      57: aload_0
+      58: getfield      #10                 // Field httpClientCustomizers:Ljava/util/List;
+      61: invokestatic  #166                // Method org/springframework/ai/openai/setup/OpenAiSetup.setupSyncClient:(Ljava/lang/String;Ljava/lang/String;Lcom/openai/credential/Credential;Ljava/lang/String;Lcom/openai/azure/AzureOpenAIServiceVersion;Ljava/lang/String;ZZLjava/lang/String;Ljava/time/Duration;ILjava/net/Proxy;Ljava/util/Map;Lio/micrometer/observation/ObservationRegistry;Lio/micrometer/core/instrument/MeterRegistry;Ljava/util/List;)Lcom/openai/client/OpenAIClient;
+      64: areturn
+}

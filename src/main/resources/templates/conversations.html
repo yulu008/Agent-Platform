@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Agent Platform · 存档</title>
+    <link rel="stylesheet" th:href="@{/css/sidebar.css(v=${#dates.createNow().time})}"/>
+    <link rel="stylesheet" th:href="@{/css/home.css(v=${#dates.createNow().time})}"/>
+    <link rel="stylesheet" th:href="@{/css/conversations.css(v=${#dates.createNow().time})}"/>
+</head>
+<body>
+
+    <!-- 全局侧边栏（global-sidebar-nav，承接 unified-global-topbar）：单源 fragment 三件套
+         （侧栏列 + 移动端极简顶条 + 抽屉遮罩）；📜 存档 为当前页高亮（原「你的对话」，rpg-conversation-list 更名）；
+         管理端入口仅 platform_admin（门控同 home） -->
+    <div class="app-shell">
+        <aside th:replace="~{fragments/sidebar :: sidebar('conversations', ${isPlatformAdmin}, ${currentUserEmail})}"></aside>
+        <div th:replace="~{fragments/sidebar :: mobileTop}"></div>
+        <div th:replace="~{fragments/sidebar :: mask}"></div>
+        <div class="app-content">
+
+    <!-- 对话列表主体：client-fetch /rpg/game/saves 渲染（conversations.js）；
+         继续 = 深链 /rpg?resume=<gameStateId>，删除 = DELETE /rpg/game/state/{id} -->
+    <main class="conversations-main">
+        <div class="conversations-count" id="convCount">共 0 场对话</div>
+        <div id="convList" class="conversations-grid"></div>
+        <div id="convEmpty" class="conversations-empty" hidden>
+            还没有对话，<a th:href="@{/}">去世界橱窗</a>开你的第一场冒险
+        </div>
+    </main>
+
+    </div><!-- /.app-content -->
+    </div><!-- /.app-shell -->
+
+    <!-- state.js：仅为删除当前在玩存档时的本地身份守卫（design D4） -->
+    <script th:src="@{/js/rpg/state.js(v=${#dates.createNow().time})}"></script>
+    <script th:src="@{/js/conversations.js(v=${#dates.createNow().time})}"></script>
+    <script th:src="@{/js/sidebar.js(v=${#dates.createNow().time})}"></script>
+
+</body>
+</html>

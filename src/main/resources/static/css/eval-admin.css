@@ -1,0 +1,115 @@
+/* 评估中心样式（content-eval-admin-ui）
+ * 独立于 admin.css：复用其通用类（admin-table / btn / hint / tag / toast）与
+ * :root 浅色主题变量，本文件只写评估中心增量（徽标 / 高亮 / 行展开 / 详情容器）。
+ * verdict 徽标色对齐 planner.css eval-verdict-* 色语义（pass 绿 / borderline 橙 / fail 红）。 */
+:root {
+    --eval-blue: #1570ef;
+    --eval-blue-bg: #d1e9ff;
+    --eval-pass: #07643a;
+    --eval-pass-bg: #d1fadf;
+    --eval-borderline: #b54708;
+    --eval-borderline-bg: #fef0c7;
+    --eval-fail: #b42318;
+    --eval-fail-bg: #fee4e2;
+}
+
+/* 区块小标题（admin-panel 内分节） */
+.eval-h { font-size: 13px; color: var(--muted); margin: 22px 0 10px; }
+
+/* verdict 三档徽标 + 作废灰（pass 绿 / borderline 橙 / fail 红，浅色主题调色板语义） */
+.eval-verdict {
+    display: inline-block; padding: 2px 9px; border-radius: 999px;
+    font-size: 11px; font-weight: 600; white-space: nowrap;
+}
+.eval-verdict-pass { color: var(--eval-pass); background: var(--eval-pass-bg); }
+.eval-verdict-borderline { color: var(--eval-borderline); background: var(--eval-borderline-bg); }
+.eval-verdict-fail { color: var(--eval-fail); background: var(--eval-fail-bg); }
+.eval-verdict-invalid { color: var(--muted); background: #f2f4f7; }
+
+/* run 状态徽标：running 蓝 / done 绿 / failed 红 */
+.eval-status {
+    display: inline-block; padding: 2px 9px; border-radius: 999px;
+    font-size: 11px; font-weight: 600; white-space: nowrap;
+}
+.eval-status-running { color: var(--eval-blue); background: var(--eval-blue-bg); }
+.eval-status-done { color: var(--eval-pass); background: var(--eval-pass-bg); }
+.eval-status-failed { color: var(--eval-fail); background: var(--eval-fail-bg); }
+
+/* 层徽标：静态/动态 */
+.eval-layer {
+    display: inline-block; padding: 2px 8px; border-radius: 4px;
+    font-size: 11px; background: var(--panel-2); color: var(--muted);
+    border: 1px solid var(--border);
+}
+
+/* 分歧行高亮：左侧色条 + 高亮背景 + 分组键短码（人工跨 run 对照锚点） */
+tr.eval-diverge > td { background: #fff4f3; }
+tr.eval-diverge > td:first-child { box-shadow: inset 3px 0 0 var(--eval-fail); }
+.eval-diverge-code {
+    font-size: 11px; color: var(--eval-fail); background: var(--eval-fail-bg);
+    padding: 1px 6px; border-radius: 4px;
+}
+
+/* 终裁态徽标：confirmed（人工确认）/ override（人工推翻） */
+.eval-review-tag {
+    display: inline-block; padding: 2px 8px; border-radius: 999px;
+    font-size: 11px; white-space: nowrap;
+}
+.eval-review-confirmed { color: var(--eval-pass); background: var(--eval-pass-bg); }
+.eval-review-override { color: var(--eval-borderline); background: var(--eval-borderline-bg); }
+.eval-review-pending { color: var(--muted); background: #f2f4f7; }
+
+/* 503 常驻提示条（judge 未配置：配置指引原文） */
+.eval-config-alert {
+    margin: 0 0 16px; padding: 12px 16px;
+    background: var(--eval-borderline-bg); border: 1px solid #f5d999;
+    border-radius: 8px; color: var(--eval-borderline); font-size: 13px;
+    white-space: pre-wrap; word-break: break-all;
+}
+
+/* run 详情容器（对齐 tenant-detail 风格） */
+.eval-run-detail {
+    margin-top: 24px; padding: 20px;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    box-shadow: var(--shadow);
+}
+.eval-run-detail-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.eval-run-detail h2 { font-size: 16px; margin: 0; color: var(--text-strong); }
+.eval-run-meta {
+    display: flex; flex-wrap: wrap; gap: 14px;
+    padding: 10px 14px; background: var(--panel-2);
+    border: 1px solid var(--border); border-radius: 8px;
+    font-size: 12px; color: var(--muted);
+}
+.eval-run-meta b { color: var(--text-strong); font-weight: 600; }
+.eval-run-meta code { font-size: 11px; color: var(--faint); }
+
+/* 分维度汇总分布：每行一个 sub-dimension + 三档计数徽标 */
+.eval-summary { display: flex; flex-direction: column; gap: 6px; }
+.eval-summary-row {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 8px 12px; background: var(--panel-2);
+    border: 1px solid var(--border); border-radius: 8px; font-size: 12px;
+}
+.eval-summary-row .dim { color: var(--text-strong); font-weight: 600; min-width: 96px; }
+.eval-summary-row .cnt { color: var(--muted); }
+.eval-summary-row .cnt b { font-weight: 600; }
+
+/* record 行展开：判分依据完整字段（KV 列表） */
+.eval-record-expand td {
+    background: var(--panel-2); padding: 12px 16px;
+}
+.eval-kv { margin: 0; display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
+.eval-kv .kv { display: flex; gap: 8px; }
+.eval-kv .k { color: var(--faint); min-width: 120px; white-space: nowrap; }
+.eval-kv .v { color: var(--text); word-break: break-all; white-space: pre-wrap; }
+.eval-kv .v code { font-size: 11px; color: var(--muted); }
+
+/* 复核工作台行内终裁控件 */
+.eval-review-form { display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.eval-review-form label { color: var(--muted); display: inline-flex; align-items: center; gap: 4px; font-size: 12px; }
+
+/* run 列表行可点击 */
+#evalRunsBody tr { cursor: pointer; }
+#evalRunsBody tr:hover > td { background: var(--panel-2); }
+#evalRunsBody tr.eval-selected > td { background: #fdf1f3; }

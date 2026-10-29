@@ -55,6 +55,20 @@ public class SessionTenantGuard {
         return session != null && !currentTenantId().equals(session.userId());
     }
 
+    /**
+     * 会话是否为 RPG 业务会话（{@code metadata.kind="rpg"}，separate-rpg-chat-sessions spec）。
+     * <p>
+     * 供主会话读路径（/chat/history、/chat/sessions/{id}/compact）做类型不可达拒绝：
+     * RPG 会话原始事件流（工具调用、state_delta）不经 RpgHistoryCleaner 清洗，
+     * 绝不能从主会话端点暴露。会话不存在 / 查询失败均返回 false——不存在时
+     * getEvents 自然的空回放与报错行为与现状一致，跨租户由 {@link #isForeign} 先行拦截。
+     */
+    public boolean isRpg(String sessionId) {
+        Session session = find(sessionId);
+        return session != null && session.metadata() != null
+                && "rpg".equals(session.metadata().get("kind"));
+    }
+
     private Session find(String sessionId) {
         if (sessionId == null || sessionId.isBlank()) {
             return null;

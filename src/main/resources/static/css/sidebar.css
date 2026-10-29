@@ -1,0 +1,446 @@
+/* 全局侧边栏（global-sidebar-nav）：六页共用的统一导航，承接 unified-global-topbar。
+   markup 单源 templates/fragments/sidebar.html；交互 static/js/sidebar.js。
+   三态：桌面展开 220px / 桌面折叠 56px 图标轨（.app-shell.folded，CSS 变量改列宽）/
+   移动端 ≤768px 侧栏转 fixed 左滑抽屉 + 极简顶条（☰ + 品牌）+ 遮罩。
+   亮色风格延续原 topbar 视觉基调：白栏、#e4e7ec 描边、#e94560 红 accent。 */
+
+/* 全局壳防线：planner 等页无自身 body reset 时，UA 默认 margin:8px 会平移整个
+   shell 并挤出横向滚动条（曾致侧栏 left/top+8、高 828）——壳级归零兜底，
+   各页自带的等价 reset 重复声明无害 */
+body {
+    margin: 0;
+}
+
+/* ===== shell 骨架（D1）：grid 双列，侧栏宽由变量驱动，折叠 = 改写变量 ===== */
+.app-shell {
+    --sidebar-w: 220px;
+    display: grid;
+    grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+    min-height: 100vh;
+    transition: grid-template-columns 0.2s ease;
+}
+
+/* 长页自然滚动由 min-height 保证；chat 页无整页滚动在 chat.css 覆写 height: 100vh（原 body 100vh 迁移至此） */
+.app-shell.folded {
+    --sidebar-w: 56px;
+}
+
+/* 内容列：显式占第二列（fixed 的移动顶条/遮罩不参与 grid 布局），min-width 防 grid 溢出 */
+.app-content {
+    grid-column: 2;
+    min-width: 0;
+}
+
+/* ===== 侧栏列（桌面态：grid 第一列 + sticky 全高） ===== */
+.global-sidebar {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 14px 10px;
+    background: #ffffff;
+    border-right: 1px solid #e4e7ec;
+    box-shadow: 1px 0 4px rgba(16, 24, 40, 0.05);
+    overflow: hidden; /* 折叠过渡时文案溢出裁剪 */
+    z-index: 10;
+    /* 字体/行盒自洽（不依赖各页 body）：admin 页 body line-height:1.5 曾把入口
+       条目抬到 38px，planner 页回退 UA 默认字体行盒更高且各页不一 */
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+    line-height: 1.2;
+    font-size: 16px; /* 显式基准，免 admin 页 body 14px 拉低继承链计算值 */
+    box-sizing: border-box;
+}
+
+/* 侧栏作用域盒模型统一：planner 页无 * box-sizing reset 时条目为 content-box */
+.global-sidebar *,
+.sidebar-mobile-top * {
+    box-sizing: border-box;
+}
+
+/* 品牌区：点击回平台主页（自 topbar.global-brand 上移至侧栏头部） */
+.sidebar-brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 8px;
+    font-size: 1.0rem;
+    font-weight: 600;
+    color: #1f2329;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+/* 侧栏内 logo 圆点（作用域限定，避免与各页 css 的全局 .logo-dot 打架，同 topbar 做法） */
+.global-sidebar .logo-dot,
+.sidebar-mobile-top .logo-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #e94560;
+    display: inline-block;
+    flex-shrink: 0;
+}
+
+/* 导航列表：纵向铺开，入口增长可滚动 */
+.sidebar-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1;
+    overflow-y: auto;
+}
+
+.sidebar-nav::-webkit-scrollbar {
+    width: 4px;
+}
+
+.sidebar-nav::-webkit-scrollbar-thumb {
+    background: rgba(16, 24, 40, 0.15);
+    border-radius: 2px;
+}
+
+/* 导航入口：图标+文案的整行条目（原 topbar nav-link 胶囊改纵向；active 类名沿用，兼容 rpg/game.js 联动） */
+.sidebar-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    font-size: 0.9rem;
+    color: #344054;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: background 0.12s, color 0.12s;
+}
+
+.sidebar-item:hover,
+.sidebar-item:focus-visible {
+    background: rgba(233, 69, 96, 0.08);
+    color: #b42337;
+    outline: none;
+}
+
+/* 当前页/当前视图态：底色常亮（rpg 页由 JS 按视图联动切换） */
+.sidebar-item.active {
+    background: rgba(233, 69, 96, 0.08);
+    color: #b42337;
+}
+
+.sidebar-item-icon {
+    flex-shrink: 0;
+    font-size: 1.0rem;
+    line-height: 1;
+}
+
+.sidebar-item-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ===== 账号区（account-switch-sidebar）：底部当前登录邮箱 chip + 已知账号列表 + 退出登录 ===== */
+.sidebar-account {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    border-top: 1px solid #e4e7ec;
+    padding-top: 8px;
+}
+
+/* 当前身份 chip：头像圆点 + 邮箱（折叠态退化为圆点，title 提示完整邮箱） */
+.sidebar-account-chip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 8px;
+    min-width: 0;
+}
+
+.sidebar-account-avatar {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: rgba(233, 69, 96, 0.10);
+    color: #b42337;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    flex-shrink: 0;
+}
+
+.sidebar-account-email {
+    font-size: 0.8rem;
+    color: #667085;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* 已知账号条目：点击跳 /login?email= 预填切换；× 只删 localStorage 记忆 */
+.sidebar-account-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 5px 8px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: #344054;
+    font-size: 0.8rem;
+    font-family: inherit;
+    text-align: left;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background 0.12s, color 0.12s;
+}
+
+.sidebar-account-item:hover,
+.sidebar-account-item:focus-visible {
+    background: rgba(233, 69, 96, 0.08);
+    color: #b42337;
+    outline: none;
+}
+
+.sidebar-account-remove {
+    margin-left: auto;
+    width: 18px;
+    height: 18px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: #98a2b3;
+    font-size: 12px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    cursor: pointer;
+    transition: background 0.12s, color 0.12s;
+}
+
+.sidebar-account-remove:hover,
+.sidebar-account-remove:focus-visible {
+    background: #f2f4f7;
+    color: #d92d20;
+    outline: none;
+}
+
+/* 退出登录：调 POST /api/auth/logout 清 cookie 后整页跳 /login */
+.sidebar-logout-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 5px 8px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: #667085;
+    font-size: 0.8rem;
+    font-family: inherit;
+    text-align: left;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background 0.12s, color 0.12s;
+}
+
+.sidebar-logout-btn:hover,
+.sidebar-logout-btn:focus-visible {
+    background: #f2f4f7;
+    color: #d92d20;
+    outline: none;
+}
+
+.sidebar-logout-icon {
+    width: 26px;
+    text-align: center;
+    flex-shrink: 0;
+}
+
+/* 折叠钮：贴底整行（桌面态；移动端隐藏） */
+.sidebar-fold-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    padding: 6px 0;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: #98a2b3;
+    font-size: 16px;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background 0.12s;
+}
+
+.sidebar-fold-btn:hover,
+.sidebar-fold-btn:focus-visible {
+    background: #f2f4f7;
+    outline: none;
+}
+
+.fold-icon {
+    transition: transform 0.2s ease;
+}
+
+/* ===== 桌面折叠态：56px 图标轨（文案隐藏、图标居中、箭头转向） ===== */
+.app-shell.folded .sidebar-brand {
+    justify-content: center;
+    padding: 4px 0;
+}
+
+.app-shell.folded .sidebar-brand-text {
+    display: none;
+}
+
+.app-shell.folded .sidebar-item {
+    justify-content: center;
+    gap: 0;
+    padding: 8px 0;
+}
+
+.app-shell.folded .sidebar-item-text {
+    display: none;
+}
+
+/* 账号区折叠态（account-switch-sidebar）：chip 退化为首字母圆点，邮箱/列表/退出文字隐藏 */
+.app-shell.folded .sidebar-account {
+    border-top: none;
+    padding-top: 0;
+}
+
+.app-shell.folded .sidebar-account-chip {
+    justify-content: center;
+    padding: 4px 0;
+}
+
+.app-shell.folded .sidebar-account-email {
+    display: none;
+}
+
+.app-shell.folded .sidebar-account-list {
+    display: none;
+}
+
+.app-shell.folded .sidebar-logout-btn {
+    justify-content: center;
+    padding: 5px 0;
+}
+
+.app-shell.folded .sidebar-logout-text {
+    display: none;
+}
+
+.app-shell.folded .fold-icon {
+    transform: rotate(180deg);
+}
+
+/* ===== 移动端极简顶条 / 遮罩（桌面态隐藏；fixed 不占 grid 流） ===== */
+.sidebar-mobile-top,
+.sidebar-mask {
+    display: none;
+}
+
+.sidebar-mobile-top {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 1000;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 14px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+    line-height: 1.2;
+    background: #ffffff;
+    border-bottom: 1px solid #e4e7ec;
+    box-shadow: 0 1px 4px rgba(16, 24, 40, 0.05);
+}
+
+.sidebar-burger {
+    width: 34px;
+    height: 34px;
+    border: 1px solid #e4e7ec;
+    border-radius: 9px;
+    background: #f2f4f7;
+    color: #344054;
+    font-size: 17px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.sidebar-burger:hover {
+    background: #e4e7ec;
+}
+
+.sidebar-mobile-brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 1rem;
+    font-weight: 600;
+    color: #1f2329;
+    text-decoration: none;
+}
+
+.sidebar-mask {
+    position: fixed;
+    inset: 0;
+    background: rgba(16, 24, 40, 0.4);
+    z-index: 999; /* 侧栏抽屉 1000 之下 */
+}
+
+/* ===== 移动端 ≤768px（D5）：侧栏转 fixed 左滑抽屉，双列坍缩为 0 + 内容列 ===== */
+@media (max-width: 768px) {
+    /* 第一列宽 0（侧栏已 fixed 脱格），内容列占满；app-content 的 grid-column: 2 恒成立无需覆写 */
+    .app-shell {
+        grid-template-columns: 0 minmax(0, 1fr);
+        min-height: 100vh;
+    }
+
+    .global-sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 280px;
+        height: 100vh;
+        transform: translateX(-100%);
+        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); /* 与 chat session-drawer 滑入语言同构 */
+        box-shadow: none;
+        z-index: 1000;
+    }
+
+    .global-sidebar.open {
+        transform: translateX(0);
+        box-shadow: 6px 0 32px rgba(2, 119, 189, 0.1);
+    }
+
+    /* 折叠钮在抽屉态无意义 */
+    .sidebar-fold-btn {
+        display: none;
+    }
+
+    .sidebar-mobile-top {
+        display: flex;
+    }
+
+    .sidebar-mask.show {
+        display: block;
+    }
+
+    /* fixed 顶条让位：内容列顶部留出顶条高度（chat 页在 chat.css 按 flex 列自行适配） */
+    .app-content {
+        padding-top: 52px;
+    }
+}

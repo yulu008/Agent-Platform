@@ -7,6 +7,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.servlet.view.InternalResourceViewResolver;
 
 import com.luyu.agent.admin.PlatformAdminGuard;
+import com.luyu.agent.service.AuthService;
 
 import static org.mockito.Mockito.mock;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -16,7 +17,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /**
  * {@link ChatPageController} 路由测试（root-entry-selection 变更）。
  * <p>
- * 钉住：根路径 / 渲染入口选择页视图 home；/chat 渲染主聊天视图 chat。
+ * 钉住：根路径 / 渲染入口选择页视图 home；/chat 渲染主聊天视图 chat；
+ * /conversations 渲染存档视图 conversations（rpg-conversation-list，原「你的对话」）。
  * 采用 standaloneSetup，仅校验解析出的视图名，不触发模板渲染。
  */
 class ChatPageControllerTest {
@@ -29,7 +31,8 @@ class ChatPageControllerTest {
         InternalResourceViewResolver viewResolver = new InternalResourceViewResolver();
         viewResolver.setPrefix("/templates/");
         viewResolver.setSuffix(".html");
-        mockMvc = MockMvcBuilders.standaloneSetup(new ChatPageController(mock(PlatformAdminGuard.class)))
+        // authService mock 供账号区邮箱注入（account-switch-sidebar，视图名断言不受其影响）
+        mockMvc = MockMvcBuilders.standaloneSetup(new ChatPageController(mock(PlatformAdminGuard.class), mock(AuthService.class)))
                 .setViewResolvers(viewResolver)
                 .build();
     }
@@ -46,5 +49,12 @@ class ChatPageControllerTest {
         mockMvc.perform(get("/chat"))
                 .andExpect(status().isOk())
                 .andExpect(view().name("chat"));
+    }
+
+    @Test
+    void conversations路径返回存档视图() throws Exception {
+        mockMvc.perform(get("/conversations"))
+                .andExpect(status().isOk())
+                .andExpect(view().name("conversations"));
     }
 }

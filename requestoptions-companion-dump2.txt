@@ -1,0 +1,42 @@
+﻿Compiled from "RequestOptions.kt"
+public final class com.openai.core.RequestOptions$Companion {
+  private com.openai.core.RequestOptions$Companion();
+    Code:
+       0: aload_0
+       1: invokespecial #8                  // Method java/lang/Object."<init>":()V
+       4: return
+
+  public final com.openai.core.RequestOptions none();
+    Code:
+       0: invokestatic  #19                 // Method com/openai/core/RequestOptions.access$getNONE$cp:()Lcom/openai/core/RequestOptions;
+       3: areturn
+
+  public final com.openai.core.RequestOptions from$openai_java_core(com.openai.core.ClientOptions);
+    Code:
+       0: aload_1
+       1: ldc           #23                 // String clientOptions
+       3: invokestatic  #29                 // Method kotlin/jvm/internal/Intrinsics.checkNotNullParameter:(Ljava/lang/Object;Ljava/lang/String;)V
+       6: aload_0
+       7: invokevirtual #33                 // Method builder:()Lcom/openai/core/RequestOptions$Builder;
+      10: aload_1
+      11: invokevirtual #39                 // Method com/openai/core/ClientOptions.responseValidation:()Z
+      14: invokevirtual #44                 // Method com/openai/core/RequestOptions$Builder.responseValidation:(Z)Lcom/openai/core/RequestOptions$Builder;
+      17: aload_1
+      18: invokevirtual #48                 // Method com/openai/core/ClientOptions.timeout:()Lcom/openai/core/Timeout;
+      21: invokevirtual #51                 // Method com/openai/core/RequestOptions$Builder.timeout:(Lcom/openai/core/Timeout;)Lcom/openai/core/RequestOptions$Builder;
+      24: invokevirtual #54                 // Method com/openai/core/RequestOptions$Builder.build:()Lcom/openai/core/RequestOptions;
+      27: areturn
+
+  public final com.openai.core.RequestOptions$Builder builder();
+    Code:
+       0: new           #41                 // class com/openai/core/RequestOptions$Builder
+       3: dup
+       4: invokespecial #56                 // Method com/openai/core/RequestOptions$Builder."<init>":()V
+       7: areturn
+
+  public com.openai.core.RequestOptions$Companion(kotlin.jvm.internal.DefaultConstructorMarker);
+    Code:
+       0: aload_0
+       1: invokespecial #58                 // Method "<init>":()V
+       4: return
+}
